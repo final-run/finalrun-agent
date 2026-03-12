@@ -1,0 +1,24 @@
+{
+  "name": "@finalrun/device-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Device detection, gRPC communication, and driver management",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "generate:proto": "npx grpc_tools_node_protoc --ts_proto_out=./src/generated --ts_proto_opt=outputServices=grpc-js --ts_proto_opt=esModuleInterop=true --proto_path=../../proto ../../proto/finalrun/driver.proto",
+    "test": "node --test \"dist/**/*.test.js\""
+  },
+  "dependencies": {
+    "@finalrun/common": "*",
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.0"
+  },
+  "devDependencies": {
+    "ts-proto": "^2.6.0",
+    "typescript": "^5.7.0",
+    "grpc-tools": "^1.12.4"
+  }
+}

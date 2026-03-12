@@ -1,0 +1,24 @@
+{
+  "name": "finalrun-ts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-driven mobile app testing CLI — TypeScript monorepo",
+  "workspaces": [
+    "packages/common",
+    "packages/device-node",
+    "packages/goal-executor",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "clean": "rm -rf packages/*/dist",
+    "dev:cli": "npm run dev --workspace=packages/cli --",
+    "dev:watch": "tsc --build --watch --preserveWatchOutput packages/common/tsconfig.json packages/device-node/tsconfig.json packages/goal-executor/tsconfig.json packages/cli/tsconfig.json",
+    "test": "npm run build && npm run test:workspaces",
+    "test:workspaces": "npm run test --workspaces --if-present",
+    "generate:proto": "npm run generate:proto --workspace=packages/device-node"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

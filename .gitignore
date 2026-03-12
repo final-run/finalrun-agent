@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+packages/*/node_modules/
+
+# TypeScript build output
+packages/*/dist/
+*.tsbuildinfo
+packages/*/*.tsbuildinfo
+resources/ios/Debug-iphonesimulator/
+
+# Test and coverage artifacts
+coverage/
+packages/*/coverage/
+
+# Local environment files
+.env
+.env.*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@finalrun/cli": ["packages/cli/src/index.ts"],
+      "@finalrun/common": ["packages/common/src/index.ts"],
+      "@finalrun/device-node": ["packages/device-node/src/index.ts"],
+      "@finalrun/goal-executor": ["packages/goal-executor/src/index.ts"]
+    }
+  }
+}

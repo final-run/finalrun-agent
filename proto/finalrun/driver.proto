@@ -1,0 +1,295 @@
+syntax = "proto3";
+
+package finalrun.driver;
+
+option java_package = "app.finalrun.android.grpc";
+option java_outer_classname = "DriverProto";
+option java_multiple_files = true;
+option swift_prefix = "FR";
+
+// ============================================================================
+// Common Types
+// ============================================================================
+
+message Point {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message PointPercent {
+  double x_percent = 1;
+  double y_percent = 2;
+}
+
+message AppUpload {
+  string package_name = 1;
+}
+
+message SingleArgument {
+  string type = 1;
+  string value = 2;
+}
+
+message DeviceAppInfo {
+  string package_name = 1;
+  string name = 2;
+  optional string version = 3;
+}
+
+// ============================================================================
+// Request Messages
+// ============================================================================
+
+message TapRequest {
+  Point point = 1;
+  optional int32 repeat = 2;
+  optional int32 delay = 3;
+}
+
+message TapPercentRequest {
+  PointPercent point = 1;
+  optional int32 repeat = 2;
+  optional int32 delay = 3;
+}
+
+message EnterTextRequest {
+  string value = 1;
+  bool should_erase_text = 2;
+  optional int32 erase_count = 3;
+}
+
+message EraseTextRequest {
+  // No additional fields needed
+}
+
+message CopyTextRequest {
+  // No additional fields needed
+}
+
+message PasteTextRequest {
+  // No additional fields needed
+}
+
+message BackRequest {
+  // No additional fields needed
+}
+
+message HomeRequest {
+  // No additional fields needed
+}
+
+message RotateRequest {
+  // No additional fields needed
+}
+
+message HideKeyboardRequest {
+  // No additional fields needed
+}
+
+message KillAppRequest {
+  string package_name = 1;
+}
+
+message LaunchAppRequest {
+  AppUpload app_upload = 1;
+  bool allow_all_permissions = 2;
+  map<string, SingleArgument> arguments = 3;
+  // Field 4 was deep_link - removed now
+  map<string, string> permissions = 5;
+  bool should_uninstall_before_launch = 6;
+}
+
+message SwitchToPrimaryAppRequest {
+  string package_name = 1;
+}
+
+message PressKeyRequest {
+  string key = 1;
+}
+
+message SetLocationRequest {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message CheckAppInForegroundRequest {
+  string package_name = 1;
+  int32 timeout_seconds = 2;
+}
+
+message GetAppListRequest {
+  // No additional fields needed
+}
+
+message GetDeviceScaleRequest {
+  // No additional fields needed
+}
+
+message GetScreenshotRequest {
+  optional int32 quality = 1; // Default: 5
+}
+
+// ============================================================================
+// Raw Screenshot - Optimized for comparison (stability checking)
+// ============================================================================
+
+// Request for raw screenshot bytes (no base64 encoding)
+// Use this for comparison-only scenarios where base64 overhead is wasteful
+message GetRawScreenshotRequest {
+  optional int32 quality = 1; // JPEG quality 0-100, Default: 5
+}
+
+message GetHierarchyRequest {
+  // No additional fields needed
+}
+
+message GetScreenshotAndHierarchyRequest {
+  optional int32 quality = 1; // Default: 5
+}
+
+message GetScreenDimensionRequest {
+  // No additional fields needed
+}
+
+message StartStreamingRequest {
+  optional int32 fps = 1;     // Default: 24
+  optional int32 quality = 2; // Default: 5
+}
+
+message StopStreamingRequest {
+  // No additional fields needed
+}
+
+message StopExecutionRequest {
+  // No additional fields needed
+}
+
+message UpdateAppIdsRequest {
+  repeated string app_ids = 1;
+}
+
+message SwipeRequest {
+  int32 start_x = 1;
+  int32 start_y = 2;
+  int32 end_x = 3;
+  int32 end_y = 4;
+  int32 duration_ms = 5;  // Duration in milliseconds
+}
+
+// ============================================================================
+// Response Messages
+// ============================================================================
+
+message ActionResponse {
+  bool success = 1;
+  optional string message = 2;
+}
+
+message TapResponse {
+  bool success = 1;
+  optional string message = 2;
+  int32 x = 3;
+  int32 y = 4;
+}
+
+message RotateResponse {
+  bool success = 1;
+  optional string message = 2;
+  string orientation = 3;
+}
+
+message ScreenshotResponse {
+  bool success = 1;
+  optional string message = 2;
+  optional string screenshot = 3;  // Base64 encoded
+  int32 screen_width = 4;
+  int32 screen_height = 5;
+  optional string hierarchy = 6;
+  optional string device_time = 7;
+  optional string timezone = 8;
+}
+
+message ScreenDimensionResponse {
+  bool success = 1;
+  optional string message = 2;
+  int32 screen_width = 3;
+  int32 screen_height = 4;
+}
+
+message AppListResponse {
+  bool success = 1;
+  optional string message = 2;
+  repeated DeviceAppInfo apps = 3;
+}
+
+message DeviceScaleResponse {
+  bool success = 1;
+  optional string message = 2;
+  float scale = 3;
+}
+
+message StreamFrame {
+  bytes image_data = 1;
+  optional string hierarchy = 2;
+  int32 screen_width = 3;
+  int32 screen_height = 4;
+}
+
+// Response with raw screenshot bytes (no base64 encoding)
+// Saves ~33% transfer size and eliminates encode/decode overhead
+// ~140-245ms savings per stability check (4 screenshots)
+message RawScreenshotResponse {
+  bool success = 1;
+  optional string message = 2;
+  bytes screenshot = 3;       // Raw JPEG bytes (NOT base64)
+  int32 screen_width = 4;
+  int32 screen_height = 5;
+}
+
+// ============================================================================
+// gRPC Service Definition
+// ============================================================================
+
+service DriverService {
+  // Device interaction actions
+  rpc Tap(TapRequest) returns (TapResponse);
+  rpc TapPercent(TapPercentRequest) returns (TapResponse);
+  rpc EnterText(EnterTextRequest) returns (ActionResponse);
+  rpc EraseText(EraseTextRequest) returns (ActionResponse);
+  rpc CopyText(CopyTextRequest) returns (ActionResponse);
+  rpc PasteText(PasteTextRequest) returns (ActionResponse);
+  rpc Back(BackRequest) returns (ActionResponse);
+  rpc Home(HomeRequest) returns (ActionResponse);
+  rpc Rotate(RotateRequest) returns (RotateResponse);
+  rpc HideKeyboard(HideKeyboardRequest) returns (ActionResponse);
+  rpc PressKey(PressKeyRequest) returns (ActionResponse);
+  rpc Swipe(SwipeRequest) returns (ActionResponse);
+  
+  // App management
+  rpc LaunchApp(LaunchAppRequest) returns (ActionResponse);
+  rpc KillApp(KillAppRequest) returns (ActionResponse);
+  rpc SwitchToPrimaryApp(SwitchToPrimaryAppRequest) returns (ActionResponse);
+  rpc CheckAppInForeground(CheckAppInForegroundRequest) returns (ActionResponse);
+  rpc GetAppList(GetAppListRequest) returns (AppListResponse);
+  rpc UpdateAppIds(UpdateAppIdsRequest) returns (ActionResponse);
+  
+  // Device info
+  rpc GetDeviceScale(GetDeviceScaleRequest) returns (DeviceScaleResponse);
+  rpc GetScreenDimension(GetScreenDimensionRequest) returns (ScreenDimensionResponse);
+  rpc SetLocation(SetLocationRequest) returns (ActionResponse);
+  
+  // Screenshot and hierarchy
+  rpc GetScreenshot(GetScreenshotRequest) returns (ScreenshotResponse);
+  rpc GetHierarchy(GetHierarchyRequest) returns (ScreenshotResponse);
+  rpc GetScreenshotAndHierarchy(GetScreenshotAndHierarchyRequest) returns (ScreenshotResponse);
+  
+  // Raw screenshot for comparison (stability checking) - faster than base64
+  rpc GetRawScreenshot(GetRawScreenshotRequest) returns (RawScreenshotResponse);
+  
+  // Streaming - Server streaming RPC
+  rpc StartStreaming(StartStreamingRequest) returns (stream StreamFrame);
+  
+  // Execution control
+  rpc StopStreaming(StopStreamingRequest) returns (ActionResponse);
+  rpc StopExecution(StopExecutionRequest) returns (ActionResponse);
+}

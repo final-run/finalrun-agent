@@ -1,0 +1,31 @@
+{
+  "name": "@finalrun/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FinalRun CLI — AI-driven mobile app testing from the terminal",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "finalrun": "./dist/bin/finalrun.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "tsx bin/finalrun.ts",
+    "dev": "tsx --tsconfig ../../tsconfig.dev.json bin/finalrun.ts",
+    "test": "node --test \"dist/**/*.test.js\""
+  },
+  "dependencies": {
+    "@finalrun/common": "*",
+    "@finalrun/device-node": "*",
+    "@finalrun/goal-executor": "*",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.0",
+    "ora": "^8.2.0",
+    "chalk": "^5.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  }
+}
