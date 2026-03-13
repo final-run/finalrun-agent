@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AIAgent, GrounderResponse, PlannerResponse } from './AIAgent.js';
 
+type LLMPhase = 'planner' | 'grounder';
+
 function parsePlannerResponse(raw: string): PlannerResponse {
   const agent = new AIAgent({
     provider: 'google',
@@ -42,6 +44,24 @@ function extractJson(raw: string): Record<string, unknown> | null {
       _extractJson: (value: string) => Record<string, unknown> | null;
     }
   )._extractJson(raw);
+}
+
+function getProviderOptions(params: {
+  provider: string;
+  modelName: string;
+  phase: LLMPhase;
+}): Record<string, unknown> | undefined {
+  const agent = new AIAgent({
+    provider: params.provider,
+    modelName: params.modelName,
+    apiKey: 'test-key',
+  });
+
+  return (
+    agent as unknown as {
+      _getProviderOptions: (phase: LLMPhase) => Record<string, unknown> | undefined;
+    }
+  )._getProviderOptions(params.phase);
 }
 
 test('AIAgent extracts plain valid JSON when top-level output is present', () => {
@@ -106,6 +126,141 @@ test('AIAgent extracts the JSON object containing output when multiple JSON obje
 
   assert.deepEqual(json, {
     output: { start_x: 540, start_y: 1800, end_x: 540, end_y: 400, reason: 'Swipe up.' },
+  });
+});
+
+test('AIAgent uses medium Gemini 3 reasoning defaults for planner calls', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'google',
+    modelName: 'gemini-3.1-pro-preview',
+    phase: 'planner',
+  });
+
+  assert.deepEqual(providerOptions, {
+    google: {
+      thinkingConfig: {
+        thinkingLevel: 'medium',
+        includeThoughts: false,
+      },
+    },
+  });
+});
+
+test('AIAgent uses minimal Gemini 3 reasoning defaults for grounder calls', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'google',
+    modelName: 'gemini-3.1-pro-preview',
+    phase: 'grounder',
+  });
+
+  assert.deepEqual(providerOptions, {
+    google: {
+      thinkingConfig: {
+        thinkingLevel: 'minimal',
+        includeThoughts: false,
+      },
+    },
+  });
+});
+
+test('AIAgent applies Google reasoning defaults without model-family gating', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'google',
+    modelName: 'gemini-2.0-flash',
+    phase: 'planner',
+  });
+
+  assert.deepEqual(providerOptions, {
+    google: {
+      thinkingConfig: {
+        thinkingLevel: 'medium',
+        includeThoughts: false,
+      },
+    },
+  });
+});
+
+test('AIAgent uses medium GPT-5 reasoning defaults for planner calls', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'openai',
+    modelName: 'gpt-5',
+    phase: 'planner',
+  });
+
+  assert.deepEqual(providerOptions, {
+    openai: {
+      reasoningEffort: 'medium',
+    },
+  });
+});
+
+test('AIAgent uses minimal GPT-5 reasoning defaults for grounder calls', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'openai',
+    modelName: 'gpt-5',
+    phase: 'grounder',
+  });
+
+  assert.deepEqual(providerOptions, {
+    openai: {
+      reasoningEffort: 'minimal',
+    },
+  });
+});
+
+test('AIAgent applies OpenAI reasoning defaults without model-family gating', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'openai',
+    modelName: 'gpt-4o',
+    phase: 'planner',
+  });
+
+  assert.deepEqual(providerOptions, {
+    openai: {
+      reasoningEffort: 'medium',
+    },
+  });
+});
+
+test('AIAgent uses medium Anthropic effort defaults for planner calls', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'anthropic',
+    modelName: 'claude-sonnet-4-6',
+    phase: 'planner',
+  });
+
+  assert.deepEqual(providerOptions, {
+    anthropic: {
+      effort: 'medium',
+    },
+  });
+});
+
+test('AIAgent uses low Anthropic effort defaults for grounder calls', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'anthropic',
+    modelName: 'claude-sonnet-4-6',
+    phase: 'grounder',
+  });
+
+  assert.deepEqual(providerOptions, {
+    anthropic: {
+      effort: 'low',
+    },
+  });
+});
+
+test('AIAgent applies Anthropic effort defaults without model-family gating', () => {
+  const providerOptions = getProviderOptions({
+    provider: 'anthropic',
+    modelName: 'claude-3-7-sonnet-latest',
+    phase: 'planner',
+  });
+
+  assert.deepEqual(providerOptions, {
+    anthropic: {
+      effort: 'medium',
+    },
   });
 });
 

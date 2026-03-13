@@ -3,9 +3,18 @@
 // Dart: FinalRunAgent → TypeScript: AIAgent
 
 import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createAnthropic } from '@ai-sdk/anthropic';
+import {
+  createOpenAI,
+  type OpenAILanguageModelResponsesOptions,
+} from '@ai-sdk/openai';
+import {
+  createGoogleGenerativeAI,
+  type GoogleLanguageModelOptions,
+} from '@ai-sdk/google';
+import {
+  createAnthropic,
+  type AnthropicLanguageModelOptions,
+} from '@ai-sdk/anthropic';
 import * as fs from 'fs';
 import * as path from 'path';
 import { performance } from 'node:perf_hooks';
@@ -99,6 +108,12 @@ export interface GrounderResponse {
 }
 
 type JsonRecord = Record<string, unknown>;
+type LLMPhase = 'planner' | 'grounder';
+type AIAgentProviderOptions = {
+  google?: GoogleLanguageModelOptions;
+  openai?: OpenAILanguageModelResponsesOptions;
+  anthropic?: AnthropicLanguageModelOptions;
+};
 
 // ============================================================================
 // AIAgent
@@ -184,7 +199,7 @@ export class AIAgent {
 
     let rawResult: string;
     try {
-      rawResult = await this._callLLM(systemPrompt, userParts);
+      rawResult = await this._callLLM(systemPrompt, userParts, 'planner');
     } catch (error) {
       finishTracePhase(
         llmPhase,
@@ -273,7 +288,7 @@ export class AIAgent {
 
     let rawResult: string;
     try {
-      rawResult = await this._callLLM(systemPrompt, userParts);
+      rawResult = await this._callLLM(systemPrompt, userParts, 'grounder');
     } catch (error) {
       finishTracePhase(
         phase,
@@ -326,8 +341,10 @@ export class AIAgent {
   private async _callLLM(
     systemPrompt: string,
     userParts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }>,
+    phase: LLMPhase,
   ): Promise<string> {
     const model = this._getModel();
+    const providerOptions = this._getProviderOptions(phase);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userContent: any[] = userParts.map((part) => {
@@ -344,7 +361,14 @@ export class AIAgent {
         { role: 'user', content: userContent },
       ],
       maxOutputTokens: 4096,
+      providerOptions,
     });
+
+    if (result.reasoningText) {
+      Logger.d(
+        `LLM reasoning (${this._provider}/${this._modelName}):\n${result.reasoningText}`,
+      );
+    }
 
     Logger.d(
       `LLM response (${this._provider}/${this._modelName}):\n${result.text || '<empty response>'}`,
@@ -372,6 +396,34 @@ export class AIAgent {
       }
       default:
         throw new Error(`Unsupported AI provider: ${this._provider}`);
+    }
+  }
+
+  private _getProviderOptions(phase: LLMPhase): AIAgentProviderOptions | undefined {
+    switch (this._provider) {
+      case 'google':
+        return {
+          google: {
+            thinkingConfig: {
+              thinkingLevel: phase === 'planner' ? 'medium' : 'minimal',
+              includeThoughts: false,
+            },
+          } satisfies GoogleLanguageModelOptions,
+        };
+      case 'openai':
+        return {
+          openai: {
+            reasoningEffort: phase === 'planner' ? 'medium' : 'minimal',
+          } satisfies OpenAILanguageModelResponsesOptions,
+        };
+      case 'anthropic':
+        return {
+          anthropic: {
+            effort: phase === 'planner' ? 'medium' : 'low',
+          } satisfies AnthropicLanguageModelOptions,
+        };
+      default:
+        return undefined;
     }
   }
 
