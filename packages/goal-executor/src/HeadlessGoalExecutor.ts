@@ -14,6 +14,14 @@ import {
 } from '@finalrun/common';
 import { AIAgent, PlannerResponse } from './ai/AIAgent.js';
 import { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
+import {
+  StepTraceBuilder,
+  formatStepTraceSummary,
+  startTracePhase,
+  type SpanTiming,
+  type StepTrace,
+  type TimingMetadata,
+} from './trace.js';
 
 // ============================================================================
 // Types
@@ -33,6 +41,7 @@ export interface StepResult {
   reason: string;
   success: boolean;
   errorMessage?: string;
+  trace?: StepTrace;
 }
 
 export interface GoalResult {
@@ -65,14 +74,26 @@ interface DeviceState {
   screenHeight: number;
 }
 
+interface CaptureTraceMetadata {
+  totalMs: number;
+  stabilityMs?: number;
+  finalPayloadMs: number;
+  stable: boolean;
+  pollCount: number;
+  attempts: number;
+  failureReason?: string;
+}
+
 type DeviceStateCaptureResult =
   | {
       status: 'success';
       deviceState: DeviceState;
+      captureTrace?: CaptureTraceMetadata;
     }
   | {
       status: 'transient' | 'fatal';
       message: string;
+      captureTrace?: CaptureTraceMetadata;
     };
 
 const MAX_CONSECUTIVE_TRANSIENT_CAPTURE_FAILURES = 2;
@@ -94,7 +115,7 @@ const MAX_CONSECUTIVE_TRANSIENT_CAPTURE_FAILURES = 2;
 export class HeadlessGoalExecutor {
   private _config: GoalExecutorConfig;
   private _actionExecutor: HeadlessActionExecutor;
-  private _cancelled: boolean = false;
+  private _cancelled = false;
   private _steps: StepResult[] = [];
 
   constructor(config: GoalExecutorConfig) {
@@ -132,7 +153,8 @@ export class HeadlessGoalExecutor {
     Logger.i(`Max iterations: ${maxIterations}`);
 
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
-      // Check cancellation
+      const stepTrace = new StepTraceBuilder(iteration);
+
       if (this._cancelled) {
         return {
           success: false,
@@ -142,7 +164,6 @@ export class HeadlessGoalExecutor {
         };
       }
 
-      // -- Step 1: Capture device state --
       onProgress?.({
         type: 'planning',
         iteration,
@@ -150,16 +171,34 @@ export class HeadlessGoalExecutor {
         message: 'Capturing device state...',
       });
 
-      const captureResult = await this._captureDeviceState();
+      const capturePhase = startTracePhase(iteration, 'capture.total');
+      const captureResult = await this._captureDeviceState(iteration);
+      const captureSpan = stepTrace.addSpanFromActivePhase(
+        capturePhase,
+        captureResult.status === 'success' ? 'success' : 'failure',
+        captureResult.status === 'success' ? undefined : captureResult.message,
+      );
+      stepTrace.setAction('captureDeviceState');
+      stepTrace.addSequentialTimings(
+        this._captureTraceToTimings(captureResult.captureTrace),
+        {
+          startMs: captureSpan.startMs,
+        },
+      );
+
       if (captureResult.status !== 'success') {
         consecutiveTransientCaptureFailures += 1;
-        this._steps.push({
+        stepTrace.markFailure(captureResult.message);
+        const trace = this._emitTraceSummary(stepTrace);
+        const captureStep: StepResult = {
           iteration,
           action: 'captureDeviceState',
           reason: captureResult.message,
           success: false,
           errorMessage: captureResult.message,
-        });
+          trace,
+        };
+        this._steps.push(captureStep);
 
         onProgress?.({
           type: 'error',
@@ -194,17 +233,18 @@ export class HeadlessGoalExecutor {
 
         continue;
       }
+
       consecutiveTransientCaptureFailures = 0;
       const deviceState = captureResult.deviceState;
 
-      // -- Step 2: Call AI planner --
       onProgress?.({
         type: 'planning',
         iteration,
         totalIterations: maxIterations,
-        message: 'AI is thinking...',
+        message: 'Thinking...',
       });
 
+      const planningPhase = startTracePhase(iteration, 'planning.total');
       let plannerResponse: PlannerResponse;
       try {
         plannerResponse = await this._config.aiAgent.plan({
@@ -214,10 +254,20 @@ export class HeadlessGoalExecutor {
           hierarchy: deviceState.hierarchy,
           history: history || undefined,
           remember: remember.length > 0 ? remember : undefined,
+          traceStep: iteration,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         Logger.e('Planner call failed:', error);
+        const planningSpan = stepTrace.addSpanFromActivePhase(
+          planningPhase,
+          'failure',
+          errorMsg,
+        );
+        stepTrace.setAction('plannerError');
+        stepTrace.markFailure(errorMsg);
+        stepTrace.addSequentialTimings(undefined, { startMs: planningSpan.startMs });
+        const trace = this._emitTraceSummary(stepTrace);
 
         this._steps.push({
           iteration,
@@ -225,6 +275,7 @@ export class HeadlessGoalExecutor {
           reason: errorMsg,
           success: false,
           errorMessage: errorMsg,
+          trace,
         });
 
         onProgress?.({
@@ -233,21 +284,33 @@ export class HeadlessGoalExecutor {
           totalIterations: maxIterations,
           message: `Planner error: ${errorMsg}`,
         });
-        continue; // retry
+        continue;
       }
+
+      const planningSpan = stepTrace.addSpanFromActivePhase(planningPhase, 'success');
+      stepTrace.addSequentialTimings(
+        this._plannerTraceToTimings(plannerResponse),
+        { startMs: planningSpan.startMs },
+      );
 
       const action = plannerResponse.act;
       const reason = plannerResponse.reason;
 
       Logger.i(`[${iteration}/${maxIterations}] Action: ${action} — ${reason}`);
 
-      // Update remember context
+      stepTrace.setAction(action);
       remember = plannerResponse.remember;
 
-      // -- Check for completion --
       if (action === PLANNER_ACTION_COMPLETED) {
         Logger.i('✓ Goal completed successfully!');
-        this._steps.push({ iteration, action, reason, success: true });
+        const trace = this._emitTraceSummary(stepTrace);
+        this._steps.push({
+          iteration,
+          action,
+          reason,
+          success: true,
+          trace,
+        });
 
         onProgress?.({
           type: 'goal_complete',
@@ -266,10 +329,17 @@ export class HeadlessGoalExecutor {
         };
       }
 
-      // -- Check for failure --
       if (action === PLANNER_ACTION_FAILED) {
         Logger.w('✖ Goal failed: ' + reason);
-        this._steps.push({ iteration, action, reason, success: false });
+        stepTrace.markFailure(reason);
+        const trace = this._emitTraceSummary(stepTrace);
+        this._steps.push({
+          iteration,
+          action,
+          reason,
+          success: false,
+          trace,
+        });
 
         onProgress?.({
           type: 'goal_complete',
@@ -288,7 +358,6 @@ export class HeadlessGoalExecutor {
         };
       }
 
-      // -- Step 3: Execute the action --
       onProgress?.({
         type: 'executing',
         iteration,
@@ -297,6 +366,7 @@ export class HeadlessGoalExecutor {
         reason,
       });
 
+      const actionPhase = startTracePhase(iteration, 'action.total');
       const actionResult = await this._actionExecutor.executeAction({
         action,
         reason,
@@ -311,9 +381,18 @@ export class HeadlessGoalExecutor {
         hierarchy: deviceState.hierarchy,
         screenWidth: deviceState.screenWidth,
         screenHeight: deviceState.screenHeight,
+        traceStep: iteration,
       });
 
-      // Record step result
+      const actionSpan = stepTrace.addSpanFromActivePhase(
+        actionPhase,
+        actionResult.success ? 'success' : 'failure',
+        actionResult.error,
+      );
+      stepTrace.addSequentialTimings(actionResult.trace, {
+        startMs: actionSpan.startMs,
+      });
+
       const stepResult: StepResult = {
         iteration,
         action,
@@ -321,6 +400,13 @@ export class HeadlessGoalExecutor {
         success: actionResult.success,
         errorMessage: actionResult.error,
       };
+
+      if (!actionResult.success && actionResult.error) {
+        stepTrace.markFailure(actionResult.error);
+      }
+
+      const trace = this._emitTraceSummary(stepTrace);
+      stepResult.trace = trace;
       this._steps.push(stepResult);
 
       onProgress?.({
@@ -333,12 +419,10 @@ export class HeadlessGoalExecutor {
         message: actionResult.error,
       });
 
-      // Update history for next planner call
       const statusText = actionResult.success ? 'SUCCESS' : `FAILED: ${actionResult.error}`;
       history += `${iteration}. [${action}] ${this._formatHistoryReason(plannerResponse)} → ${statusText}\n`;
     }
 
-    // Exceeded max iterations
     Logger.w(`Max iterations (${maxIterations}) reached`);
     return {
       success: false,
@@ -350,10 +434,9 @@ export class HeadlessGoalExecutor {
 
   // ---------- private ----------
 
-  /**
-   * Capture the current device state: screenshot + hierarchy.
-   */
-  private async _captureDeviceState(): Promise<DeviceStateCaptureResult> {
+  private async _captureDeviceState(
+    traceStep: number,
+  ): Promise<DeviceStateCaptureResult> {
     try {
       const response = await this._config.agent.executeAction(
         new DeviceActionRequest({
@@ -361,14 +444,20 @@ export class HeadlessGoalExecutor {
           action: new GetScreenshotAndHierarchyAction(),
           timeout: 30,
           shouldEnsureStability: true,
+          traceStep,
         }),
       );
+
+      const captureTrace = response.data
+        ? this._parseCaptureTrace(response.data['captureTrace'])
+        : undefined;
 
       if (!response.success || !response.data) {
         const message = response.message ?? 'Failed to capture device state';
         return {
           status: this._isTransientCaptureFailure(message) ? 'transient' : 'fatal',
           message,
+          captureTrace,
         };
       }
 
@@ -382,6 +471,7 @@ export class HeadlessGoalExecutor {
         return {
           status: 'transient',
           message: 'Empty screenshot from device capture',
+          captureTrace,
         };
       }
 
@@ -389,15 +479,15 @@ export class HeadlessGoalExecutor {
         return {
           status: 'transient',
           message: 'Missing hierarchy from device capture',
+          captureTrace,
         };
       }
 
-      const hierarchy = hierarchyStr
-        ? Hierarchy.fromJsonString(hierarchyStr)
-        : new Hierarchy(null);
+      const hierarchy = Hierarchy.fromJsonString(hierarchyStr);
 
       return {
         status: 'success',
+        captureTrace,
         deviceState: {
           screenshot,
           hierarchy,
@@ -412,6 +502,97 @@ export class HeadlessGoalExecutor {
         message,
       };
     }
+  }
+
+  private _emitTraceSummary(stepTrace: StepTraceBuilder): StepTrace {
+    const trace = stepTrace.build();
+    Logger.d(formatStepTraceSummary(trace));
+    return trace;
+  }
+
+  private _captureTraceToTimings(
+    captureTrace: CaptureTraceMetadata | undefined,
+  ): TimingMetadata | undefined {
+    if (!captureTrace) {
+      return undefined;
+    }
+
+    const spans: SpanTiming[] = [];
+    if (captureTrace.stabilityMs !== undefined) {
+      spans.push({
+        name: 'capture.stability',
+        durationMs: captureTrace.stabilityMs,
+        status: captureTrace.stable ? 'success' : 'failure',
+        detail: `polls=${captureTrace.pollCount}`,
+      });
+    }
+
+    spans.push({
+      name: 'capture.final_payload',
+      durationMs: captureTrace.finalPayloadMs,
+      status: captureTrace.failureReason ? 'failure' : 'success',
+      detail:
+        `attempts=${captureTrace.attempts}` +
+        (captureTrace.failureReason ? ` reason=${captureTrace.failureReason}` : ''),
+    });
+
+    return {
+      totalMs: captureTrace.totalMs,
+      spans,
+    };
+  }
+
+  private _plannerTraceToTimings(
+    plannerResponse: PlannerResponse,
+  ): TimingMetadata | undefined {
+    if (!plannerResponse.trace) {
+      return undefined;
+    }
+
+    return {
+      totalMs: plannerResponse.trace.totalMs,
+      spans: [
+        {
+          name: 'planning.llm',
+          durationMs: plannerResponse.trace.promptBuildMs + plannerResponse.trace.llmMs,
+          status: 'success',
+          detail:
+            `prompt=${plannerResponse.trace.promptBuildMs}ms ` +
+            `model=${plannerResponse.trace.llmMs}ms`,
+        },
+        {
+          name: 'planning.parse',
+          durationMs: plannerResponse.trace.parseMs,
+          status: 'success',
+        },
+      ],
+    };
+  }
+
+  private _parseCaptureTrace(value: unknown): CaptureTraceMetadata | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const record = value as Record<string, unknown>;
+    const totalMs = toNumber(record['totalMs']);
+    const finalPayloadMs = toNumber(record['finalPayloadMs']);
+    if (totalMs === undefined || finalPayloadMs === undefined) {
+      return undefined;
+    }
+
+    return {
+      totalMs,
+      stabilityMs: toNumber(record['stabilityMs']),
+      finalPayloadMs,
+      stable: Boolean(record['stable']),
+      pollCount: toNumber(record['pollCount']) ?? 0,
+      attempts: toNumber(record['attempts']) ?? 0,
+      failureReason:
+        typeof record['failureReason'] === 'string'
+          ? record['failureReason']
+          : undefined,
+    };
   }
 
   private _isTransientCaptureFailure(message: string): boolean {
@@ -454,4 +635,12 @@ export class HeadlessGoalExecutor {
 
     return `${plannerResponse.reason} (${details.join(', ')})`;
   }
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.round(value));
 }

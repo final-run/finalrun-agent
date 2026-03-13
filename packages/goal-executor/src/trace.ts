@@ -1,0 +1,300 @@
+import { performance } from 'node:perf_hooks';
+import { Logger } from '@finalrun/common';
+
+export type TraceStatus = 'success' | 'failure';
+
+export interface TraceSpan {
+  name: string;
+  startMs: number;
+  durationMs: number;
+  status: TraceStatus;
+  detail?: string;
+}
+
+export interface StepTrace {
+  step: number;
+  action: string;
+  status: TraceStatus;
+  totalMs: number;
+  spans: TraceSpan[];
+  failureReason?: string;
+}
+
+export interface SpanTiming {
+  name: string;
+  durationMs: number;
+  status: TraceStatus;
+  detail?: string;
+}
+
+export interface TimingMetadata {
+  totalMs: number;
+  spans: SpanTiming[];
+}
+
+export interface LLMTrace {
+  totalMs: number;
+  promptBuildMs: number;
+  llmMs: number;
+  parseMs: number;
+}
+
+export interface ActiveTracePhase {
+  phase: string;
+  startedAt: number;
+  step: number;
+}
+
+const SUMMARY_GROUPS: Array<{ group: string; label: string; children: string[] }> = [
+  {
+    group: 'capture.total',
+    label: 'capture',
+    children: ['capture.stability', 'capture.final_payload'],
+  },
+  {
+    group: 'planning.total',
+    label: 'planning',
+    children: ['planning.llm', 'planning.parse'],
+  },
+  {
+    group: 'action.total',
+    label: 'action',
+    children: [
+      'action.prep',
+      'action.ground',
+      'action.visual_fallback',
+      'action.device',
+      'action.wait',
+    ],
+  },
+];
+
+export function nowMs(): number {
+  return performance.now();
+}
+
+export function roundDuration(durationMs: number): number {
+  return Math.max(0, Math.round(durationMs));
+}
+
+export function startTracePhase(
+  step: number | undefined,
+  phase: string,
+  detail?: string,
+): ActiveTracePhase | null {
+  if (step !== undefined) {
+    Logger.d(`[trace step=${step} phase=${phase}] start${formatDetail(detail)}`);
+  }
+
+  return step !== undefined
+    ? {
+        phase,
+        startedAt: nowMs(),
+        step,
+      }
+    : null;
+}
+
+export function finishTracePhase(
+  activePhase: ActiveTracePhase | null,
+  status: TraceStatus,
+  detail?: string,
+): number {
+  const finishedAt = nowMs();
+  const durationMs = activePhase
+    ? roundDuration(finishedAt - activePhase.startedAt)
+    : 0;
+
+  if (activePhase) {
+    Logger.d(
+      `[trace step=${activePhase.step} phase=${activePhase.phase}] done duration=${durationMs}ms status=${status}${formatDetail(detail)}`,
+    );
+  }
+
+  return durationMs;
+}
+
+export function describeLLMTrace(params: {
+  promptBuildMs: number;
+  llmMs: number;
+  parseMs?: number;
+  extraDetail?: string;
+}): string {
+  const parts = [
+    `prompt=${params.promptBuildMs}ms`,
+    `model=${params.llmMs}ms`,
+  ];
+
+  if (params.parseMs !== undefined) {
+    parts.push(`parse=${params.parseMs}ms`);
+  }
+  if (params.extraDetail) {
+    parts.push(params.extraDetail);
+  }
+
+  return parts.join(' ');
+}
+
+export class StepTraceBuilder {
+  private readonly _step: number;
+  private readonly _stepStartedAt: number;
+  private readonly _spans: TraceSpan[] = [];
+  private _action = 'pending';
+  private _status: TraceStatus = 'success';
+  private _failureReason: string | undefined;
+
+  constructor(step: number) {
+    this._step = step;
+    this._stepStartedAt = nowMs();
+  }
+
+  setAction(action: string): void {
+    this._action = action;
+  }
+
+  markFailure(reason: string): void {
+    this._status = 'failure';
+    this._failureReason = collapseWhitespace(reason);
+  }
+
+  addSpanFromActivePhase(
+    phase: ActiveTracePhase | null,
+    status: TraceStatus,
+    detail?: string,
+  ): TraceSpan {
+    const durationMs = finishTracePhase(phase, status, detail);
+    const startedAt = phase?.startedAt ?? nowMs();
+    const span: TraceSpan = {
+      name: phase?.phase ?? 'unknown',
+      startMs: roundDuration(startedAt - this._stepStartedAt),
+      durationMs,
+      status,
+      detail: detail ? collapseWhitespace(detail) : undefined,
+    };
+    this._spans.push(span);
+    return span;
+  }
+
+  addSpan(
+    name: string,
+    durationMs: number,
+    status: TraceStatus,
+    options?: {
+      startMs?: number;
+      detail?: string;
+    },
+  ): TraceSpan {
+    const span: TraceSpan = {
+      name,
+      startMs:
+        options?.startMs ??
+        this._nextSequentialStartMs(),
+      durationMs: roundDuration(durationMs),
+      status,
+      detail: options?.detail ? collapseWhitespace(options.detail) : undefined,
+    };
+    this._spans.push(span);
+    return span;
+  }
+
+  addSequentialTimings(
+    timings: TimingMetadata | undefined,
+    options?: {
+      startMs?: number;
+    },
+  ): void {
+    if (!timings) {
+      return;
+    }
+
+    let cursor = options?.startMs ?? this._nextSequentialStartMs();
+    for (const span of timings.spans) {
+      this.addSpan(span.name, span.durationMs, span.status, {
+        startMs: cursor,
+        detail: span.detail,
+      });
+      cursor += roundDuration(span.durationMs);
+    }
+  }
+
+  build(): StepTrace {
+    const totalMs = roundDuration(nowMs() - this._stepStartedAt);
+
+    return {
+      step: this._step,
+      action: this._action,
+      status: this._status,
+      totalMs,
+      spans: [
+        {
+          name: 'step.total',
+          startMs: 0,
+          durationMs: totalMs,
+          status: this._status,
+          detail: this._failureReason,
+        },
+        ...this._spans.sort((left, right) => left.startMs - right.startMs),
+      ],
+      failureReason: this._failureReason,
+    };
+  }
+
+  private _nextSequentialStartMs(): number {
+    if (this._spans.length === 0) {
+      return 0;
+    }
+
+    const lastSpan = this._spans[this._spans.length - 1];
+    return lastSpan.startMs + lastSpan.durationMs;
+  }
+}
+
+export function formatStepTraceSummary(stepTrace: StepTrace): string {
+  const spanMap = new Map(stepTrace.spans.map((span) => [span.name, span]));
+  const parts = [`summary total=${stepTrace.totalMs}ms`];
+
+  for (const group of SUMMARY_GROUPS) {
+    const groupSpan = spanMap.get(group.group);
+    if (!groupSpan) {
+      continue;
+    }
+
+    const childSummaries = group.children
+      .map((childName) => spanMap.get(childName))
+      .filter((childSpan): childSpan is TraceSpan => childSpan !== undefined)
+      .map((childSpan) => `${stripPrefix(childSpan.name)}=${childSpan.durationMs}ms`);
+
+    if (childSummaries.length > 0) {
+      parts.push(
+        `${group.label}=${groupSpan.durationMs}ms(${childSummaries.join(',')})`,
+      );
+    } else {
+      parts.push(`${group.label}=${groupSpan.durationMs}ms`);
+    }
+  }
+
+  parts.push(`result=${stepTrace.status}`);
+  parts.push(`action=${stepTrace.action}`);
+  if (stepTrace.failureReason) {
+    parts.push(`reason=${JSON.stringify(stepTrace.failureReason)}`);
+  }
+
+  return `[trace step=${stepTrace.step}] ${parts.join(' ')}`;
+}
+
+function formatDetail(detail: string | undefined): string {
+  if (!detail) {
+    return '';
+  }
+
+  return ` detail=${JSON.stringify(collapseWhitespace(detail))}`;
+}
+
+function stripPrefix(value: string): string {
+  const slashIndex = value.indexOf('.');
+  return slashIndex === -1 ? value : value.slice(slashIndex + 1);
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}

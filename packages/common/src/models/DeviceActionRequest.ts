@@ -12,17 +12,20 @@ export class DeviceActionRequest {
   readonly action: StepAction;
   readonly timeout: number;
   readonly shouldEnsureStability: boolean;
+  readonly traceStep: number | null;
 
   constructor(params: {
     requestId: string;
     action: StepAction;
     timeout?: number;
     shouldEnsureStability?: boolean;
+    traceStep?: number | null;
   }) {
     this.requestId = params.requestId;
     this.action = params.action;
     this.timeout = params.timeout ?? 30;
     this.shouldEnsureStability = params.shouldEnsureStability ?? true;
+    this.traceStep = params.traceStep ?? null;
   }
 
   toJson(): Record<string, unknown> {
@@ -31,6 +34,7 @@ export class DeviceActionRequest {
       action: this.action.toJson(),
       timeout: this.timeout,
       shouldEnsureStability: this.shouldEnsureStability,
+      traceStep: this.traceStep,
     };
   }
 }

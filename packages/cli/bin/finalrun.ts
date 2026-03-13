@@ -15,7 +15,7 @@ import { runGoal } from '../src/goalRunner.js';
 const program = new Command()
   .name('finalrun')
   .description('AI-driven mobile app testing from the terminal')
-  .version('0.1.0')
+  .version('1.0.0')
   .option('--env <name>', 'Environment name (dev/prod/local)', 'dev')
   .option('--api-key <key>', 'API key for the LLM provider')
   .option(

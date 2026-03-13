@@ -69,11 +69,17 @@ test('ScreenshotCaptureHelper retries transient failures when stability is disab
   });
 
   const response = await helper.capture();
+  const captureTrace = response.data?.['captureTrace'] as Record<string, unknown>;
 
   assert.equal(response.success, true);
   assert.equal(grpcClient.captureCalls, 3);
   assert.equal(response.data?.['screenshot'], 'base64-image');
   assert.equal(response.data?.['screenWidth'], 1080);
+  assert.equal(captureTrace['attempts'], 3);
+  assert.equal(captureTrace['stable'], false);
+  assert.equal(captureTrace['pollCount'], 0);
+  assert.equal(typeof captureTrace['totalMs'], 'number');
+  assert.equal(typeof captureTrace['finalPayloadMs'], 'number');
 });
 
 test('ScreenshotCaptureHelper waits for stable raw screenshots before final capture', async () => {
@@ -112,11 +118,17 @@ test('ScreenshotCaptureHelper waits for stable raw screenshots before final capt
   });
 
   const response = await helper.capture();
+  const captureTrace = response.data?.['captureTrace'] as Record<string, unknown>;
 
   assert.equal(response.success, true);
   assert.equal(grpcClient.rawScreenshotCalls, 2);
   assert.equal(grpcClient.captureCalls, 1);
   assert.equal(response.data?.['screenshot'], 'stable-image');
+  assert.equal(captureTrace['attempts'], 1);
+  assert.equal(captureTrace['stable'], true);
+  assert.equal(captureTrace['pollCount'], 2);
+  assert.equal(typeof captureTrace['stabilityMs'], 'number');
+  assert.equal(typeof captureTrace['finalPayloadMs'], 'number');
 });
 
 test('ScreenshotCaptureHelper exhausts retries on invalid hierarchy payloads', async () => {
@@ -155,8 +167,12 @@ test('ScreenshotCaptureHelper exhausts retries on invalid hierarchy payloads', a
   });
 
   const response = await helper.capture();
+  const captureTrace = response.data?.['captureTrace'] as Record<string, unknown>;
 
   assert.equal(response.success, false);
   assert.equal(response.message, 'Invalid hierarchy JSON from driver');
   assert.equal(grpcClient.captureCalls, 3);
+  assert.equal(captureTrace['attempts'], 3);
+  assert.equal(captureTrace['failureReason'], 'Invalid hierarchy JSON from driver');
+  assert.equal(typeof captureTrace['totalMs'], 'number');
 });

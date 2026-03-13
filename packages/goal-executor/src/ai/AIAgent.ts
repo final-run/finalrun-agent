@@ -8,6 +8,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import * as fs from 'fs';
 import * as path from 'path';
+import { performance } from 'node:perf_hooks';
 import {
   Logger,
   Hierarchy,
@@ -32,6 +33,13 @@ import {
   PLANNER_ACTION_FAILED,
   PLANNER_ACTION_DEEPLINK,
 } from '@finalrun/common';
+import {
+  describeLLMTrace,
+  finishTracePhase,
+  roundDuration,
+  startTracePhase,
+  type LLMTrace,
+} from '../trace.js';
 
 // ============================================================================
 // Types
@@ -48,6 +56,7 @@ export interface PlannerRequest {
   preContext?: string;
   appKnowledge?: string;
   postActionHierarchy?: Hierarchy;
+  traceStep?: number;
 }
 
 export interface PlannerResponse {
@@ -69,6 +78,7 @@ export interface PlannerResponse {
     think?: string;
     act?: string;
   };
+  trace?: LLMTrace;
 }
 
 export interface GrounderRequest {
@@ -78,11 +88,14 @@ export interface GrounderRequest {
   screenshot?: string; // base64
   platform?: string;
   availableApps?: Array<{ packageName: string; name: string }>;
+  traceStep?: number;
+  tracePhase?: string;
 }
 
 export interface GrounderResponse {
   output: Record<string, unknown>;
   raw: string; // Raw LLM response for debugging
+  trace?: LLMTrace;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -117,6 +130,7 @@ export class AIAgent {
    * Dart: Future<Map<String, dynamic>> plan(...)
    */
   async plan(request: PlannerRequest): Promise<PlannerResponse> {
+    const promptBuildStartedAt = performance.now();
     const systemPrompt = this._loadPrompt('planner');
 
     const userParts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }> = [];
@@ -160,8 +174,59 @@ export class AIAgent {
 
     userParts.push({ type: 'text', text: textPrompt });
 
-    const result = await this._callLLM(systemPrompt, userParts);
-    return this._parsePlannerResponse(result);
+    const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
+    const llmPhase = startTracePhase(
+      request.traceStep,
+      'planning.llm',
+      `provider=${this._provider} model=${this._modelName}`,
+    );
+    const llmStartedAt = performance.now();
+
+    let rawResult: string;
+    try {
+      rawResult = await this._callLLM(systemPrompt, userParts);
+    } catch (error) {
+      finishTracePhase(
+        llmPhase,
+        'failure',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+
+    const llmMs = roundDuration(performance.now() - llmStartedAt);
+    finishTracePhase(
+      llmPhase,
+      'success',
+      describeLLMTrace({
+        promptBuildMs,
+        llmMs,
+      }),
+    );
+
+    const parsePhase = startTracePhase(request.traceStep, 'planning.parse');
+    const parseStartedAt = performance.now();
+    try {
+      const parsed = this._parsePlannerResponse(rawResult);
+      const parseMs = roundDuration(performance.now() - parseStartedAt);
+      finishTracePhase(parsePhase, 'success');
+      return {
+        ...parsed,
+        trace: {
+          totalMs: promptBuildMs + llmMs + parseMs,
+          promptBuildMs,
+          llmMs,
+          parseMs,
+        },
+      };
+    } catch (error) {
+      finishTracePhase(
+        parsePhase,
+        'failure',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
   }
 
   /**
@@ -170,6 +235,13 @@ export class AIAgent {
    * Dart: Future<Map<String, dynamic>> ground(...)
    */
   async ground(request: GrounderRequest): Promise<GrounderResponse> {
+    const phaseName = request.tracePhase ?? 'action.ground';
+    const phase = startTracePhase(
+      request.traceStep,
+      phaseName,
+      `feature=${request.feature}`,
+    );
+    const promptBuildStartedAt = performance.now();
     const promptKey = this._getPromptKeyForFeature(request.feature);
     const systemPrompt = this._loadPrompt(promptKey);
 
@@ -196,8 +268,54 @@ export class AIAgent {
 
     userParts.push({ type: 'text', text });
 
-    const rawResult = await this._callLLM(systemPrompt, userParts);
-    return this._parseGrounderResponse(rawResult);
+    const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
+    const llmStartedAt = performance.now();
+
+    let rawResult: string;
+    try {
+      rawResult = await this._callLLM(systemPrompt, userParts);
+    } catch (error) {
+      finishTracePhase(
+        phase,
+        'failure',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+
+    const llmMs = roundDuration(performance.now() - llmStartedAt);
+    const parseStartedAt = performance.now();
+
+    try {
+      const parsed = this._parseGrounderResponse(rawResult);
+      const parseMs = roundDuration(performance.now() - parseStartedAt);
+      finishTracePhase(
+        phase,
+        'success',
+        describeLLMTrace({
+          promptBuildMs,
+          llmMs,
+          parseMs,
+          extraDetail: `feature=${request.feature}`,
+        }),
+      );
+      return {
+        ...parsed,
+        trace: {
+          totalMs: promptBuildMs + llmMs + parseMs,
+          promptBuildMs,
+          llmMs,
+          parseMs,
+        },
+      };
+    } catch (error) {
+      finishTracePhase(
+        phase,
+        'failure',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
   }
 
   // ---------- private ----------
@@ -225,10 +343,12 @@ export class AIAgent {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
       ],
-      maxTokens: 4096,
+      maxOutputTokens: 4096,
     });
 
-    Logger.d(`LLM response (${this._provider}/${this._modelName}): ${result.text.substring(0, 200)}...`);
+    Logger.d(
+      `LLM response (${this._provider}/${this._modelName}):\n${result.text || '<empty response>'}`,
+    );
     return result.text;
   }
 
@@ -310,7 +430,9 @@ export class AIAgent {
   private _parsePlannerResponse(raw: string): PlannerResponse {
     const json = this._extractJson(raw);
     if (!json) {
-      throw new Error(`Failed to parse planner response: ${raw.substring(0, 200)}`);
+      throw new Error(
+        `Failed to parse planner response with top-level output: ${raw.substring(0, 200)}`,
+      );
     }
 
     const normalized = normalizePlannerResponse(json);
@@ -328,7 +450,9 @@ export class AIAgent {
   private _parseGrounderResponse(raw: string): GrounderResponse {
     const json = this._extractJson(raw);
     if (!json) {
-      throw new Error(`Failed to parse grounder response: ${raw.substring(0, 200)}`);
+      throw new Error(
+        `Failed to parse grounder response with top-level output: ${raw.substring(0, 200)}`,
+      );
     }
 
     const output = asRecord(json['output']) ?? json;
@@ -336,36 +460,27 @@ export class AIAgent {
   }
 
   /**
-   * Extract JSON from LLM response (may be wrapped in ```json ... ```).
+   * Extract JSON from LLM response, requiring a top-level output object.
    */
   private _extractJson(raw: string): JsonRecord | null {
-    try {
-      const parsed = JSON.parse(raw);
-      return asRecord(parsed) ?? null;
-    } catch {
-      const codeBlockMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-      if (codeBlockMatch) {
-        try {
-          const parsed = JSON.parse(codeBlockMatch[1]);
-          return asRecord(parsed) ?? null;
-        } catch {
-          // Fall through and try looser extraction.
-        }
-      }
+    const directParsed = tryParseJsonRecord(raw);
+    if (directParsed && asRecord(directParsed['output'])) {
+      return directParsed;
+    }
 
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return asRecord(parsed) ?? null;
-        } catch {
-          // Fall through and return null below.
-        }
-      }
-
-      Logger.w('Failed to extract JSON from LLM response');
+    const extracted = extractJsonContainingOutput(raw);
+    if (!extracted) {
+      Logger.w('Failed to extract JSON with top-level output from LLM response');
       return null;
     }
+
+    const parsed = tryParseJsonRecord(extracted);
+    if (parsed && asRecord(parsed['output'])) {
+      return parsed;
+    }
+
+    Logger.w('Failed to parse extracted JSON with top-level output from LLM response');
+    return null;
   }
 }
 
@@ -484,6 +599,69 @@ function normalizePromptAction(
         reason: `Planner returned unsupported action_type: ${actionType}`,
       };
   }
+}
+
+function tryParseJsonRecord(raw: string): JsonRecord | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return asRecord(parsed) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonContainingOutput(text: string): string | null {
+  const key = '"output"';
+  const keyIndex = text.indexOf(key);
+  if (keyIndex === -1) {
+    return null;
+  }
+
+  // Find the opening brace for the smallest object containing "output".
+  const openIndex = text.lastIndexOf('{', keyIndex);
+  if (openIndex === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = openIndex; index < text.length; index += 1) {
+    const char = text[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.substring(openIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
 }
 
 function asRecord(value: unknown): JsonRecord | undefined {

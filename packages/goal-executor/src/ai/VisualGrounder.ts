@@ -5,12 +5,14 @@
 import { Logger } from '@finalrun/common';
 import type { AIAgent } from './AIAgent.js';
 import { FEATURE_GROUNDER } from '@finalrun/common';
+import type { LLMTrace } from '../trace.js';
 
 export interface VisualGroundingResult {
   success: boolean;
   x?: number;
   y?: number;
   reason?: string;
+  trace?: LLMTrace;
 }
 
 /**
@@ -36,6 +38,7 @@ export class VisualGrounder {
     act: string;
     screenshot: string; // base64
     platform: string;
+    traceStep?: number;
   }): Promise<VisualGroundingResult> {
     try {
       Logger.i('Attempting visual grounding fallback (no hierarchy)...');
@@ -46,6 +49,8 @@ export class VisualGrounder {
         act: params.act,
         screenshot: params.screenshot,
         platform: params.platform,
+        traceStep: params.traceStep,
+        tracePhase: 'action.visual_fallback',
         // Intentionally no hierarchy — forces Case B/coordinate-based grounding
       });
 
@@ -61,17 +66,18 @@ export class VisualGrounder {
           x: output['x'] as number,
           y: output['y'] as number,
           reason: output['reason'] as string,
+          trace: response.trace,
         };
       }
 
       // Check for error
       if (output['isError']) {
         Logger.w(`Visual grounding failed: ${output['reason']}`);
-        return { success: false, reason: output['reason'] as string };
+        return { success: false, reason: output['reason'] as string, trace: response.trace };
       }
 
       Logger.w('Visual grounding returned unexpected format');
-      return { success: false, reason: 'Unexpected response format' };
+      return { success: false, reason: 'Unexpected response format', trace: response.trace };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       Logger.e('Visual grounding error:', error);

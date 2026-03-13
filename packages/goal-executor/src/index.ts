@@ -19,3 +19,10 @@ export { VisualGrounder } from './ai/VisualGrounder.js';
 export type { VisualGroundingResult } from './ai/VisualGrounder.js';
 
 export { GrounderResponseConverter, ConversionResult } from './GrounderResponseConverter.js';
+export type {
+  TraceSpan,
+  StepTrace,
+  SpanTiming,
+  TimingMetadata,
+  LLMTrace,
+} from './trace.js';

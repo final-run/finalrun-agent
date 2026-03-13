@@ -17,7 +17,7 @@ TypeScript monorepo for the FinalRun local CLI. It detects devices, starts the m
 
 ## Prerequisites
 
-- Node.js `>=18`
+- Node.js `>=20`
 - `npm`
 - Android development:
   - `adb` available via `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or your shell `PATH`

@@ -255,7 +255,7 @@ export class Device implements Agent {
         }
 
         case StepAction.GET_SCREENSHOT_AND_HIERARCHY: {
-          return this._screenshotCaptureHelper.capture();
+          return this._screenshotCaptureHelper.capture(request.traceStep);
         }
 
         case StepAction.GET_APP_LIST: {
