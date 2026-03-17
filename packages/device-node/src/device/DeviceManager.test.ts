@@ -79,3 +79,102 @@ test('DeviceManager.getIOSInstalledApps parses app metadata from simctl listapps
     ],
   );
 });
+
+test('DeviceManager.installAndroidApp uses reinstall and grant flags for app overrides', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const deviceManager = new DeviceManager({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const installed = await deviceManager.installAndroidApp(
+    '/platform-tools/adb',
+    'emulator-5554',
+    '/tmp/app.apk',
+  );
+
+  assert.equal(installed, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: '/platform-tools/adb',
+      args: ['-s', 'emulator-5554', 'install', '-r', '-g', '/tmp/app.apk'],
+    },
+  ]);
+});
+
+test('DeviceManager.installIOSApp uses simctl install for app overrides', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const deviceManager = new DeviceManager({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const installed = await deviceManager.installIOSApp('SIM-1', '/tmp/My.app');
+
+  assert.equal(installed, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'install', 'SIM-1', '/tmp/My.app'],
+    },
+  ]);
+});
+
+test('DeviceManager.openAndroidDeepLink uses adb am start with the deeplink URL', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const deviceManager = new DeviceManager({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const opened = await deviceManager.openAndroidDeepLink(
+    '/platform-tools/adb',
+    'emulator-5554',
+    'wikipedia://settings',
+  );
+
+  assert.equal(opened, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: '/platform-tools/adb',
+      args: [
+        '-s',
+        'emulator-5554',
+        'shell',
+        'am',
+        'start',
+        '-W',
+        '-a',
+        'android.intent.action.VIEW',
+        '-d',
+        'wikipedia://settings',
+      ],
+    },
+  ]);
+});
+
+test('DeviceManager.openIOSDeepLink uses simctl openurl', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const deviceManager = new DeviceManager({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const opened = await deviceManager.openIOSDeepLink('SIM-1', 'wikipedia://settings');
+
+  assert.equal(opened, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'openurl', 'SIM-1', 'wikipedia://settings'],
+    },
+  ]);
+});

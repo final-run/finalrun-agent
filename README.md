@@ -69,15 +69,100 @@ npx tsc --build --force \
 
 ## Run
 
+The public CLI is now spec-first. `finalrun` expects a repo-local `.finalrun/` workspace with versioned YAML specs. Environment files are optional and are only needed when specs use `${variables.*}` or `${secrets.*}` bindings.
+
+### Workspace Layout
+
+```text
+.finalrun/
+  tests/
+    add_and_delete_language.yaml
+    auth/
+      login.yaml
+  env/                  # optional
+    dev.yaml
+    staging.yaml
+  artifacts/
+```
+
+- `.finalrun/tests/`: committed human-readable specs
+- `.finalrun/env/`: optional committed environment config
+- `.finalrun/artifacts/`: generated local run output, not committed
+
+### Environment Files
+
+Environment YAML is intentionally minimal in v1. Only `secrets` and `variables` are supported.
+
+```yaml
+secrets:
+  email: ${OTP_USER_EMAIL}
+  otp: ${OTP_USER_OTP}
+
+variables:
+  language: Spanish
+  locale: es-ES
+```
+
+- `secrets.*` map FinalRun logical keys to shell or CI environment variables
+- `variables.*` hold non-sensitive reusable values
+- legacy `app` keys are rejected
+
+### Test Specs
+
+Specs stay human-readable and environment-agnostic.
+
+```yaml
+name: login_and_verify_feed
+description: Verify that a user can log in and reach the main feed.
+
+steps:
+  - Launch the app.
+  - Enter ${secrets.email} on the login screen.
+  - Enter ${secrets.otp} on the OTP screen.
+  - Verify the main feed is visible.
+```
+
+- `${variables.*}` resolve before planning
+- `${secrets.*}` stay tokenized in planner input and resolve only at execution time
+
 ### Fast Local Iteration
 
 Use this while editing local code. It resolves workspace packages from source so changes in `packages/common`, `packages/device-node`, `packages/goal-executor`, and `packages/cli` are picked up on the next run.
 
+`--env` is optional. When omitted, FinalRun uses empty bindings if `.finalrun/env/` is absent or contains no env files. If env files are present, FinalRun uses `.finalrun/env/dev.yaml` when it exists, otherwise it falls back to the only env file when exactly one exists. If multiple non-`dev` env files exist, the CLI stops and asks you to pass `--env <name>`.
+
+Validate the workspace before executing:
+
 ```sh
-npm run dev:cli -- \
-  --api-key=<YOUR_API_KEY> \
-  --model=<provider/model> \
-  --file=/absolute/path/to/goal.md
+npm run dev:cli -- check
+```
+
+Run all discovered specs:
+
+```sh
+npm run dev:cli -- test --api-key=<YOUR_API_KEY> --model=openai/gpt-4o
+```
+
+If you rely on environment variables instead of `--api-key`, FinalRun uses the key that matches `--model`:
+
+- `openai/...` -> `OPENAI_API_KEY`, then `API_KEY`
+- `google/...` -> `GOOGLE_API_KEY`, then `API_KEY`
+- `anthropic/...` -> `ANTHROPIC_API_KEY`, then `API_KEY`
+
+It does not fall through to another provider's env var.
+
+Run one spec or a glob:
+
+```sh
+npm run dev:cli -- test .finalrun/tests/auth/login.yaml --env staging --platform android --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test .finalrun/tests/auth/** --env staging --platform ios --api-key=<YOUR_API_KEY>
+```
+
+Run against a local build artifact:
+
+```sh
+npm run dev:cli -- test --env staging --platform android --app /absolute/path/to/app.apk --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test --env staging --platform ios --app /absolute/path/to/My.app --api-key=<YOUR_API_KEY>
 ```
 
 Example model values:
@@ -86,26 +171,35 @@ Example model values:
 - `google/gemini-2.0-flash`
 - `anthropic/claude-3-7-sonnet-latest`
 
-You can also pass the goal inline instead of using `--file`:
-
-```sh
-npm run dev:cli -- \
-  --api-key=<YOUR_API_KEY> \
-  --model=<provider/model> \
-  "Tap on the Login button"
-```
-
 ### Compiled Output Flow
 
 Use this when you want to run the built JavaScript output instead of source files:
 
 ```sh
 npm run build
-node packages/cli/dist/bin/finalrun.js \
-  --api-key=<YOUR_API_KEY> \
-  --model=<provider/model> \
-  --file=/absolute/path/to/goal.md
+node packages/cli/dist/bin/finalrun.js check
+node packages/cli/dist/bin/finalrun.js test --api-key=<YOUR_API_KEY> --model=openai/gpt-4o
 ```
+
+### Artifacts
+
+Each run writes a timestamped directory under `.finalrun/artifacts/`:
+
+```text
+.finalrun/artifacts/<run-id>/
+  index.html
+  summary.json
+  runner.log
+  tests/
+    <spec-id>/
+      result.json
+      steps/
+        001.json
+      screenshots/
+        001.jpg
+```
+
+The static HTML report uses a two-pane timeline/detail layout with an analysis banner, per-step reasoning, screenshots, trace data, and raw artifact links.
 
 ## Debug Loop
 
@@ -124,6 +218,7 @@ Sanity-check the local setup with:
 
 ```sh
 npm run dev:cli -- --help
+npm run dev:cli -- check
 npm run build
 npm test
 ```
@@ -131,7 +226,7 @@ npm test
 Notes:
 
 - `npm test` rebuilds first, then runs workspace tests from compiled `dist/**/*.test.js`.
-- `npm run dev:cli -- --help` is the fastest check that the CLI, workspace resolution, and script wiring are intact.
+- `npm run dev:cli -- check` is the fastest repo-runner validation loop once `.finalrun/` exists.
 
 ## Troubleshooting
 
@@ -149,15 +244,47 @@ npx tsc --build --force \
   packages/cli/tsconfig.json
 ```
 
+### Missing `.finalrun` workspace
+
+Symptom:
+
+```text
+Could not find a .finalrun workspace. Run the CLI from a repository containing .finalrun/.
+```
+
+Fix: create `.finalrun/tests/`, then run the CLI from that repository or any nested directory inside it. Add `.finalrun/env/` only if your specs use `${variables.*}` or `${secrets.*}` bindings.
+
 ### Missing API key
 
 Symptom:
 
 ```text
-API key is required. Provide via --api-key flag or API_KEY / OPENAI_API_KEY env variable.
+API key is required. Provide via --api-key or API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY / ANTHROPIC_API_KEY.
 ```
 
 Fix: pass `--api-key=<YOUR_API_KEY>` in your local run command.
+
+If multiple provider-specific env vars are exported in your shell, `--model` decides which one FinalRun reads.
+
+### Unresolved secret placeholders
+
+Symptom:
+
+```text
+.finalrun/env/dev.yaml secrets.email references missing environment variable OTP_USER_EMAIL.
+```
+
+Fix: export the referenced environment variable locally or inject it through CI before running `finalrun check` or `finalrun test`.
+
+### Multiple platforms detected
+
+Symptom:
+
+```text
+Multiple platforms are available. Choose --platform android or --platform ios.
+```
+
+Fix: pass `--platform android` or `--platform ios` explicitly when both Android and iOS devices are connected.
 
 ### `adb` not found
 

@@ -19,13 +19,13 @@ import {
   HideKeyboardAction,
   PressKeyAction,
   LaunchAppAction,
-  DeeplinkAction,
   SetLocationAction,
   GetScreenshotAndHierarchyAction,
   GetAppListAction,
   KillAppAction,
   SwitchToPrimaryAppAction,
   CheckAppInForegroundAction,
+  DeeplinkAction,
 } from '@finalrun/common';
 import { GrpcDriverClient } from '../grpc/GrpcDriverClient.js';
 import { DeviceSession } from './DeviceSession.js';
@@ -46,12 +46,14 @@ export class Device implements Agent {
   private _screenshotCaptureHelper: ScreenshotCaptureHelper;
   private _refreshIOSAppIdsBeforeLaunch: (() => Promise<void>) | null;
   private _getIOSInstalledApps: (() => Promise<DeviceAppInfo[]>) | null;
+  private _openDeepLink: ((deeplink: string) => Promise<boolean>) | null;
 
   constructor(params: {
     deviceInfo: DeviceInfo;
     grpcClient: GrpcDriverClient;
     refreshIOSAppIdsBeforeLaunch?: () => Promise<void>;
     getIOSInstalledApps?: () => Promise<DeviceAppInfo[]>;
+    openDeepLink?: (deeplink: string) => Promise<boolean>;
   }) {
     this._deviceInfo = params.deviceInfo;
     this._grpcClient = params.grpcClient;
@@ -62,6 +64,7 @@ export class Device implements Agent {
     });
     this._refreshIOSAppIdsBeforeLaunch = params.refreshIOSAppIdsBeforeLaunch ?? null;
     this._getIOSInstalledApps = params.getIOSInstalledApps ?? null;
+    this._openDeepLink = params.openDeepLink ?? null;
   }
 
   // ========== Agent interface implementation ==========
@@ -211,13 +214,20 @@ export class Device implements Agent {
         }
 
         case StepAction.DEEPLINK: {
-          const dlAction = action as DeeplinkAction;
-          // Deeplink is typically handled as a launch with deep link URL
-          // For now, we use the launchApp with package name as deeplink
-          Logger.d(`Deeplink action: ${dlAction.deeplink}`);
+          const deeplinkAction = action as DeeplinkAction;
+          Logger.d(`Executing deeplink action: ${deeplinkAction.deeplink}`);
+          if (!this._openDeepLink) {
+            return new DeviceNodeResponse({
+              success: false,
+              message: 'Deeplink actions are not supported for this device.',
+            });
+          }
+          const opened = await this._openDeepLink(deeplinkAction.deeplink);
           return new DeviceNodeResponse({
-            success: true,
-            message: `Deeplink ${dlAction.deeplink} executed`,
+            success: opened,
+            message: opened
+              ? `Successfully opened deep link: ${deeplinkAction.deeplink}`
+              : `Failed to open deep link: ${deeplinkAction.deeplink}`,
           });
         }
 

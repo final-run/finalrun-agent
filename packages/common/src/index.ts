@@ -9,6 +9,20 @@ export { DeviceInfo } from './models/DeviceInfo.js';
 export { DeviceActionRequest } from './models/DeviceActionRequest.js';
 export { DeviceNodeResponse } from './models/DeviceNodeResponse.js';
 export { DeviceAppInfo } from './models/DeviceAppInfo.js';
+export type {
+  RepoEnvironmentConfig,
+  RepoVariableValue,
+  RuntimeBindings,
+  SecretReference,
+} from './models/RepoEnvironment.js';
+export type { RepoTestSpec, LoadedRepoTestSpec } from './models/RepoTestSpec.js';
+export type {
+  PlannerThoughtRecord,
+  ActionPayloadRecord,
+  StepArtifactRecord,
+  SpecArtifactRecord,
+  RunSummaryRecord,
+} from './models/RunArtifacts.js';
 export { Hierarchy, HierarchyNode } from './models/Hierarchy.js';
 export {
   Point,
@@ -39,4 +53,12 @@ export { SingleArgument } from './models/SingleArgument.js';
 export * from './constants.js';
 
 // Logger
+export type { LogEntry, LoggerSink } from './logger.js';
 export { Logger, LogLevel } from './logger.js';
+
+// Repo runner helpers
+export {
+  resolveRuntimePlaceholders,
+  containsSecretPlaceholder,
+  redactResolvedValue,
+} from './repoPlaceholders.js';

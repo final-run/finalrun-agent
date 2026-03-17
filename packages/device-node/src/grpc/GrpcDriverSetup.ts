@@ -100,6 +100,24 @@ export class GrpcDriverSetup {
         : async () => {
           await this._updateIOSAppIds(deviceInfo.id!, grpcClient, { throwOnFailure: false });
         },
+      openDeepLink: deviceInfo.isAndroid
+        ? async (deeplink) => {
+          const adbPath = await this._filePathUtil.getADBPath();
+          if (!adbPath || !deviceInfo.id) {
+            Logger.e('ADB not available for Android deeplink execution.');
+            return false;
+          }
+          return await this._deviceManager.openAndroidDeepLink(
+            adbPath,
+            deviceInfo.id,
+            deeplink,
+          );
+        }
+        : !deviceInfo.id
+          ? undefined
+          : async (deeplink) => {
+            return await this._deviceManager.openIOSDeepLink(deviceInfo.id!, deeplink);
+          },
     });
   }
 

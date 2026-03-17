@@ -384,3 +384,83 @@ test('HeadlessActionExecutor preserves a ground failure when no visual fallback 
   assertTraceNames(result.trace, ['action.ground']);
   assert.equal(result.trace?.spans[0]?.status, 'failure');
 });
+
+test('HeadlessActionExecutor resolves secret placeholders for text input only at the device boundary', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions);
+  const aiAgent = createAiAgent(async () => ({
+    output: { index: null },
+    raw: '{}',
+    trace: {
+      totalMs: 14,
+      promptBuildMs: 2,
+      llmMs: 8,
+      parseMs: 4,
+    },
+  }));
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+    runtimeBindings: {
+      secrets: {
+        email: 'person@example.com',
+      },
+      variables: {},
+    },
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_TYPE,
+    reason: 'Type the login email.',
+    text: '${secrets.email}',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  assert.equal((executedActions[0] as EnterTextAction).value, 'person@example.com');
+  assert.equal(JSON.stringify(result).includes('person@example.com'), false);
+  assert.equal(result.trace?.spans[0]?.detail?.includes('textLength='), true);
+});
+
+test('HeadlessActionExecutor keeps secret placeholders tokenized in deeplink traces while executing the resolved URL', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions);
+  const aiAgent = createAiAgent(async () => {
+    throw new Error('Grounder should not be called for deeplink actions');
+  });
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+    runtimeBindings: {
+      secrets: {
+        email: 'person@example.com',
+      },
+      variables: {},
+    },
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_DEEPLINK,
+    reason: 'Open the account recovery screen.',
+    url: 'wikipedia://login?email=${secrets.email}',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  assert.equal(
+    (executedActions[0] as DeeplinkAction).deeplink,
+    'wikipedia://login?email=person@example.com',
+  );
+  assert.equal(
+    result.trace?.spans[0]?.detail,
+    'url=wikipedia://login?email=${secrets.email}',
+  );
+});

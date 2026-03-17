@@ -242,6 +242,49 @@ export class DeviceManager {
   }
 
   /**
+   * Open a deeplink on an Android device via ADB.
+   */
+  async openAndroidDeepLink(
+    adbPath: string,
+    deviceSerial: string,
+    deeplink: string,
+  ): Promise<boolean> {
+    try {
+      await this._execFileFn(adbPath, [
+        '-s',
+        deviceSerial,
+        'shell',
+        'am',
+        'start',
+        '-W',
+        '-a',
+        'android.intent.action.VIEW',
+        '-d',
+        deeplink,
+      ]);
+      Logger.i(`Opened Android deeplink on ${deviceSerial}: ${deeplink}`);
+      return true;
+    } catch (error) {
+      Logger.e(`Failed to open Android deeplink on ${deviceSerial}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Open a deeplink on a booted iOS simulator.
+   */
+  async openIOSDeepLink(deviceId: string, deeplink: string): Promise<boolean> {
+    try {
+      await this._execFileFn('xcrun', ['simctl', 'openurl', deviceId, deeplink]);
+      Logger.i(`Opened iOS deeplink on ${deviceId}: ${deeplink}`);
+      return true;
+    } catch (error) {
+      Logger.e(`Failed to open iOS deeplink on ${deviceId}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Terminate a running iOS simulator app. Ignore "not running" failures.
    */
   async terminateIOSApp(deviceId: string, bundleId: string): Promise<void> {

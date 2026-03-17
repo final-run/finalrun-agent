@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AppUpload,
+  DeeplinkAction,
   DeviceAppInfo,
   DeviceActionRequest,
   DeviceInfo,
@@ -137,4 +138,39 @@ test('Device returns host-side iOS installed apps for GetAppListAction', async (
   assert.deepEqual(response.data, {
     apps: apps.map((app) => app.toJson()),
   });
+});
+
+test('Device executes deeplink actions through the host-side callback', async () => {
+  const openedLinks: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+  };
+
+  const device = new Device({
+    deviceInfo: new DeviceInfo({
+      id: 'emulator-5554',
+      deviceUUID: 'device-1',
+      isAndroid: true,
+      sdkVersion: 34,
+      name: 'Android Emulator',
+    }),
+    grpcClient: grpcClient as unknown as GrpcDriverClient,
+    openDeepLink: async (deeplink) => {
+      openedLinks.push(deeplink);
+      return true;
+    },
+  });
+
+  const response = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-4',
+      action: new DeeplinkAction({
+        deeplink: 'wikipedia://settings',
+      }),
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.deepEqual(openedLinks, ['wikipedia://settings']);
+  assert.equal(response.message, 'Successfully opened deep link: wikipedia://settings');
 });

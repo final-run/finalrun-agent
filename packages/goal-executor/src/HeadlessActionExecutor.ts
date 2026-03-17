@@ -39,6 +39,9 @@ import {
   PLANNER_ACTION_SET_LOCATION,
   PLANNER_ACTION_WAIT,
   PLANNER_ACTION_DEEPLINK,
+  type RuntimeBindings,
+  redactResolvedValue,
+  resolveRuntimePlaceholders,
 } from '@finalrun/common';
 import { AIAgent } from './ai/AIAgent.js';
 import { VisualGrounder } from './ai/VisualGrounder.js';
@@ -115,12 +118,19 @@ export class HeadlessActionExecutor {
   private _aiAgent: AIAgent;
   private _visualGrounder: VisualGrounder;
   private _platform: string;
+  private _runtimeBindings?: RuntimeBindings;
 
-  constructor(params: { agent: Agent; aiAgent: AIAgent; platform: string }) {
+  constructor(params: {
+    agent: Agent;
+    aiAgent: AIAgent;
+    platform: string;
+    runtimeBindings?: RuntimeBindings;
+  }) {
     this._agent = params.agent;
     this._aiAgent = params.aiAgent;
     this._visualGrounder = new VisualGrounder(params.aiAgent);
     this._platform = params.platform;
+    this._runtimeBindings = params.runtimeBindings;
   }
 
   /**
@@ -316,6 +326,7 @@ export class HeadlessActionExecutor {
     const spans: SpanTiming[] = [];
 
     let textToType = '';
+    let rawTextToType = '';
     try {
       const prepPhase = await this._runTimedPhase(
         input,
@@ -324,11 +335,14 @@ export class HeadlessActionExecutor {
           const textMatch =
             input.reason.match(/"([^"]*)"/) ??
             input.reason.match(/'([^']*)'/);
-          textToType = input.text ?? (textMatch ? textMatch[1] : input.reason);
+          rawTextToType = input.text ?? (textMatch ? textMatch[1] : input.reason);
+          textToType = this._runtimeBindings
+            ? resolveRuntimePlaceholders(rawTextToType, this._runtimeBindings)
+            : rawTextToType;
         },
         {
           successDetail: () =>
-            `textLength=${textToType.length} clearText=${input.clearText ?? true}`,
+            `textLength=${rawTextToType.length} clearText=${input.clearText ?? true}`,
         },
       );
       spans.push(prepPhase.span);
@@ -649,22 +663,26 @@ export class HeadlessActionExecutor {
   private async _executeDeeplink(input: ActionInput): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
     let deeplink = '';
+    let rawDeeplink = '';
 
     try {
       const prepPhase = await this._runTimedPhase(
         input,
         'action.prep',
         async () => {
-          deeplink =
+          rawDeeplink =
             input.url ??
             input.reason.match(/(https?:\/\/\S+|[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+)/)?.[1] ??
             '';
-          if (!deeplink) {
+          if (!rawDeeplink) {
             throw new Error('Could not extract deeplink URL from reason');
           }
+          deeplink = this._runtimeBindings
+            ? resolveRuntimePlaceholders(rawDeeplink, this._runtimeBindings)
+            : rawDeeplink;
         },
         {
-          successDetail: () => `url=${deeplink}`,
+          successDetail: () => `url=${rawDeeplink}`,
         },
       );
       spans.push(prepPhase.span);
@@ -908,9 +926,11 @@ export class HeadlessActionExecutor {
           },
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = this._redactRuntimeString(
+        error instanceof Error ? error.message : String(error),
+      );
       throw new TimedActionPhaseFailure(
-        message,
+        message ?? 'Grounder call failed',
         {
           name: request.tracePhase ?? 'action.ground',
           durationMs: roundDuration(nowMs() - startedAt),
@@ -950,13 +970,14 @@ export class HeadlessActionExecutor {
         },
       };
     } catch (error) {
-      const detail =
+      const detail = this._redactRuntimeString(
         options?.failureDetail?.(error) ??
-        (error instanceof Error ? error.message : String(error));
+        (error instanceof Error ? error.message : String(error)),
+      );
       const durationMs = roundDuration(nowMs() - startedAt);
       finishTracePhase(activePhase, 'failure', detail);
       throw new TimedActionPhaseFailure(
-        detail,
+        detail ?? 'Action phase failed',
         {
           name,
           durationMs,
@@ -1012,19 +1033,20 @@ export class HeadlessActionExecutor {
     trace: LLMTrace | undefined,
     detail: string | undefined,
   ): string | undefined {
+    const safeDetail = this._redactRuntimeString(detail);
     if (!trace && !detail) {
       return undefined;
     }
 
     if (!trace) {
-      return detail;
+      return safeDetail;
     }
 
     return describeLLMTrace({
       promptBuildMs: trace.promptBuildMs,
       llmMs: trace.llmMs,
       parseMs: trace.parseMs,
-      extraDetail: detail,
+      extraDetail: safeDetail,
     });
   }
 
@@ -1033,8 +1055,10 @@ export class HeadlessActionExecutor {
     feature: string,
     reason?: string,
   ): string {
-    return this._composeDetail(trace, `feature=${feature}${reason ? ` reason=${reason}` : ''}`) ??
-      `feature=${feature}${reason ? ` reason=${reason}` : ''}`;
+    const detail = `feature=${feature}${reason ? ` reason=${reason}` : ''}`;
+    return this._composeDetail(trace, detail) ??
+      this._redactRuntimeString(detail) ??
+      detail;
   }
 
   private _success(spans: SpanTiming[]): ActionOutput {
@@ -1052,14 +1076,16 @@ export class HeadlessActionExecutor {
       spans.push(error.span);
       return {
         success: false,
-        error: error.message,
+        error: this._redactRuntimeString(error.message) ?? error.message,
         trace: this._buildTrace(spans),
       };
     }
 
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: this._redactRuntimeString(
+        error instanceof Error ? error.message : String(error),
+      ) ?? (error instanceof Error ? error.message : String(error)),
       trace: this._buildTrace(spans),
     };
   }
@@ -1067,7 +1093,10 @@ export class HeadlessActionExecutor {
   private _buildTrace(spans: SpanTiming[]): TimingMetadata {
     return {
       totalMs: spans.reduce((sum, span) => sum + span.durationMs, 0),
-      spans,
+      spans: spans.map((span) => ({
+        ...span,
+        detail: this._redactRuntimeString(span.detail),
+      })),
     };
   }
 
@@ -1080,6 +1109,14 @@ export class HeadlessActionExecutor {
     }
 
     spans.push(...trace.spans);
+  }
+
+  private _redactRuntimeString(value: string | undefined): string | undefined {
+    if (!value || !this._runtimeBindings) {
+      return value;
+    }
+
+    return redactResolvedValue(value, this._runtimeBindings);
   }
 
   private _delay(ms: number): Promise<void> {

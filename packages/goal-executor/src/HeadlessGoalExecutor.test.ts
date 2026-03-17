@@ -358,3 +358,80 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
   assert.match(summaryLine!, /action=\d+ms\(ground=\d+ms,device=\d+ms\)/);
   assert.match(summaryLine!, /result=success action=tap/);
 });
+
+test('HeadlessGoalExecutor records completed-step metadata for reporting', async () => {
+  const agent = createAgent([
+    new DeviceNodeResponse({
+      success: true,
+      data: {
+        screenshot: 'image-step-1',
+        hierarchy: '[]',
+        screenWidth: 1080,
+        screenHeight: 2400,
+        captureTrace: {
+          totalMs: 36,
+          stabilityMs: 12,
+          finalPayloadMs: 24,
+          stable: true,
+          pollCount: 2,
+          attempts: 1,
+        },
+      },
+    }),
+  ]);
+
+  const aiAgent = createAiAgent(async () => ({
+    act: PLANNER_ACTION_COMPLETED,
+    reason: 'Login flow completed successfully',
+    analysis: 'The user reached the feed after login.',
+    remember: [],
+    text: '${secrets.email}',
+    thought: {
+      plan: 'Check whether login is already complete.',
+      think: 'The feed is visible and no further action is needed.',
+      act: 'Mark the spec as complete.',
+    },
+    trace: {
+      totalMs: 28,
+      promptBuildMs: 4,
+      llmMs: 18,
+      parseMs: 6,
+    },
+  }));
+
+  const executor = new HeadlessGoalExecutor({
+    goal: 'Log in and verify the feed',
+    platform: 'android',
+    maxIterations: 2,
+    agent,
+    aiAgent,
+  });
+
+  const result = await executor.executeGoal();
+
+  assert.equal(result.success, true);
+  assert.equal(result.platform, 'android');
+  assert.ok(result.startedAt);
+  assert.ok(result.completedAt);
+  assert.equal(result.analysis, 'The user reached the feed after login.');
+  assert.equal(result.steps.length, 1);
+  assert.equal(result.steps[0]?.screenshot, 'image-step-1');
+  assert.equal(result.steps[0]?.analysis, 'The user reached the feed after login.');
+  assert.deepEqual(result.steps[0]?.thought, {
+    plan: 'Check whether login is already complete.',
+    think: 'The feed is visible and no further action is needed.',
+    act: 'Mark the spec as complete.',
+  });
+  assert.deepEqual(result.steps[0]?.actionPayload, {
+    text: '${secrets.email}',
+    url: undefined,
+    direction: undefined,
+    clearText: undefined,
+    durationSeconds: undefined,
+    repeat: undefined,
+    delayBetweenTapMs: undefined,
+  });
+  assert.ok(result.steps[0]?.timestamp);
+  assert.ok(result.steps[0]?.durationMs !== undefined);
+  assert.ok(result.steps[0]?.trace);
+});

@@ -11,6 +11,9 @@ import {
   DEFAULT_MAX_ITERATIONS,
   PLANNER_ACTION_COMPLETED,
   PLANNER_ACTION_FAILED,
+  type ActionPayloadRecord,
+  type PlannerThoughtRecord,
+  type RuntimeBindings,
 } from '@finalrun/common';
 import { AIAgent, PlannerResponse } from './ai/AIAgent.js';
 import { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
@@ -33,20 +36,35 @@ export interface GoalExecutorConfig {
   maxIterations?: number;
   agent: Agent;
   aiAgent: AIAgent;
+  runtimeBindings?: RuntimeBindings;
 }
 
 export interface StepResult {
   iteration: number;
   action: string;
   reason: string;
+  naturalLanguageAction?: string;
+  analysis?: string;
+  thought?: PlannerThoughtRecord;
+  actionPayload?: ActionPayloadRecord;
   success: boolean;
   errorMessage?: string;
+  screenshot?: string;
+  screenWidth?: number;
+  screenHeight?: number;
+  timestamp?: string;
+  durationMs?: number;
+  timing?: TimingMetadata;
   trace?: StepTrace;
 }
 
 export interface GoalResult {
   success: boolean;
   message: string;
+  analysis?: string;
+  platform: string;
+  startedAt: string;
+  completedAt: string;
   steps: StepResult[];
   totalIterations: number;
 }
@@ -124,6 +142,7 @@ export class HeadlessGoalExecutor {
       agent: config.agent,
       aiAgent: config.aiAgent,
       platform: config.platform,
+      runtimeBindings: config.runtimeBindings,
     });
   }
 
@@ -145,6 +164,7 @@ export class HeadlessGoalExecutor {
     onProgress?: GoalProgressCallback,
   ): Promise<GoalResult> {
     const maxIterations = this._config.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+    const startedAt = new Date().toISOString();
     let history = '';
     let remember: string[] = [];
     let consecutiveTransientCaptureFailures = 0;
@@ -159,6 +179,9 @@ export class HeadlessGoalExecutor {
         return {
           success: false,
           message: 'Goal execution was cancelled',
+          platform: this._config.platform,
+          startedAt,
+          completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration - 1,
         };
@@ -194,8 +217,11 @@ export class HeadlessGoalExecutor {
           iteration,
           action: 'captureDeviceState',
           reason: captureResult.message,
+          naturalLanguageAction: 'Capture device state',
           success: false,
           errorMessage: captureResult.message,
+          timestamp: new Date().toISOString(),
+          durationMs: trace.totalMs,
           trace,
         };
         this._steps.push(captureStep);
@@ -211,6 +237,9 @@ export class HeadlessGoalExecutor {
           return {
             success: false,
             message: captureResult.message,
+            platform: this._config.platform,
+            startedAt,
+            completedAt: new Date().toISOString(),
             steps: this._steps,
             totalIterations: iteration,
           };
@@ -226,6 +255,9 @@ export class HeadlessGoalExecutor {
           return {
             success: false,
             message: `Repeated transient device state capture failures: ${captureResult.message}`,
+            platform: this._config.platform,
+            startedAt,
+            completedAt: new Date().toISOString(),
             steps: this._steps,
             totalIterations: iteration,
           };
@@ -273,8 +305,11 @@ export class HeadlessGoalExecutor {
           iteration,
           action: 'plannerError',
           reason: errorMsg,
+          naturalLanguageAction: 'Planner error',
           success: false,
           errorMessage: errorMsg,
+          timestamp: new Date().toISOString(),
+          durationMs: trace.totalMs,
           trace,
         });
 
@@ -295,6 +330,7 @@ export class HeadlessGoalExecutor {
 
       const action = plannerResponse.act;
       const reason = plannerResponse.reason;
+      const naturalLanguageAction = plannerResponse.thought?.act ?? reason;
 
       Logger.i(`[${iteration}/${maxIterations}] Action: ${action} — ${reason}`);
 
@@ -308,7 +344,16 @@ export class HeadlessGoalExecutor {
           iteration,
           action,
           reason,
+          naturalLanguageAction,
+          analysis: plannerResponse.analysis,
+          thought: plannerResponse.thought,
+          actionPayload: this._buildActionPayload(plannerResponse),
           success: true,
+          screenshot: deviceState.screenshot,
+          screenWidth: deviceState.screenWidth,
+          screenHeight: deviceState.screenHeight,
+          timestamp: new Date().toISOString(),
+          durationMs: trace.totalMs,
           trace,
         });
 
@@ -324,6 +369,10 @@ export class HeadlessGoalExecutor {
         return {
           success: true,
           message: reason,
+          analysis: plannerResponse.analysis,
+          platform: this._config.platform,
+          startedAt,
+          completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration,
         };
@@ -337,7 +386,16 @@ export class HeadlessGoalExecutor {
           iteration,
           action,
           reason,
+          naturalLanguageAction,
+          analysis: plannerResponse.analysis,
+          thought: plannerResponse.thought,
+          actionPayload: this._buildActionPayload(plannerResponse),
           success: false,
+          screenshot: deviceState.screenshot,
+          screenWidth: deviceState.screenWidth,
+          screenHeight: deviceState.screenHeight,
+          timestamp: new Date().toISOString(),
+          durationMs: trace.totalMs,
           trace,
         });
 
@@ -353,6 +411,10 @@ export class HeadlessGoalExecutor {
         return {
           success: false,
           message: reason,
+          analysis: plannerResponse.analysis,
+          platform: this._config.platform,
+          startedAt,
+          completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration,
         };
@@ -397,8 +459,17 @@ export class HeadlessGoalExecutor {
         iteration,
         action,
         reason,
+        naturalLanguageAction,
+        analysis: plannerResponse.analysis,
+        thought: plannerResponse.thought,
+        actionPayload: this._buildActionPayload(plannerResponse),
         success: actionResult.success,
         errorMessage: actionResult.error,
+        screenshot: deviceState.screenshot,
+        screenWidth: deviceState.screenWidth,
+        screenHeight: deviceState.screenHeight,
+        timestamp: new Date().toISOString(),
+        timing: actionResult.trace,
       };
 
       if (!actionResult.success && actionResult.error) {
@@ -407,6 +478,7 @@ export class HeadlessGoalExecutor {
 
       const trace = this._emitTraceSummary(stepTrace);
       stepResult.trace = trace;
+      stepResult.durationMs = trace.totalMs;
       this._steps.push(stepResult);
 
       onProgress?.({
@@ -427,6 +499,9 @@ export class HeadlessGoalExecutor {
     return {
       success: false,
       message: `Max iterations (${maxIterations}) exceeded without completing the goal`,
+      platform: this._config.platform,
+      startedAt,
+      completedAt: new Date().toISOString(),
       steps: this._steps,
       totalIterations: maxIterations,
     };
@@ -634,6 +709,24 @@ export class HeadlessGoalExecutor {
     }
 
     return `${plannerResponse.reason} (${details.join(', ')})`;
+  }
+
+  private _buildActionPayload(
+    plannerResponse: PlannerResponse,
+  ): ActionPayloadRecord | undefined {
+    const payload: ActionPayloadRecord = {
+      text: plannerResponse.text,
+      url: plannerResponse.url,
+      direction: plannerResponse.direction,
+      clearText: plannerResponse.clearText,
+      durationSeconds: plannerResponse.durationSeconds,
+      repeat: plannerResponse.repeat,
+      delayBetweenTapMs: plannerResponse.delayBetweenTapMs,
+    };
+
+    return Object.values(payload).some((value) => value !== undefined)
+      ? payload
+      : undefined;
   }
 }
 

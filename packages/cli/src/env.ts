@@ -18,27 +18,33 @@ export class CliEnv {
    * Load environment from a .env file or process.env.
    * Dart: Future<void> loadEnv(String envName)
    */
-  load(envName: string): void {
-    // Try to load .env file (e.g., .env.dev, .env.prod)
-    const envFile = path.resolve(process.cwd(), `.env.${envName}`);
-    if (fs.existsSync(envFile)) {
-      const result = dotenv.config({ path: envFile });
-      if (result.parsed) {
-        for (const [key, value] of Object.entries(result.parsed)) {
-          this._values.set(key, value);
+  load(
+    envName?: string,
+    options?: { includeDotEnv?: boolean },
+  ): void {
+    this._values.clear();
+
+    if (options?.includeDotEnv !== false && envName) {
+      const envFile = path.resolve(process.cwd(), `.env.${envName}`);
+      if (fs.existsSync(envFile)) {
+        const result = dotenv.config({ path: envFile });
+        if (result.parsed) {
+          for (const [key, value] of Object.entries(result.parsed)) {
+            this._values.set(key, value);
+          }
         }
       }
     }
 
-    // Also try a plain .env file
-    const plainEnvFile = path.resolve(process.cwd(), '.env');
-    if (fs.existsSync(plainEnvFile)) {
-      const result = dotenv.config({ path: plainEnvFile });
-      if (result.parsed) {
-        for (const [key, value] of Object.entries(result.parsed)) {
-          // Don't override values already set by the environment-specific file
-          if (!this._values.has(key)) {
-            this._values.set(key, value);
+    if (options?.includeDotEnv !== false) {
+      const plainEnvFile = path.resolve(process.cwd(), '.env');
+      if (fs.existsSync(plainEnvFile)) {
+        const result = dotenv.config({ path: plainEnvFile });
+        if (result.parsed) {
+          for (const [key, value] of Object.entries(result.parsed)) {
+            if (!this._values.has(key)) {
+              this._values.set(key, value);
+            }
           }
         }
       }
@@ -70,4 +76,23 @@ export class CliEnv {
   set(key: string, value: string): void {
     this._values.set(key, value);
   }
+}
+
+export interface ParsedModel {
+  provider: string;
+  modelName: string;
+}
+
+export function parseModel(modelStr: string): ParsedModel {
+  const slashIndex = modelStr.indexOf('/');
+  if (slashIndex === -1) {
+    throw new Error(
+      `Invalid model format: "${modelStr}". Expected provider/model (for example openai/gpt-4o).`,
+    );
+  }
+
+  return {
+    provider: modelStr.substring(0, slashIndex),
+    modelName: modelStr.substring(slashIndex + 1),
+  };
 }

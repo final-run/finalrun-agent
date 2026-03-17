@@ -22,6 +22,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# FinalRun run artifacts
+.finalrun/artifacts/
+
 # OS/editor noise
 .DS_Store
 .idea/
