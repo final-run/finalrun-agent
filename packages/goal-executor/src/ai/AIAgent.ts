@@ -413,7 +413,7 @@ export class AIAgent {
       case 'openai':
         return {
           openai: {
-            reasoningEffort: phase === 'planner' ? 'medium' : 'minimal',
+            reasoningEffort: phase === 'planner' ? 'medium' : 'low',
           } satisfies OpenAILanguageModelResponsesOptions,
         };
       case 'anthropic':

@@ -194,7 +194,7 @@ test('AIAgent uses medium GPT-5 reasoning defaults for planner calls', () => {
   });
 });
 
-test('AIAgent uses minimal GPT-5 reasoning defaults for grounder calls', () => {
+test('AIAgent uses low GPT-5 reasoning defaults for grounder calls', () => {
   const providerOptions = getProviderOptions({
     provider: 'openai',
     modelName: 'gpt-5',
@@ -203,7 +203,7 @@ test('AIAgent uses minimal GPT-5 reasoning defaults for grounder calls', () => {
 
   assert.deepEqual(providerOptions, {
     openai: {
-      reasoningEffort: 'minimal',
+      reasoningEffort: 'low',
     },
   });
 });
