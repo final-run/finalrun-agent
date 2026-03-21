@@ -18,6 +18,23 @@ import type { GoalResult } from '@finalrun/goal-executor';
 import { CliFilePathUtil } from './filePathUtil.js';
 import { TerminalRenderer } from './terminalRenderer.js';
 
+type GoalRunnerDeviceNode = Pick<
+  DeviceNode,
+  'init' | 'detectDevices' | 'setUpDevice' | 'cleanup' | 'deviceManager'
+>;
+
+type GoalRunnerDevice = Awaited<ReturnType<DeviceNode['setUpDevice']>>;
+
+type GoalRunnerRenderer = Pick<
+  TerminalRenderer,
+  'onProgress' | 'printSummary' | 'destroy'
+>;
+
+type GoalRunnerExecutor = Pick<
+  HeadlessGoalExecutor,
+  'cancel' | 'executeGoal'
+>;
+
 export interface GoalRunnerConfig {
   goal: string;
   apiKey: string;
@@ -34,18 +51,37 @@ export interface GoalRunnerConfig {
   };
 }
 
+export interface GoalRunnerDependencies {
+  createFilePathUtil(): CliFilePathUtil;
+  getDeviceNode(): GoalRunnerDeviceNode;
+  createAiAgent(params: ConstructorParameters<typeof AIAgent>[0]): AIAgent;
+  createExecutor(
+    params: ConstructorParameters<typeof HeadlessGoalExecutor>[0],
+  ): GoalRunnerExecutor;
+  createRenderer(): GoalRunnerRenderer;
+}
+
+export const goalRunnerDependencies: GoalRunnerDependencies = {
+  createFilePathUtil: () => new CliFilePathUtil(),
+  getDeviceNode: () => DeviceNode.getInstance(),
+  createAiAgent: (params) => new AIAgent(params),
+  createExecutor: (params) => new HeadlessGoalExecutor(params),
+  createRenderer: () => new TerminalRenderer(),
+};
+
 /**
  * Top-level orchestrator for running a goal from the CLI.
  *
  * Dart equivalent: runGoal() in mobile_cli/lib/goal_runner.dart
  */
-export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
-  const renderer = new TerminalRenderer();
-  let deviceNode: DeviceNode | undefined;
+export async function runGoal(
+  config: GoalRunnerConfig,
+  dependencies: GoalRunnerDependencies = goalRunnerDependencies,
+): Promise<GoalResult> {
+  const renderer = dependencies.createRenderer();
+  let deviceNode: GoalRunnerDeviceNode | undefined;
   let cancelHandler: (() => void) | undefined;
-  let device:
-    | Awaited<ReturnType<DeviceNode['setUpDevice']>>
-    | undefined;
+  let device: GoalRunnerDevice | undefined;
   let activeRecording:
     | {
         testRunId: string;
@@ -56,7 +92,7 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
 
   try {
     // -- 1. Set up file path utility --
-    const filePathUtil = new CliFilePathUtil();
+    const filePathUtil = dependencies.createFilePathUtil();
 
     // -- 2. Detect devices --
     console.log('\n\x1b[1mFinalRun CLI\x1b[0m');
@@ -67,7 +103,7 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
 
     Logger.i('Detecting connected devices...');
     const adbPath = await filePathUtil.getADBPath();
-    deviceNode = DeviceNode.getInstance();
+    deviceNode = dependencies.getDeviceNode();
     deviceNode.init(filePathUtil);
 
     const devices: DeviceInfo[] = await deviceNode.detectDevices(adbPath);
@@ -120,14 +156,14 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
     }
 
     // -- 4. Create AI agent --
-    const aiAgent = new AIAgent({
+    const aiAgent = dependencies.createAiAgent({
       provider: config.provider,
       modelName: config.modelName,
       apiKey: config.apiKey,
     });
 
     // -- 5. Create and run the goal executor --
-    const executor = new HeadlessGoalExecutor({
+    const executor = dependencies.createExecutor({
       goal: config.goal,
       platform,
       maxIterations: config.maxIterations,
@@ -143,7 +179,9 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
     };
     process.on('SIGINT', cancelHandler);
 
-    if (config.recording && platform !== PLATFORM_ANDROID) {
+    const recordingRequired = config.recording !== undefined && platform === PLATFORM_ANDROID;
+
+    if (config.recording) {
       const recordingResponse = await device.startRecording(
         new RecordingRequest({
           testRunId: config.recording.testRunId,
@@ -165,14 +203,24 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
           `Recording started for spec ${config.recording.testCaseId} at ${activeRecording.startedAt}`,
         );
       } else {
-        Logger.w(
-          `Unable to start recording for spec ${config.recording.testCaseId}: ${recordingResponse.message ?? 'unknown recording error'}`,
-        );
+        const message =
+          `Unable to start recording for spec ${config.recording.testCaseId}: ` +
+          `${recordingResponse.message ?? 'unknown recording error'}`;
+        if (recordingRequired) {
+          Logger.e(message);
+          const failureResult = createRecordingFailureResult({
+            platform,
+            message: `Recording is required for Android runs. ${message}`,
+          });
+          renderer.printSummary(failureResult);
+          return failureResult;
+        }
+        Logger.w(message);
       }
     }
 
     // Execute!
-    const result = await executor.executeGoal((event) => renderer.onProgress(event));
+    let result = await executor.executeGoal((event) => renderer.onProgress(event));
 
     let recording: GoalRecordingResult | undefined;
     if (activeRecording) {
@@ -194,11 +242,30 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
                 ? (stopResponse.data['completedAt'] as string)
                 : new Date().toISOString(),
           };
+        } else if (recordingRequired) {
+          const message =
+            `Recording is required for Android runs. ` +
+            `Recording stopped for spec ${activeRecording.testCaseId} but no file path was returned.`;
+          Logger.e(message);
+          result = markGoalResultFailed(result, message);
+        } else {
+          Logger.w(
+            `Recording stopped for spec ${activeRecording.testCaseId} but no file path was returned.`,
+          );
         }
       } else {
-        Logger.w(
-          `Unable to stop recording for spec ${activeRecording.testCaseId}: ${stopResponse.message ?? 'unknown recording error'}`,
-        );
+        const message =
+          `Unable to stop recording for spec ${activeRecording.testCaseId}: ` +
+          `${stopResponse.message ?? 'unknown recording error'}`;
+        if (recordingRequired) {
+          Logger.e(message);
+          result = markGoalResultFailed(
+            result,
+            `Recording is required for Android runs. ${message}`,
+          );
+        } else {
+          Logger.w(message);
+        }
       }
       activeRecording = undefined;
     }
@@ -228,6 +295,30 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
     }
     renderer.destroy();
   }
+}
+
+function createRecordingFailureResult(params: {
+  platform: string;
+  message: string;
+}): GoalResult {
+  const timestamp = new Date().toISOString();
+  return {
+    success: false,
+    message: params.message,
+    platform: params.platform,
+    startedAt: timestamp,
+    completedAt: timestamp,
+    steps: [],
+    totalIterations: 0,
+  };
+}
+
+function markGoalResultFailed(result: GoalResult, message: string): GoalResult {
+  return {
+    ...result,
+    success: false,
+    message: result.success ? message : `${result.message}\n${message}`,
+  };
 }
 
 function selectPlatform(

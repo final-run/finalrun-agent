@@ -82,6 +82,66 @@ test('RecordingManager creates sanitized iOS output paths and stops using the sa
   await assert.rejects(() => readFile(startedFilePath));
 });
 
+test('RecordingManager creates sanitized Android output paths and stops using the same mp4 file', async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'finalrun-recording-manager-'));
+  const process = new FakeChildProcess();
+  let startedFilePath = '';
+  let stoppedFilePath = '';
+
+  const provider: RecordingProvider = {
+    recordingFolder: 'fr_android_screen_recording',
+    platformName: PLATFORM_ANDROID,
+    fileExtension: 'mp4',
+    async startRecordingProcess(params) {
+      startedFilePath = params.filePath;
+      return {
+        process: process as unknown as ChildProcess,
+        response: new DeviceNodeResponse({ success: true }),
+      };
+    },
+    async stopRecordingProcess(params) {
+      stoppedFilePath = params.filePath;
+      return new DeviceNodeResponse({ success: true });
+    },
+    async checkAvailability() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async cleanupPlatformResources() {},
+  };
+
+  const manager = new RecordingManager({
+    providers: { [PLATFORM_ANDROID]: provider },
+    cwdProvider: () => tempDir,
+  });
+
+  const startResponse = await manager.startRecording({
+    deviceId: 'emulator-5554',
+    platform: PLATFORM_ANDROID,
+    sdkVersion: '34',
+    recordingRequest: new RecordingRequest({
+      testRunId: 'run 1',
+      testCaseId: 'case/name',
+      apiKey: 'key',
+    }),
+  });
+
+  assert.equal(startResponse.success, true);
+  assert.equal(
+    startedFilePath,
+    path.join(tempDir, 'fr_android_screen_recording', 'run_1_case_name.mp4'),
+  );
+
+  await writeFile(startedFilePath, 'recording');
+  const stopResponse = await manager.stopRecording('run 1', 'case/name', {
+    platform: PLATFORM_ANDROID,
+    keepOutput: false,
+  });
+
+  assert.equal(stopResponse.success, true);
+  assert.equal(stoppedFilePath, startedFilePath);
+  await assert.rejects(() => readFile(startedFilePath));
+});
+
 test('RecordingManager reports unsupported platforms when no provider is configured', async () => {
   const manager = new RecordingManager({
     providers: {},

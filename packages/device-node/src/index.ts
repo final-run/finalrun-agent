@@ -4,6 +4,7 @@ export { DeviceNode } from './DeviceNode.js';
 export { Device } from './device/Device.js';
 export { DeviceManager } from './device/DeviceManager.js';
 export { DevicePool } from './device/DevicePool.js';
+export { AndroidRecordingProvider } from './device/AndroidRecordingProvider.js';
 export { IOSRecordingProvider } from './device/IOSRecordingProvider.js';
 export { RecordingManager, defaultRecordingManager } from './device/RecordingManager.js';
 export type {
