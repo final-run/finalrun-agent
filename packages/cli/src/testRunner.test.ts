@@ -88,7 +88,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
   };
 
   const screenshot = `data:image/jpeg;base64,${Buffer.from('fake-jpeg-data').toString('base64')}`;
-  const recordingPath = path.join(runDir, 'source-recording.mov');
+  const recordingPath = path.join(runDir, 'source-recording.mp4');
   const goalResult: GoalResult = {
     success: true,
     message: 'Entered person@example.com and opened the feed.',
@@ -176,7 +176,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
 
     const stepJsonPath = path.join(runDir, 'tests', 'auth__login', 'steps', '001.json');
     const screenshotPath = path.join(runDir, 'tests', 'auth__login', 'screenshots', '001.jpg');
-    const recordingArtifactPath = path.join(runDir, 'tests', 'auth__login', 'recording.mov');
+    const recordingArtifactPath = path.join(runDir, 'tests', 'auth__login', 'recording.mp4');
     const resultJsonPath = path.join(runDir, 'tests', 'auth__login', 'result.json');
     const summaryJsonPath = path.join(runDir, 'summary.json');
     const htmlPath = path.join(runDir, 'index.html');
@@ -208,7 +208,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     assert.equal(html.includes('Planner Thought'), true);
     assert.equal(html.includes('selectStep('), true);
     assert.equal(html.includes('tests/auth__login/screenshots/001.jpg'), true);
-    assert.equal(html.includes('tests/auth__login/recording.mov'), true);
+    assert.equal(html.includes('tests/auth__login/recording.mp4'), true);
     assert.equal(html.includes('recording-video'), true);
     assert.equal(stepJson.includes('"videoOffsetMs": 1000'), true);
     assert.equal(runnerLog.includes('person@example.com'), false);

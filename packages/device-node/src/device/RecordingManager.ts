@@ -4,9 +4,11 @@ import path from 'node:path';
 import {
   DeviceNodeResponse,
   Logger,
+  PLATFORM_ANDROID,
   PLATFORM_IOS,
   type RecordingRequest,
 } from '@finalrun/common';
+import { AndroidRecordingProvider } from './AndroidRecordingProvider.js';
 import { IOSRecordingProvider } from './IOSRecordingProvider.js';
 import { RecordingInfo } from './RecordingInfo.js';
 import type { RecordingProvider } from './RecordingProvider.js';
@@ -60,6 +62,7 @@ export class RecordingManager implements DeviceRecordingController {
     cwdProvider?: () => string;
   }) {
     const providers = params?.providers ?? {
+      [PLATFORM_ANDROID]: new AndroidRecordingProvider(),
       [PLATFORM_IOS]: new IOSRecordingProvider(),
     };
     this._providers = new Map(Object.entries(providers));
