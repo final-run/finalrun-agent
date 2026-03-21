@@ -242,6 +242,7 @@ test('runTests finalizes top-level artifacts when runGoal throws before a spec c
     const result = await runTests({
       envName: 'dev',
       cwd: rootDir,
+      selectors: ['login.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
       modelName: 'gpt-4o',
@@ -349,6 +350,7 @@ test('runTests succeeds without env config when the repo is env-free', async () 
   try {
     const result = await runTests({
       cwd: rootDir,
+      selectors: ['smoke.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
       modelName: 'gpt-4o',
@@ -394,6 +396,7 @@ test('runTests writes top-level artifacts when validation fails before platform 
     const result = await runTests({
       envName: 'dev',
       cwd: rootDir,
+      selectors: ['login.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
       modelName: 'gpt-4o',
@@ -416,6 +419,39 @@ test('runTests writes top-level artifacts when validation fails before platform 
 
     assert.equal(summaryJson.includes('"success": false'), true);
     assert.equal(runnerLog.includes('Run validation failed'), true);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests writes failure artifacts when no selectors are provided', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-missing-selectors-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.specResults.length, 0);
+
+    const runnerLogPath = path.join(result.runDir, 'runner.log');
+    const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
+    assert.equal(runnerLog.includes('At least one test selector is required'), true);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }

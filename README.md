@@ -137,10 +137,10 @@ Validate the workspace before executing:
 npm run dev:cli -- check
 ```
 
-Run all discovered specs:
+Validate all discovered specs:
 
 ```sh
-npm run dev:cli -- test --api-key=<YOUR_API_KEY> --model=openai/gpt-4o
+npm run dev:cli -- check
 ```
 
 If you rely on environment variables instead of `--api-key`, FinalRun uses the key that matches `--model`:
@@ -151,18 +151,28 @@ If you rely on environment variables instead of `--api-key`, FinalRun uses the k
 
 It does not fall through to another provider's env var.
 
-Run one spec or a glob:
+Run explicit test targets:
 
 ```sh
 npm run dev:cli -- test .finalrun/tests/auth/login.yaml --env staging --platform android --api-key=<YOUR_API_KEY>
-npm run dev:cli -- test .finalrun/tests/auth/** --env staging --platform ios --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test .finalrun/tests/auth/login.yaml,.finalrun/tests/profile/edit.yaml --env staging --platform android --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test .finalrun/tests/auth/ --env staging --platform ios --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test '.finalrun/tests/auth/*' --env staging --platform ios --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test '.finalrun/tests/auth/**' --env staging --platform ios --api-key=<YOUR_API_KEY>
 ```
+
+- `finalrun check` still validates the whole workspace when no selector is provided
+- `finalrun test` now requires at least one YAML file, directory, or glob selector
+- raw directory selectors recurse by default
+- `*` matches direct child YAML files only
+- `**` matches YAML files recursively
+- quote glob selectors in docs and scripts for consistent shell behavior
 
 Run against a local build artifact:
 
 ```sh
-npm run dev:cli -- test --env staging --platform android --app /absolute/path/to/app.apk --api-key=<YOUR_API_KEY>
-npm run dev:cli -- test --env staging --platform ios --app /absolute/path/to/My.app --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test smoke.yaml --env staging --platform android --app /absolute/path/to/app.apk --api-key=<YOUR_API_KEY>
+npm run dev:cli -- test smoke.yaml --env staging --platform ios --app /absolute/path/to/My.app --api-key=<YOUR_API_KEY>
 ```
 
 Example model values:
@@ -178,7 +188,7 @@ Use this when you want to run the built JavaScript output instead of source file
 ```sh
 npm run build
 node packages/cli/dist/bin/finalrun.js check
-node packages/cli/dist/bin/finalrun.js test --api-key=<YOUR_API_KEY> --model=openai/gpt-4o
+node packages/cli/dist/bin/finalrun.js test smoke.yaml --api-key=<YOUR_API_KEY> --model=openai/gpt-4o
 ```
 
 ### Artifacts
