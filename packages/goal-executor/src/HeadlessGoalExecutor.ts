@@ -58,6 +58,12 @@ export interface StepResult {
   trace?: StepTrace;
 }
 
+export interface GoalRecordingResult {
+  filePath: string;
+  startedAt: string;
+  completedAt?: string;
+}
+
 export interface GoalResult {
   success: boolean;
   message: string;
@@ -65,6 +71,7 @@ export interface GoalResult {
   platform: string;
   startedAt: string;
   completedAt: string;
+  recording?: GoalRecordingResult;
   steps: StepResult[];
   totalIterations: number;
 }
@@ -100,6 +107,15 @@ interface CaptureTraceMetadata {
   pollCount: number;
   attempts: number;
   failureReason?: string;
+}
+
+interface PostActionCaptureResult {
+  status: 'success' | 'transient' | 'fatal';
+  screenshot?: string;
+  screenWidth?: number;
+  screenHeight?: number;
+  captureTrace?: CaptureTraceMetadata;
+  message?: string;
 }
 
 type DeviceStateCaptureResult =
@@ -455,6 +471,26 @@ export class HeadlessGoalExecutor {
         startMs: actionSpan.startMs,
       });
 
+      const postCapturePhase = startTracePhase(iteration, 'post_capture.total');
+      const postActionCapture = await this._capturePostActionScreenshot(iteration);
+      const postCaptureSpan = stepTrace.addSpanFromActivePhase(
+        postCapturePhase,
+        postActionCapture.status === 'success' ? 'success' : 'failure',
+        postActionCapture.status === 'success' ? undefined : postActionCapture.message,
+      );
+      stepTrace.addSequentialTimings(
+        this._captureTraceToTimings(postActionCapture.captureTrace, 'post_capture'),
+        {
+          startMs: postCaptureSpan.startMs,
+        },
+      );
+
+      if (postActionCapture.status !== 'success') {
+        Logger.w(
+          `Post-action screenshot capture failed for iteration ${iteration}: ${postActionCapture.message ?? 'unknown capture error'}`,
+        );
+      }
+
       const stepResult: StepResult = {
         iteration,
         action,
@@ -465,9 +501,9 @@ export class HeadlessGoalExecutor {
         actionPayload: this._buildActionPayload(plannerResponse),
         success: actionResult.success,
         errorMessage: actionResult.error,
-        screenshot: deviceState.screenshot,
-        screenWidth: deviceState.screenWidth,
-        screenHeight: deviceState.screenHeight,
+        screenshot: postActionCapture.screenshot,
+        screenWidth: postActionCapture.screenWidth ?? deviceState.screenWidth,
+        screenHeight: postActionCapture.screenHeight ?? deviceState.screenHeight,
         timestamp: new Date().toISOString(),
         timing: actionResult.trace,
       };
@@ -587,6 +623,7 @@ export class HeadlessGoalExecutor {
 
   private _captureTraceToTimings(
     captureTrace: CaptureTraceMetadata | undefined,
+    prefix: 'capture' | 'post_capture' = 'capture',
   ): TimingMetadata | undefined {
     if (!captureTrace) {
       return undefined;
@@ -595,7 +632,7 @@ export class HeadlessGoalExecutor {
     const spans: SpanTiming[] = [];
     if (captureTrace.stabilityMs !== undefined) {
       spans.push({
-        name: 'capture.stability',
+        name: `${prefix}.stability`,
         durationMs: captureTrace.stabilityMs,
         status: captureTrace.stable ? 'success' : 'failure',
         detail: `polls=${captureTrace.pollCount}`,
@@ -603,7 +640,7 @@ export class HeadlessGoalExecutor {
     }
 
     spans.push({
-      name: 'capture.final_payload',
+      name: `${prefix}.final_payload`,
       durationMs: captureTrace.finalPayloadMs,
       status: captureTrace.failureReason ? 'failure' : 'success',
       detail:
@@ -615,6 +652,65 @@ export class HeadlessGoalExecutor {
       totalMs: captureTrace.totalMs,
       spans,
     };
+  }
+
+  private async _capturePostActionScreenshot(
+    traceStep: number,
+  ): Promise<PostActionCaptureResult> {
+    try {
+      const response = await this._config.agent.executeAction(
+        new DeviceActionRequest({
+          requestId: uuidv4(),
+          action: new GetScreenshotAndHierarchyAction(),
+          timeout: 30,
+          shouldEnsureStability: true,
+          traceStep,
+        }),
+      );
+
+      const captureTrace = response.data
+        ? this._parseCaptureTrace(response.data['captureTrace'])
+        : undefined;
+
+      if (!response.success || !response.data) {
+        const message = response.message ?? 'Failed to capture post-action screenshot';
+        return {
+          status: this._isTransientCaptureFailure(message) ? 'transient' : 'fatal',
+          message,
+          captureTrace,
+        };
+      }
+
+      const data = response.data;
+      const screenshot = data['screenshot'] as string | undefined;
+      if (!screenshot?.trim()) {
+        return {
+          status: 'transient',
+          message: 'Empty screenshot from post-action capture',
+          captureTrace,
+        };
+      }
+
+      return {
+        status: 'success',
+        screenshot,
+        screenWidth:
+          typeof data['screenWidth'] === 'number'
+            ? (data['screenWidth'] as number)
+            : undefined,
+        screenHeight:
+          typeof data['screenHeight'] === 'number'
+            ? (data['screenHeight'] as number)
+            : undefined,
+        captureTrace,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: this._isTransientCaptureFailure(message) ? 'transient' : 'fatal',
+        message,
+      };
+    }
   }
 
   private _plannerTraceToTimings(

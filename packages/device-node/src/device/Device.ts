@@ -8,6 +8,7 @@ import {
   DeviceNodeResponse,
   DeviceAppInfo,
   Logger,
+  type RecordingRequest,
   SingleArgument,
   StepAction,
   TapAction,
@@ -29,6 +30,10 @@ import {
 } from '@finalrun/common';
 import { GrpcDriverClient } from '../grpc/GrpcDriverClient.js';
 import { DeviceSession } from './DeviceSession.js';
+import {
+  defaultRecordingManager,
+  type DeviceRecordingController,
+} from './RecordingManager.js';
 import { ScreenshotCaptureHelper } from './ScreenshotCapture.js';
 
 /**
@@ -47,6 +52,7 @@ export class Device implements Agent {
   private _refreshIOSAppIdsBeforeLaunch: (() => Promise<void>) | null;
   private _getIOSInstalledApps: (() => Promise<DeviceAppInfo[]>) | null;
   private _openDeepLink: ((deeplink: string) => Promise<boolean>) | null;
+  private _recordingController: DeviceRecordingController;
 
   constructor(params: {
     deviceInfo: DeviceInfo;
@@ -54,6 +60,7 @@ export class Device implements Agent {
     refreshIOSAppIdsBeforeLaunch?: () => Promise<void>;
     getIOSInstalledApps?: () => Promise<DeviceAppInfo[]>;
     openDeepLink?: (deeplink: string) => Promise<boolean>;
+    recordingController?: DeviceRecordingController;
   }) {
     this._deviceInfo = params.deviceInfo;
     this._grpcClient = params.grpcClient;
@@ -65,6 +72,7 @@ export class Device implements Agent {
     this._refreshIOSAppIdsBeforeLaunch = params.refreshIOSAppIdsBeforeLaunch ?? null;
     this._getIOSInstalledApps = params.getIOSInstalledApps ?? null;
     this._openDeepLink = params.openDeepLink ?? null;
+    this._recordingController = params.recordingController ?? defaultRecordingManager;
   }
 
   // ========== Agent interface implementation ==========
@@ -322,6 +330,11 @@ export class Device implements Agent {
   }
 
   async closeConnection(): Promise<void> {
+    try {
+      await this.recordingCleanUp();
+    } catch (error) {
+      Logger.w('Failed to clean up recording resources:', error);
+    }
     this._grpcClient.close();
   }
 
@@ -345,6 +358,53 @@ export class Device implements Agent {
 
   clearListener(): void {
     this._disconnectionCallback = null;
+  }
+
+  async startRecording(recordingRequest: RecordingRequest): Promise<DeviceNodeResponse> {
+    if (!this._deviceInfo.id) {
+      return new DeviceNodeResponse({
+        success: false,
+        message: 'Device ID is required to start recording.',
+      });
+    }
+
+    return await this._recordingController.startRecording({
+      deviceId: this._deviceInfo.id,
+      recordingRequest,
+      platform: this._deviceInfo.getPlatform(),
+      sdkVersion:
+        this._deviceInfo.sdkVersion > 0 ? String(this._deviceInfo.sdkVersion) : undefined,
+    });
+  }
+
+  async stopRecording(testRunId: string, testCaseId: string): Promise<DeviceNodeResponse> {
+    return await this._recordingController.stopRecording(testRunId, testCaseId, {
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput: true,
+    });
+  }
+
+  async recordingCleanUp(): Promise<void> {
+    if (!this._deviceInfo.id) {
+      return;
+    }
+
+    await this._recordingController.cleanupDevice(this._deviceInfo.id, {
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput: false,
+    });
+  }
+
+  async abortRecording(testRunId: string, keepOutput: boolean = false): Promise<void> {
+    if (!this._deviceInfo.id) {
+      return;
+    }
+
+    await this._recordingController.abortRecording(testRunId, {
+      deviceId: this._deviceInfo.id,
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput,
+    });
   }
 
   uninstallDriver(): void {

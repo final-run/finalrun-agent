@@ -6,8 +6,10 @@ import {
   DeviceAppInfo,
   DeviceActionRequest,
   DeviceInfo,
+  DeviceNodeResponse,
   GetAppListAction,
   LaunchAppAction,
+  RecordingRequest,
 } from '@finalrun/common';
 import type { GrpcDriverClient } from '../grpc/GrpcDriverClient.js';
 import { Device } from './Device.js';
@@ -173,4 +175,89 @@ test('Device executes deeplink actions through the host-side callback', async ()
   assert.equal(response.success, true);
   assert.deepEqual(openedLinks, ['wikipedia://settings']);
   assert.equal(response.message, 'Successfully opened deep link: wikipedia://settings');
+});
+
+test('Device delegates startRecording through the recording controller with the device platform', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const device = new Device({
+    deviceInfo: new DeviceInfo({
+      id: 'SIM-1',
+      deviceUUID: 'SIM-1',
+      isAndroid: false,
+      sdkVersion: 17,
+      name: 'iPhone 15 Pro',
+    }),
+    grpcClient: {
+      isConnected: true,
+      close() {},
+    } as unknown as GrpcDriverClient,
+    recordingController: {
+      async startRecording(params) {
+        calls.push(params as unknown as Record<string, unknown>);
+        return new DeviceNodeResponse({ success: true, message: 'started' });
+      },
+      async stopRecording() {
+        return new DeviceNodeResponse({ success: true });
+      },
+      async cleanupDevice() {},
+      async abortRecording() {},
+    },
+  });
+
+  const response = await device.startRecording(
+    new RecordingRequest({
+      testRunId: 'run',
+      testCaseId: 'case',
+      apiKey: 'key',
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.deepEqual(calls, [
+    {
+      deviceId: 'SIM-1',
+      platform: 'ios',
+      sdkVersion: '17',
+      recordingRequest: new RecordingRequest({
+        testRunId: 'run',
+        testCaseId: 'case',
+        apiKey: 'key',
+      }),
+    },
+  ]);
+});
+
+test('Device.closeConnection cleans up active recordings before closing gRPC', async () => {
+  const calls: string[] = [];
+  const device = new Device({
+    deviceInfo: new DeviceInfo({
+      id: 'SIM-1',
+      deviceUUID: 'SIM-1',
+      isAndroid: false,
+      sdkVersion: 17,
+      name: 'iPhone 15 Pro',
+    }),
+    grpcClient: {
+      isConnected: true,
+      close() {
+        calls.push('close');
+      },
+    } as unknown as GrpcDriverClient,
+    recordingController: {
+      async startRecording() {
+        return new DeviceNodeResponse({ success: true });
+      },
+      async stopRecording() {
+        return new DeviceNodeResponse({ success: true });
+      },
+      async cleanupDevice() {
+        calls.push('cleanup');
+      },
+      async abortRecording() {},
+    },
+  });
+
+  await device.closeConnection();
+
+  assert.deepEqual(calls, ['cleanup', 'close']);
 });

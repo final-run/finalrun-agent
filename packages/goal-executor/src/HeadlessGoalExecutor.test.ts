@@ -220,7 +220,7 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
       new DeviceNodeResponse({
         success: true,
         data: {
-          screenshot: 'image-step-1',
+          screenshot: 'image-pre-step-1',
           hierarchy: '[]',
           screenWidth: 1080,
           screenHeight: 2400,
@@ -228,6 +228,23 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
             totalMs: 40,
             stabilityMs: 14,
             finalPayloadMs: 26,
+            stable: true,
+            pollCount: 2,
+            attempts: 1,
+          },
+        },
+      }),
+      new DeviceNodeResponse({
+        success: true,
+        data: {
+          screenshot: 'image-post-step-1',
+          hierarchy: '[]',
+          screenWidth: 1080,
+          screenHeight: 2400,
+          captureTrace: {
+            totalMs: 28,
+            stabilityMs: 9,
+            finalPayloadMs: 19,
             stable: true,
             pollCount: 2,
             attempts: 1,
@@ -331,8 +348,9 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
   assert.equal(result.totalIterations, 2);
   assert.equal(executedActions.length, 1);
   assert.equal(result.steps[0]?.action, PLANNER_ACTION_TAP);
+  assert.equal(result.steps[0]?.screenshot, 'image-post-step-1');
   const spanNames = new Set(result.steps[0]?.trace?.spans.map((span) => span.name) ?? []);
-  assert.equal(spanNames.size, 10);
+  assert.equal(spanNames.size, 13);
   for (const expectedName of [
     'step.total',
     'capture.total',
@@ -344,6 +362,9 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
     'action.total',
     'action.ground',
     'action.device',
+    'post_capture.total',
+    'post_capture.stability',
+    'post_capture.final_payload',
   ]) {
     assert.ok(spanNames.has(expectedName), `missing span ${expectedName}`);
   }
@@ -356,6 +377,7 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
   assert.match(summaryLine!, /capture=\d+ms\(stability=\d+ms,final_payload=\d+ms\)/);
   assert.match(summaryLine!, /planning=\d+ms\(llm=\d+ms,parse=\d+ms\)/);
   assert.match(summaryLine!, /action=\d+ms\(ground=\d+ms,device=\d+ms\)/);
+  assert.match(summaryLine!, /post_capture=\d+ms\(stability=\d+ms,final_payload=\d+ms\)/);
   assert.match(summaryLine!, /result=success action=tap/);
 });
 

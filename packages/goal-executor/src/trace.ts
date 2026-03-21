@@ -67,6 +67,11 @@ const SUMMARY_GROUPS: Array<{ group: string; label: string; children: string[] }
       'action.wait',
     ],
   },
+  {
+    group: 'post_capture.total',
+    label: 'post_capture',
+    children: ['post_capture.stability', 'post_capture.final_payload'],
+  },
 ];
 
 export function nowMs(): number {
