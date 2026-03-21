@@ -21,6 +21,52 @@ function createDevice(platform: string): { getPlatform(): string } {
   };
 }
 
+function createGoalResult(params?: Partial<GoalResult>): GoalResult {
+  return {
+    success: true,
+    message: 'Opened the app successfully.',
+    analysis: 'The flow completed successfully.',
+    platform: 'android',
+    startedAt: '2026-03-17T18:00:00.000Z',
+    completedAt: '2026-03-17T18:00:01.000Z',
+    totalIterations: 1,
+    steps: [
+      {
+        iteration: 1,
+        action: 'tap',
+        reason: 'Open the app.',
+        naturalLanguageAction: 'Step 1: Open the app.',
+        analysis: 'Opened the app from the home screen.',
+        thought: {
+          plan: 'Bring the app to the foreground.',
+          think: 'The flow is ready to execute.',
+          act: 'Open the app.',
+        },
+        actionPayload: {},
+        success: true,
+        timestamp: '2026-03-17T18:00:00.500Z',
+        durationMs: 500,
+      },
+    ],
+    ...params,
+  };
+}
+
+function createGoalSession(params?: {
+  platform?: string;
+  cleanup?: () => Promise<void>;
+}) {
+  return {
+    platform: params?.platform ?? 'android',
+    deviceInfo: {} as never,
+    deviceNode: {} as never,
+    device: {} as never,
+    async cleanup() {
+      await params?.cleanup?.();
+    },
+  };
+}
+
 test('selectExecutionPlatform requires an explicit platform when Android and iOS devices are both available', () => {
   assert.throws(
     () => selectExecutionPlatform([createDevice('android'), createDevice('ios')]),
@@ -218,7 +264,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
   }
 });
 
-test('runTests finalizes top-level artifacts when runGoal throws before a spec completes', async () => {
+test('runTests finalizes top-level artifacts when shared-session execution throws before a spec completes', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-runner-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
@@ -242,11 +288,17 @@ test('runTests finalizes top-level artifacts when runGoal throws before a spec c
     'utf-8',
   );
 
-  const originalRunGoal = testRunnerDependencies.runGoal;
-  const originalResolveExecutionPlatform = testRunnerDependencies.resolveExecutionPlatform;
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let cleanupCalls = 0;
 
-  testRunnerDependencies.resolveExecutionPlatform = async () => 'android';
-  testRunnerDependencies.runGoal = async () => {
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
+      },
+    });
+  testRunnerDependencies.executeGoalOnSession = async () => {
     throw new Error('Driver failed for person@example.com before goal completion');
   };
 
@@ -306,8 +358,9 @@ test('runTests finalizes top-level artifacts when runGoal throws before a spec c
       assert.equal(content.includes('${secrets.email}'), true);
     }
   } finally {
-    testRunnerDependencies.runGoal = originalRunGoal;
-    testRunnerDependencies.resolveExecutionPlatform = originalResolveExecutionPlatform;
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    assert.equal(cleanupCalls, 1);
     await fsp.rm(rootDir, { recursive: true, force: true });
     if (previousSecret === undefined) {
       delete process.env[secretEnvVar];
@@ -327,37 +380,20 @@ test('runTests succeeds without env config when the repo is env-free', async () 
     'utf-8',
   );
 
-  const originalRunGoal = testRunnerDependencies.runGoal;
-  const originalResolveExecutionPlatform = testRunnerDependencies.resolveExecutionPlatform;
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let cleanupCalls = 0;
 
-  testRunnerDependencies.resolveExecutionPlatform = async () => 'android';
-  testRunnerDependencies.runGoal = async () => ({
-    success: true,
-    message: 'Opened the app successfully.',
-    analysis: 'The env-free smoke flow completed successfully.',
-    platform: 'android',
-    startedAt: '2026-03-17T18:00:00.000Z',
-    completedAt: '2026-03-17T18:00:01.000Z',
-    totalIterations: 1,
-    steps: [
-      {
-        iteration: 1,
-        action: 'tap',
-        reason: 'Open the app.',
-        naturalLanguageAction: 'Step 1: Open the app.',
-        analysis: 'Opened the app from the home screen.',
-        thought: {
-          plan: 'Bring the app to the foreground.',
-          think: 'The repo does not require env bindings for this flow.',
-          act: 'Open the app.',
-        },
-        actionPayload: {},
-        success: true,
-        timestamp: '2026-03-17T18:00:00.500Z',
-        durationMs: 500,
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
       },
-    ],
-  });
+    });
+  testRunnerDependencies.executeGoalOnSession = async () =>
+    createGoalResult({
+      analysis: 'The env-free smoke flow completed successfully.',
+    });
 
   try {
     const result = await runTests({
@@ -381,8 +417,137 @@ test('runTests succeeds without env config when the repo is env-free', async () 
       assert.equal(stats.isFile(), true);
     }
   } finally {
-    testRunnerDependencies.runGoal = originalRunGoal;
-    testRunnerDependencies.resolveExecutionPlatform = originalResolveExecutionPlatform;
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    assert.equal(cleanupCalls, 1);
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests prepares one shared session for multiple specs and cleans it up once', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'search.yaml'),
+    ['name: search', 'steps:', '  - Search Wikipedia.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let prepareCalls = 0;
+  let cleanupCalls = 0;
+  const executedCases: string[] = [];
+
+  testRunnerDependencies.prepareGoalSession = async () => {
+    prepareCalls += 1;
+    return createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
+      },
+    });
+  };
+  testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
+    if (config.recording) {
+      executedCases.push(config.recording.testCaseId);
+    }
+    return createGoalResult();
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml', 'search.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.specResults.length, 2);
+    assert.equal(prepareCalls, 1);
+    assert.equal(cleanupCalls, 1);
+    assert.deepEqual(executedCases, ['login', 'search']);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests stops the batch after a shared-session failure and cleans up once', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-failure-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'first.yaml'),
+    ['name: first', 'steps:', '  - Open first flow.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'second.yaml'),
+    ['name: second', 'steps:', '  - Open second flow.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'third.yaml'),
+    ['name: third', 'steps:', '  - Open third flow.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let cleanupCalls = 0;
+  const executedCases: string[] = [];
+
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
+      },
+    });
+  testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
+    const testCaseId = config.recording?.testCaseId ?? 'unknown';
+    executedCases.push(testCaseId);
+    if (testCaseId === 'second') {
+      throw new Error('gRPC client not connected');
+    }
+    return createGoalResult();
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.specResults.length, 2);
+    assert.deepEqual(executedCases, ['first', 'second']);
+    assert.equal(result.specResults[0]?.success, true);
+    assert.equal(result.specResults[1]?.success, false);
+    assert.match(result.specResults[1]?.message ?? '', /gRPC client not connected/);
+    assert.equal(cleanupCalls, 1);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
