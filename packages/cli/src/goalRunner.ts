@@ -51,6 +51,11 @@ export interface GoalRunnerConfig {
   };
 }
 
+export interface GoalSessionConfig {
+  platform?: string;
+  appOverridePath?: string;
+}
+
 export interface GoalRunnerDependencies {
   createFilePathUtil(): CliFilePathUtil;
   getDeviceNode(): GoalRunnerDeviceNode;
@@ -61,6 +66,14 @@ export interface GoalRunnerDependencies {
   createRenderer(): GoalRunnerRenderer;
 }
 
+export interface GoalSession {
+  deviceNode: GoalRunnerDeviceNode;
+  device: GoalRunnerDevice;
+  deviceInfo: DeviceInfo;
+  platform: string;
+  cleanup(): Promise<void>;
+}
+
 export const goalRunnerDependencies: GoalRunnerDependencies = {
   createFilePathUtil: () => new CliFilePathUtil(),
   getDeviceNode: () => DeviceNode.getInstance(),
@@ -69,43 +82,26 @@ export const goalRunnerDependencies: GoalRunnerDependencies = {
   createRenderer: () => new TerminalRenderer(),
 };
 
-/**
- * Top-level orchestrator for running a goal from the CLI.
- *
- * Dart equivalent: runGoal() in mobile_cli/lib/goal_runner.dart
- */
-export async function runGoal(
-  config: GoalRunnerConfig,
+export async function prepareGoalSession(
+  config: GoalSessionConfig,
   dependencies: GoalRunnerDependencies = goalRunnerDependencies,
-): Promise<GoalResult> {
-  const renderer = dependencies.createRenderer();
-  let deviceNode: GoalRunnerDeviceNode | undefined;
-  let cancelHandler: (() => void) | undefined;
-  let device: GoalRunnerDevice | undefined;
-  let activeRecording:
-    | {
-        testRunId: string;
-        testCaseId: string;
-        startedAt: string;
-      }
-    | undefined;
+): Promise<GoalSession> {
+  const filePathUtil = dependencies.createFilePathUtil();
+  Logger.i('Detecting connected devices...');
+  const adbPath = await filePathUtil.getADBPath();
+  const deviceNode = dependencies.getDeviceNode();
+  deviceNode.init(filePathUtil);
+  let cleanedUp = false;
+
+  const cleanup = async (): Promise<void> => {
+    if (cleanedUp) {
+      return;
+    }
+    cleanedUp = true;
+    await deviceNode.cleanup();
+  };
 
   try {
-    // -- 1. Set up file path utility --
-    const filePathUtil = dependencies.createFilePathUtil();
-
-    // -- 2. Detect devices --
-    console.log('\n\x1b[1mFinalRun CLI\x1b[0m');
-    console.log('─'.repeat(50));
-    console.log(`Goal: ${config.goal}`);
-    console.log(`Model: ${config.provider}/${config.modelName}`);
-    console.log('─'.repeat(50) + '\n');
-
-    Logger.i('Detecting connected devices...');
-    const adbPath = await filePathUtil.getADBPath();
-    deviceNode = dependencies.getDeviceNode();
-    deviceNode.init(filePathUtil);
-
     const devices: DeviceInfo[] = await deviceNode.detectDevices(adbPath);
     if (devices.length === 0) {
       throw new Error(
@@ -118,14 +114,12 @@ export async function runGoal(
     if (!deviceInfo) {
       throw new Error(`No ${selectedPlatform} device found.`);
     }
-    const platform = deviceInfo.isAndroid ? PLATFORM_ANDROID : 'ios';
-    Logger.i(
-      `Using device: ${deviceInfo.name ?? deviceInfo.id} (${platform})`,
-    );
 
-    // -- 3. Set up device (install driver, connect gRPC) --
+    const platform = deviceInfo.isAndroid ? PLATFORM_ANDROID : 'ios';
+    Logger.i(`Using device: ${deviceInfo.name ?? deviceInfo.id} (${platform})`);
+
     Logger.i('Setting up device...');
-    device = await deviceNode.setUpDevice(deviceInfo);
+    const device = await deviceNode.setUpDevice(deviceInfo);
 
     if (config.appOverridePath) {
       Logger.i(`Installing app override: ${config.appOverridePath}`);
@@ -155,19 +149,50 @@ export async function runGoal(
       }
     }
 
-    // -- 4. Create AI agent --
+    return {
+      deviceNode,
+      device,
+      deviceInfo,
+      platform,
+      cleanup,
+    };
+  } catch (error) {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      Logger.w('Failed to clean up device resources after setup failure:', cleanupError);
+    }
+    throw error;
+  }
+}
+
+export async function executeGoalOnSession(
+  session: GoalSession,
+  config: GoalRunnerConfig,
+  dependencies: GoalRunnerDependencies = goalRunnerDependencies,
+): Promise<GoalResult> {
+  const renderer = dependencies.createRenderer();
+  let cancelHandler: (() => void) | undefined;
+  let activeRecording:
+    | {
+        testRunId: string;
+        testCaseId: string;
+        startedAt: string;
+      }
+    | undefined;
+
+  try {
     const aiAgent = dependencies.createAiAgent({
       provider: config.provider,
       modelName: config.modelName,
       apiKey: config.apiKey,
     });
 
-    // -- 5. Create and run the goal executor --
     const executor = dependencies.createExecutor({
       goal: config.goal,
-      platform,
+      platform: session.platform,
       maxIterations: config.maxIterations,
-      agent: device,
+      agent: session.device,
       aiAgent,
       runtimeBindings: config.runtimeBindings,
     });
@@ -179,10 +204,11 @@ export async function runGoal(
     };
     process.on('SIGINT', cancelHandler);
 
-    const recordingRequired = config.recording !== undefined && platform === PLATFORM_ANDROID;
+    const recordingRequired =
+      config.recording !== undefined && session.platform === PLATFORM_ANDROID;
 
     if (config.recording) {
-      const recordingResponse = await device.startRecording(
+      const recordingResponse = await session.device.startRecording(
         new RecordingRequest({
           testRunId: config.recording.testRunId,
           testCaseId: config.recording.testCaseId,
@@ -209,7 +235,7 @@ export async function runGoal(
         if (recordingRequired) {
           Logger.e(message);
           const failureResult = createRecordingFailureResult({
-            platform,
+            platform: session.platform,
             message: `Recording is required for Android runs. ${message}`,
           });
           renderer.printSummary(failureResult);
@@ -224,7 +250,7 @@ export async function runGoal(
 
     let recording: GoalRecordingResult | undefined;
     if (activeRecording) {
-      const stopResponse = await device.stopRecording(
+      const stopResponse = await session.device.stopRecording(
         activeRecording.testRunId,
         activeRecording.testCaseId,
       );
@@ -279,21 +305,43 @@ export async function runGoal(
     if (cancelHandler) {
       process.removeListener('SIGINT', cancelHandler);
     }
-    if (activeRecording && device) {
+    if (activeRecording) {
       try {
-        await device.abortRecording(activeRecording.testRunId, false);
+        await session.device.abortRecording(activeRecording.testRunId, false);
       } catch (error) {
         Logger.w('Failed to abort active recording during cleanup:', error);
       }
     }
-    if (deviceNode) {
-      try {
-        await deviceNode.cleanup();
-      } catch (error) {
-        Logger.w('Failed to clean up device resources:', error);
-      }
-    }
     renderer.destroy();
+  }
+}
+
+/**
+ * Top-level orchestrator for running a goal from the CLI.
+ *
+ * Dart equivalent: runGoal() in mobile_cli/lib/goal_runner.dart
+ */
+export async function runGoal(
+  config: GoalRunnerConfig,
+  dependencies: GoalRunnerDependencies = goalRunnerDependencies,
+): Promise<GoalResult> {
+  printRunBanner(config);
+  const session = await prepareGoalSession(
+    {
+      platform: config.platform,
+      appOverridePath: config.appOverridePath,
+    },
+    dependencies,
+  );
+
+  try {
+    return await executeGoalOnSession(session, config, dependencies);
+  } finally {
+    try {
+      await session.cleanup();
+    } catch (error) {
+      Logger.w('Failed to clean up device resources:', error);
+    }
   }
 }
 
@@ -319,6 +367,14 @@ function markGoalResultFailed(result: GoalResult, message: string): GoalResult {
     success: false,
     message: result.success ? message : `${result.message}\n${message}`,
   };
+}
+
+function printRunBanner(config: GoalRunnerConfig): void {
+  console.log('\n\x1b[1mFinalRun CLI\x1b[0m');
+  console.log('─'.repeat(50));
+  console.log(`Goal: ${config.goal}`);
+  console.log(`Model: ${config.provider}/${config.modelName}`);
+  console.log('─'.repeat(50) + '\n');
 }
 
 function selectPlatform(

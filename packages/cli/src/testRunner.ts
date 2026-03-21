@@ -6,9 +6,11 @@ import {
   type RuntimeBindings,
   type SpecArtifactRecord,
 } from '@finalrun/common';
-import { DeviceNode } from '@finalrun/device-node';
-import { runGoal } from './goalRunner.js';
-import { CliFilePathUtil } from './filePathUtil.js';
+import {
+  executeGoalOnSession,
+  prepareGoalSession,
+  type GoalSession,
+} from './goalRunner.js';
 import { compileSpecToGoal } from './specCompiler.js';
 import { runCheck, type CheckRunnerOptions } from './checkRunner.js';
 import { ReportWriter } from './reportWriter.js';
@@ -35,8 +37,8 @@ export interface TestRunnerResult {
 }
 
 export const testRunnerDependencies = {
-  runGoal,
-  resolveExecutionPlatform,
+  prepareGoalSession,
+  executeGoalOnSession,
   runCheck,
   resolveWorkspace,
   ensureWorkspaceDirectories,
@@ -54,6 +56,7 @@ export async function runTests(
   let reportWriter: ReportWriter | undefined;
   let runDir = '';
   let logSink: ReturnType<ReportWriter['createLoggerSink']> | undefined;
+  let goalSession: GoalSession | undefined;
   const fallbackEnvName = await resolveRunEnvName(workspace.envDir, options.envName);
 
   let checked;
@@ -75,19 +78,20 @@ export async function runTests(
     return failedRun;
   }
 
-  let resolvedPlatform: string;
   try {
-    resolvedPlatform = await testRunnerDependencies.resolveExecutionPlatform(
-      options.platform ?? checked.appOverride?.inferredPlatform,
-    );
+    goalSession = await testRunnerDependencies.prepareGoalSession({
+      platform: options.platform ?? checked.appOverride?.inferredPlatform,
+      appOverridePath: checked.appOverride?.appPath,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failedRun = await writeRunFailureArtifacts({
       workspace,
       envName: checked.environment.envName,
-      platform:
-        checked.appOverride?.inferredPlatform ??
-        inferPlatformHint(options.platform, options.appPath),
+      platform: inferPlatformHint(
+        options.platform ?? checked.appOverride?.inferredPlatform,
+        checked.appOverride?.appPath ?? options.appPath,
+      ),
       startedAt,
       bindings: checked.environment.bindings,
       message: `Run setup failed before execution: ${message}`,
@@ -98,7 +102,7 @@ export async function runTests(
   ({ reportWriter, runDir } = await createReportWriter({
     workspace,
     envName: checked.environment.envName,
-    platform: resolvedPlatform,
+    platform: goalSession.platform,
     startedAt,
     bindings: checked.environment.bindings,
   }));
@@ -119,15 +123,13 @@ export async function runTests(
 
       try {
         const goal = compileSpecToGoal(spec, checked.environment.bindings);
-        const goalResult = await testRunnerDependencies.runGoal({
+        const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
           goal,
           apiKey: options.apiKey,
           provider: options.provider,
           modelName: options.modelName,
           maxIterations: options.maxIterations,
           debug: options.debug,
-          platform: resolvedPlatform,
-          appOverridePath: checked.appOverride?.appPath,
           runtimeBindings: checked.environment.bindings,
           recording: {
             testRunId: path.basename(runDir),
@@ -153,7 +155,7 @@ export async function runTests(
             spec,
             bindings: checked.environment.bindings,
             message,
-            platform: resolvedPlatform,
+            platform: goalSession.platform,
             startedAt: specStartedAt,
             completedAt: new Date().toISOString(),
           }),
@@ -180,23 +182,14 @@ export async function runTests(
     if (logSink) {
       Logger.removeSink(logSink);
     }
+    if (goalSession) {
+      try {
+        await goalSession.cleanup();
+      } catch (error) {
+        Logger.w('Failed to clean up device resources:', error);
+      }
+    }
   }
-}
-
-async function resolveExecutionPlatform(
-  preferredPlatform?: string,
-): Promise<string> {
-  const filePathUtil = new CliFilePathUtil();
-  const adbPath = await filePathUtil.getADBPath();
-  const deviceNode = DeviceNode.getInstance();
-  deviceNode.init(filePathUtil);
-
-  const devices = await deviceNode.detectDevices(adbPath);
-  if (devices.length === 0) {
-    throw new Error('No devices found. Connect an Android or iOS device and try again.');
-  }
-
-  return selectExecutionPlatform(devices, preferredPlatform);
 }
 
 export function selectExecutionPlatform(
