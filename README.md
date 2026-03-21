@@ -131,6 +131,22 @@ Use this while editing local code. It resolves workspace packages from source so
 
 `--env` is optional. When omitted, FinalRun uses empty bindings if `.finalrun/env/` is absent or contains no env files. If env files are present, FinalRun uses `.finalrun/env/dev.yaml` when it exists, otherwise it falls back to the only env file when exactly one exists. If multiple non-`dev` env files exist, the CLI stops and asks you to pass `--env <name>`.
 
+If you want to run the TypeScript CLI from another repo during development, build the workspace first:
+
+```sh
+npm run build
+```
+
+Then, from the target repo, run the CLI with the repo's development tsconfig so workspace packages resolve from source:
+
+```sh
+GOOGLE_API_KEY="***" \
+/Users/ashishyadav/code/finalrun-ts/node_modules/.bin/tsx \
+  --tsconfig /Users/ashishyadav/code/finalrun-ts/tsconfig.dev.json \
+  /Users/ashishyadav/code/finalrun-ts/packages/cli/bin/finalrun.ts \
+  test .finalrun/tests/your-test-spec-name.yaml --model google/gemini-3-flash-preview
+```
+
 Validate the workspace before executing:
 
 ```sh
