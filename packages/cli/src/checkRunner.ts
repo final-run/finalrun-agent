@@ -14,10 +14,11 @@ import type { LoadedRepoTestSpec } from '@finalrun/common';
 
 export interface CheckRunnerOptions {
   envName?: string;
-  selector?: string;
+  selectors?: string[];
   platform?: string;
   appPath?: string;
   cwd?: string;
+  requireSelection?: boolean;
 }
 
 export interface CheckRunnerResult {
@@ -45,7 +46,9 @@ export async function runCheck(
     resolvedEnvironment.envName,
     runtimeEnv,
   );
-  const selectedFiles = await selectSpecFiles(workspace.testsDir, options.selector);
+  const selectedFiles = await selectSpecFiles(workspace.testsDir, options.selectors, {
+    requireSelection: options.requireSelection,
+  });
   const specs = await Promise.all(
     selectedFiles.map(async (filePath) => {
       const spec = await loadTestSpec(filePath, workspace.testsDir);

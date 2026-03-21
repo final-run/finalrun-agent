@@ -279,9 +279,114 @@ test('runCheck rejects selectors that escape .finalrun/tests', async () => {
         runCheck({
           envName: 'dev',
           cwd: rootDir,
-          selector: '../outside.yaml',
+          selectors: ['../outside.yaml'],
         }),
       /Spec selector must stay inside/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck expands multiple selectors with comma splitting and de-duplicates first-seen matches', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
+      'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
+      'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
+      'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit profile.'].join('\n'),
+      'auth/profile/view.yaml': ['name: view', 'steps:', '  - View profile.'].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['smoke.yaml,auth/login.yaml', 'auth/profile', 'auth/**'],
+    });
+
+    assert.deepEqual(
+      result.specs.map((spec) => spec.relativePath),
+      [
+        'smoke.yaml',
+        'auth/login.yaml',
+        'auth/profile/edit.yaml',
+        'auth/profile/view.yaml',
+        'auth/settings.yaml',
+      ],
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck treats raw directory selectors as recursive and * as shallow while ** is recursive', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
+      'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit profile.'].join('\n'),
+      'auth/profile/view.yaml': ['name: view', 'steps:', '  - View profile.'].join('\n'),
+      'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
+    },
+  });
+
+  try {
+    const recursiveDirectory = await runCheck({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['auth'],
+    });
+    const shallowGlob = await runCheck({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['auth/*'],
+    });
+    const recursiveGlob = await runCheck({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['auth/**'],
+    });
+
+    assert.deepEqual(
+      recursiveDirectory.specs.map((spec) => spec.relativePath),
+      [
+        'auth/login.yaml',
+        'auth/profile/edit.yaml',
+        'auth/profile/view.yaml',
+        'auth/settings.yaml',
+      ],
+    );
+    assert.deepEqual(
+      shallowGlob.specs.map((spec) => spec.relativePath),
+      ['auth/login.yaml', 'auth/settings.yaml'],
+    );
+    assert.deepEqual(
+      recursiveGlob.specs.map((spec) => spec.relativePath),
+      [
+        'auth/login.yaml',
+        'auth/profile/edit.yaml',
+        'auth/profile/view.yaml',
+        'auth/settings.yaml',
+      ],
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck requires at least one selector when requireSelection is enabled', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    await assert.rejects(
+      () =>
+        runCheck({
+          envName: 'dev',
+          cwd: rootDir,
+          requireSelection: true,
+        }),
+      /At least one test selector is required/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

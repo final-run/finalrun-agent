@@ -58,7 +58,10 @@ export async function runTests(
 
   let checked;
   try {
-    checked = await testRunnerDependencies.runCheck(options);
+    checked = await testRunnerDependencies.runCheck({
+      ...options,
+      requireSelection: true,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failedRun = await writeRunFailureArtifacts({

@@ -10,6 +10,7 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   specLines?: string[];
+  specs?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-bin-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -19,11 +20,18 @@ function createTempWorkspace(params?: {
     fs.mkdirSync(envDir, { recursive: true });
   }
 
-  fs.writeFileSync(
-    path.join(testsDir, 'login.yaml'),
-    (params?.specLines ?? ['name: login', 'steps:', '  - Open the login screen.']).join('\n'),
-    'utf-8',
-  );
+  const specs = params?.specs ?? {
+    'login.yaml': (params?.specLines ?? [
+      'name: login',
+      'steps:',
+      '  - Open the login screen.',
+    ]).join('\n'),
+  };
+  for (const [relativePath, contents] of Object.entries(specs)) {
+    const targetPath = path.join(testsDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, contents, 'utf-8');
+  }
 
   if (params?.includeEnvDir !== false) {
     for (const [fileName, contents] of Object.entries(
@@ -110,6 +118,42 @@ test('finalrun check fails with actionable binding guidance when .finalrun/env i
     assert.equal(result.status, 1);
     assert.match(result.stderr, /no environment configuration was resolved/);
     assert.match(result.stderr, /\$\{secrets\.email\}/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun check accepts repeated selectors and comma-delimited selectors', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+      'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit the profile.'].join('\n'),
+    },
+  });
+
+  try {
+    const repeatedResult = runCli(['check', 'login.yaml', 'auth/profile/edit.yaml'], rootDir);
+    assert.equal(repeatedResult.status, 0);
+    assert.match(repeatedResult.stdout, /Validated 2 spec\(s\)/);
+    assert.equal(repeatedResult.stderr, '');
+
+    const commaResult = runCli(['check', 'login.yaml,auth/profile/edit.yaml'], rootDir);
+    assert.equal(commaResult.status, 0);
+    assert.match(commaResult.stdout, /Validated 2 spec\(s\)/);
+    assert.equal(commaResult.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test reports missing selectors before API key validation', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const result = runCli(['test'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /At least one test selector is required/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
