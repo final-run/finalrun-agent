@@ -159,6 +159,47 @@ test('DeviceManager.openAndroidDeepLink uses adb am start with the deeplink URL'
   ]);
 });
 
+test('DeviceManager.performAndroidSwipe uses adb input swipe with absolute coordinates', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const deviceManager = new DeviceManager({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await deviceManager.performAndroidSwipe(
+    '/platform-tools/adb',
+    'emulator-5554',
+    {
+      startX: 10,
+      startY: 20,
+      endX: 30,
+      endY: 40,
+      durationMs: 700,
+    },
+  );
+
+  assert.equal(result.success, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: '/platform-tools/adb',
+      args: [
+        '-s',
+        'emulator-5554',
+        'shell',
+        'input',
+        'swipe',
+        '10',
+        '20',
+        '30',
+        '40',
+        '700',
+      ],
+    },
+  ]);
+});
+
 test('DeviceManager.openIOSDeepLink uses simctl openurl', async () => {
   const execCalls: Array<{ file: string; args: readonly string[] }> = [];
   const deviceManager = new DeviceManager({

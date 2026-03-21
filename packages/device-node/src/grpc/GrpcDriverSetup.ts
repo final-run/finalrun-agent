@@ -118,6 +118,26 @@ export class GrpcDriverSetup {
           : async (deeplink) => {
             return await this._deviceManager.openIOSDeepLink(deviceInfo.id!, deeplink);
           },
+      performAndroidSwipe: deviceInfo.isAndroid
+        ? async (params) => {
+          const adbPath = await this._filePathUtil.getADBPath();
+          if (!adbPath) {
+            const message = 'ADB not available for Android scroll execution.';
+            Logger.e(message);
+            return { success: false, message };
+          }
+          if (!deviceInfo.id) {
+            const message = 'Android device ID is required for scroll execution.';
+            Logger.e(message);
+            return { success: false, message };
+          }
+          return await this._deviceManager.performAndroidSwipe(
+            adbPath,
+            deviceInfo.id,
+            params,
+          );
+        }
+        : undefined,
     });
   }
 

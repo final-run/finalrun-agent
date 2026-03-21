@@ -213,6 +213,57 @@ export class DeviceManager {
   }
 
   /**
+   * Perform an Android swipe using host-side ADB.
+   */
+  async performAndroidSwipe(
+    adbPath: string,
+    deviceSerial: string,
+    params: {
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+      durationMs: number;
+    },
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      await this._execFileFn(adbPath, [
+        '-s',
+        deviceSerial,
+        'shell',
+        'input',
+        'swipe',
+        String(params.startX),
+        String(params.startY),
+        String(params.endX),
+        String(params.endY),
+        String(params.durationMs),
+      ]);
+      Logger.d(
+        `Performed Android swipe on ${deviceSerial}: (${params.startX},${params.startY}) -> (${params.endX},${params.endY}) in ${params.durationMs}ms`,
+      );
+      return { success: true };
+    } catch (error) {
+      const stderr =
+        typeof error === 'object' &&
+        error !== null &&
+        'stderr' in error &&
+        (typeof (error as { stderr?: unknown }).stderr === 'string' ||
+          Buffer.isBuffer((error as { stderr?: unknown }).stderr))
+          ? (error as { stderr?: string | Buffer }).stderr?.toString().trim()
+          : '';
+      const message =
+        stderr ||
+        (error instanceof Error ? error.message : String(error));
+      Logger.e(`Failed to perform Android swipe on ${deviceSerial}:`, error);
+      return {
+        success: false,
+        message: `Android swipe failed: ${message}`,
+      };
+    }
+  }
+
+  /**
    * Uninstall a package from an Android device.
    */
   async uninstallAndroidApp(

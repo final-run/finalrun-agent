@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
-import { DeviceAppInfo, DeviceInfo } from '@finalrun/common';
+import {
+  DeviceActionRequest,
+  DeviceAppInfo,
+  DeviceInfo,
+  ScrollAbsAction,
+} from '@finalrun/common';
 import type { FilePathUtil } from '@finalrun/common';
 import type { DeviceManager } from '../device/DeviceManager.js';
 import type { GrpcDriverClient, GrpcScreenshotResponse } from './GrpcDriverClient.js';
@@ -164,6 +169,98 @@ test('GrpcDriverSetup fails when UiAutomation never becomes capture-ready', asyn
       ),
     /UiAutomation never became ready/,
   );
+});
+
+test('GrpcDriverSetup wires Android host-side swipe callbacks into Device', async () => {
+  const grpcClient = new FakeGrpcClient({
+    pingResponses: [true],
+    captureResponses: [
+      {
+        success: true,
+        screenshot: 'image',
+        hierarchy: '[]',
+        screenWidth: 1080,
+        screenHeight: 2400,
+      },
+    ],
+  });
+  const swipeCalls: Array<{
+    adbPath: string;
+    deviceSerial: string;
+    params: Record<string, number>;
+  }> = [];
+
+  const deviceManager = {
+    installAndroidApp: async () => true,
+    removePortForward: async () => undefined,
+    forwardPort: async () => 50051,
+    performAndroidSwipe: async (
+      adbPath: string,
+      deviceSerial: string,
+      params: Record<string, number>,
+    ) => {
+      swipeCalls.push({ adbPath, deviceSerial, params });
+      return { success: true, message: 'scrolled via adb' };
+    },
+  } as unknown as DeviceManager;
+
+  const filePathUtil: FilePathUtil = {
+    getADBPath: async () => '/usr/bin/adb',
+    getDriverAppPath: async () => '/tmp/app-debug.apk',
+    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
+    getIOSDriverAppPath: async () => null,
+    getAppFilePath: async (appFileName: string) => appFileName,
+    ensureIOSAppsAvailable: async () => undefined,
+  };
+
+  const setup = new GrpcDriverSetup({
+    deviceManager,
+    filePathUtil,
+    grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
+    delayFn: async () => undefined,
+    startAndroidDriverFn: () => undefined,
+    captureReadinessTimeoutMs: 1000,
+    captureReadinessDelayMs: 0,
+  });
+
+  const device = await setup.setUp(
+    new DeviceInfo({
+      id: 'emulator-5554',
+      deviceUUID: 'device-1',
+      isAndroid: true,
+      sdkVersion: 34,
+      name: 'Android Emulator',
+    }),
+  );
+
+  const response = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-scroll-setup',
+      action: new ScrollAbsAction({
+        startX: 11,
+        startY: 22,
+        endX: 33,
+        endY: 44,
+        durationMs: 555,
+      }),
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.message, 'scrolled via adb');
+  assert.deepEqual(swipeCalls, [
+    {
+      adbPath: '/usr/bin/adb',
+      deviceSerial: 'emulator-5554',
+      params: {
+        startX: 11,
+        startY: 22,
+        endX: 33,
+        endY: 44,
+        durationMs: 555,
+      },
+    },
+  ]);
 });
 
 test('GrpcDriverSetup installs, starts, and initializes the iOS simulator driver', async () => {

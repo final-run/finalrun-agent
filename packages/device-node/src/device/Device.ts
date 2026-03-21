@@ -36,6 +36,14 @@ import {
 } from './RecordingManager.js';
 import { ScreenshotCaptureHelper } from './ScreenshotCapture.js';
 
+type AndroidSwipeHandler = (params: {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  durationMs: number;
+}) => Promise<{ success: boolean; message?: string | null }>;
+
 /**
  * Represents a single connected device and implements the Agent interface.
  * Bridges DeviceActionRequest → gRPC calls via GrpcDriverClient.
@@ -52,6 +60,7 @@ export class Device implements Agent {
   private _refreshIOSAppIdsBeforeLaunch: (() => Promise<void>) | null;
   private _getIOSInstalledApps: (() => Promise<DeviceAppInfo[]>) | null;
   private _openDeepLink: ((deeplink: string) => Promise<boolean>) | null;
+  private _performAndroidSwipe: AndroidSwipeHandler | null;
   private _recordingController: DeviceRecordingController;
 
   constructor(params: {
@@ -60,6 +69,7 @@ export class Device implements Agent {
     refreshIOSAppIdsBeforeLaunch?: () => Promise<void>;
     getIOSInstalledApps?: () => Promise<DeviceAppInfo[]>;
     openDeepLink?: (deeplink: string) => Promise<boolean>;
+    performAndroidSwipe?: AndroidSwipeHandler;
     recordingController?: DeviceRecordingController;
   }) {
     this._deviceInfo = params.deviceInfo;
@@ -72,6 +82,7 @@ export class Device implements Agent {
     this._refreshIOSAppIdsBeforeLaunch = params.refreshIOSAppIdsBeforeLaunch ?? null;
     this._getIOSInstalledApps = params.getIOSInstalledApps ?? null;
     this._openDeepLink = params.openDeepLink ?? null;
+    this._performAndroidSwipe = params.performAndroidSwipe ?? null;
     this._recordingController = params.recordingController ?? defaultRecordingManager;
   }
 
@@ -142,6 +153,27 @@ export class Device implements Agent {
 
         case StepAction.SCROLL_ABS: {
           const scrollAction = action as ScrollAbsAction;
+          if (this._deviceInfo.isAndroid) {
+            if (!this._performAndroidSwipe) {
+              return new DeviceNodeResponse({
+                success: false,
+                message:
+                  'Android scroll actions require a host-side swipe handler, but none is configured.',
+              });
+            }
+            const resp = await this._performAndroidSwipe({
+              startX: scrollAction.startX,
+              startY: scrollAction.startY,
+              endX: scrollAction.endX,
+              endY: scrollAction.endY,
+              durationMs: scrollAction.durationMs,
+            });
+            return new DeviceNodeResponse({
+              success: resp.success,
+              message: resp.message,
+            });
+          }
+
           const resp = await this._grpcClient.swipe({
             startX: scrollAction.startX,
             startY: scrollAction.startY,
