@@ -10,6 +10,7 @@ import {
   GetAppListAction,
   LaunchAppAction,
   RecordingRequest,
+  ScrollAbsAction,
 } from '@finalrun/common';
 import type { GrpcDriverClient } from '../grpc/GrpcDriverClient.js';
 import { Device } from './Device.js';
@@ -175,6 +176,136 @@ test('Device executes deeplink actions through the host-side callback', async ()
   assert.equal(response.success, true);
   assert.deepEqual(openedLinks, ['wikipedia://settings']);
   assert.equal(response.message, 'Successfully opened deep link: wikipedia://settings');
+});
+
+test('Device routes Android scroll actions through the host-side swipe callback', async () => {
+  const swipeCalls: Array<Record<string, number>> = [];
+  let grpcSwipeCalls = 0;
+  const grpcClient = {
+    isConnected: true,
+    async swipe() {
+      grpcSwipeCalls += 1;
+      return { success: true };
+    },
+  };
+
+  const device = new Device({
+    deviceInfo: new DeviceInfo({
+      id: 'emulator-5554',
+      deviceUUID: 'device-1',
+      isAndroid: true,
+      sdkVersion: 34,
+      name: 'Android Emulator',
+    }),
+    grpcClient: grpcClient as unknown as GrpcDriverClient,
+    performAndroidSwipe: async (params) => {
+      swipeCalls.push(params);
+      return { success: true, message: 'scrolled via adb' };
+    },
+  });
+
+  const response = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-scroll-1',
+      action: new ScrollAbsAction({
+        startX: 10,
+        startY: 20,
+        endX: 30,
+        endY: 40,
+        durationMs: 500,
+      }),
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.message, 'scrolled via adb');
+  assert.equal(grpcSwipeCalls, 0);
+  assert.deepEqual(swipeCalls, [
+    { startX: 10, startY: 20, endX: 30, endY: 40, durationMs: 500 },
+  ]);
+});
+
+test('Device routes iOS scroll actions through gRPC swipe', async () => {
+  const grpcSwipeCalls: Array<Record<string, number>> = [];
+  const grpcClient = {
+    isConnected: true,
+    async swipe(params: Record<string, number>) {
+      grpcSwipeCalls.push(params);
+      return { success: true, message: 'scrolled via grpc' };
+    },
+  };
+
+  const device = new Device({
+    deviceInfo: new DeviceInfo({
+      id: 'SIM-1',
+      deviceUUID: 'SIM-1',
+      isAndroid: false,
+      sdkVersion: 17,
+      name: 'iPhone 15 Pro',
+    }),
+    grpcClient: grpcClient as unknown as GrpcDriverClient,
+  });
+
+  const response = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-scroll-2',
+      action: new ScrollAbsAction({
+        startX: 50,
+        startY: 60,
+        endX: 70,
+        endY: 80,
+        durationMs: 600,
+      }),
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.message, 'scrolled via grpc');
+  assert.deepEqual(grpcSwipeCalls, [
+    { startX: 50, startY: 60, endX: 70, endY: 80, durationMs: 600 },
+  ]);
+});
+
+test('Device returns a clear error when Android scroll callback is missing', async () => {
+  let grpcSwipeCalls = 0;
+  const grpcClient = {
+    isConnected: true,
+    async swipe() {
+      grpcSwipeCalls += 1;
+      return { success: true };
+    },
+  };
+
+  const device = new Device({
+    deviceInfo: new DeviceInfo({
+      id: 'emulator-5554',
+      deviceUUID: 'device-1',
+      isAndroid: true,
+      sdkVersion: 34,
+      name: 'Android Emulator',
+    }),
+    grpcClient: grpcClient as unknown as GrpcDriverClient,
+  });
+
+  const response = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-scroll-3',
+      action: new ScrollAbsAction({
+        startX: 5,
+        startY: 15,
+        endX: 25,
+        endY: 35,
+        durationMs: 400,
+      }),
+    }),
+  );
+
+  assert.equal(response.success, false);
+  assert.equal(
+    response.message,
+    'Android scroll actions require a host-side swipe handler, but none is configured.',
+  );
+  assert.equal(grpcSwipeCalls, 0);
 });
 
 test('Device delegates startRecording through the recording controller with the device platform', async () => {
