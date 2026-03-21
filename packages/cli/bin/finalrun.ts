@@ -7,6 +7,10 @@ import { Logger, LogLevel } from '@finalrun/common';
 import { CliEnv, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
 import { runCheck } from '../src/checkRunner.js';
+import {
+  normalizeSpecSelectors,
+  TEST_SELECTION_REQUIRED_ERROR,
+} from '../src/testSelection.js';
 import { runTests } from '../src/testRunner.js';
 import {
   ensureWorkspaceDirectories,
@@ -29,8 +33,8 @@ program
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
-  .argument('[selector]', 'Optional spec path or glob under .finalrun/tests/')
-  .action(async (selector: string | undefined, options: CheckCommandOptions) => {
+  .argument('[selectors...]', 'Optional YAML files, directories, or globs under .finalrun/tests/')
+  .action(async (selectors: string[] | undefined, options: CheckCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
       const resolvedEnvironment = await resolveCliEnvironment(options.env);
@@ -38,7 +42,7 @@ program
         envName: resolvedEnvironment.usesEmptyBindings
           ? undefined
           : resolvedEnvironment.envName,
-        selector,
+        selectors: normalizeSpecSelectors(selectors),
         platform: options.platform,
         appPath: options.app,
       });
@@ -64,9 +68,14 @@ program
   )
   .option('--debug', 'Enable debug logging', false)
   .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
-  .argument('[selector]', 'Optional spec path or glob under .finalrun/tests/')
-  .action(async (selector: string | undefined, options: TestCommandOptions) => {
+  .argument('[selectors...]', 'YAML files, directories, or globs under .finalrun/tests')
+  .action(async (selectors: string[] | undefined, options: TestCommandOptions) => {
     await runCommand(async () => {
+      const normalizedSelectors = normalizeSpecSelectors(selectors);
+      if (normalizedSelectors.length === 0) {
+        throw new Error(TEST_SELECTION_REQUIRED_ERROR);
+      }
+
       const debug = options.debug === true;
       Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
       const resolvedEnvironment = await resolveCliEnvironment(options.env);
@@ -88,7 +97,7 @@ program
         envName: resolvedEnvironment.usesEmptyBindings
           ? undefined
           : resolvedEnvironment.envName,
-        selector,
+        selectors: normalizedSelectors,
         platform: options.platform,
         appPath: options.app,
         apiKey,
