@@ -5,6 +5,7 @@
 import { DeviceActionRequest } from '../models/DeviceActionRequest.js';
 import { DeviceInfo } from '../models/DeviceInfo.js';
 import { DeviceNodeResponse } from '../models/DeviceNodeResponse.js';
+import type { RecordingRequest } from '../models/RecordingRequest.js';
 
 /**
  * Abstract interface for anything that represents a connected device.
@@ -44,6 +45,12 @@ export interface Agent {
 
   // Dart: void clearListener()
   clearListener(): void;
+
+  // Screen recording methods
+  startRecording(recordingRequest: RecordingRequest): Promise<DeviceNodeResponse>;
+  stopRecording(testRunId: string, testCaseId: string): Promise<DeviceNodeResponse>;
+  recordingCleanUp(): Promise<void>;
+  abortRecording(testRunId: string, keepOutput?: boolean): Promise<void>;
 
   // Dart: void uninstallDriver()
   uninstallDriver(): void;

@@ -79,6 +79,10 @@ export class ReportWriter {
     await fsp.mkdir(stepDir, { recursive: true });
     await fsp.mkdir(screenshotDir, { recursive: true });
 
+    const recordingRelative = await this._copyRecordingArtifact(spec.specId, result.recording);
+    const recordingStartedAt = result.recording?.startedAt;
+    const recordingCompletedAt = result.recording?.completedAt;
+
     const steps: StepArtifactRecord[] = [];
     for (const [index, step] of result.steps.entries()) {
       const stepNumber = index + 1;
@@ -97,6 +101,7 @@ export class ReportWriter {
         stepNumber,
         bindings,
         screenshotFile: screenshotRelative,
+        videoOffsetMs: computeVideoOffsetMs(step.timestamp, recordingStartedAt),
         stepJsonFile: stepJsonRelative,
       });
       steps.push(artifactStep);
@@ -122,6 +127,9 @@ export class ReportWriter {
         0,
         new Date(result.completedAt).getTime() - new Date(result.startedAt).getTime(),
       ),
+      recordingFile: recordingRelative,
+      recordingStartedAt,
+      recordingCompletedAt,
       steps,
     };
 
@@ -271,6 +279,27 @@ export class ReportWriter {
 
     return specRecord;
   }
+
+  private async _copyRecordingArtifact(
+    specId: string,
+    recording: GoalResult['recording'],
+  ): Promise<string | undefined> {
+    if (!recording?.filePath) {
+      return undefined;
+    }
+
+    try {
+      await fsp.access(recording.filePath);
+    } catch {
+      Logger.w(`Recording file not found for report copy: ${recording.filePath}`);
+      return undefined;
+    }
+
+    const ext = path.extname(recording.filePath) || '.mov';
+    const recordingRelative = path.posix.join('tests', specId, `recording${ext}`);
+    await fsp.copyFile(recording.filePath, path.join(this._runDir, recordingRelative));
+    return recordingRelative;
+  }
 }
 
 function toStepArtifactRecord(
@@ -279,6 +308,7 @@ function toStepArtifactRecord(
     stepNumber: number;
     bindings: RuntimeBindings;
     screenshotFile?: string;
+    videoOffsetMs?: number;
     stepJsonFile: string;
   },
 ): StepArtifactRecord & { stepJsonFile: string } {
@@ -312,10 +342,28 @@ function toStepArtifactRecord(
     durationMs: step.durationMs,
     timestamp: step.timestamp ?? new Date().toISOString(),
     screenshotFile: params.screenshotFile,
+    videoOffsetMs: params.videoOffsetMs,
     stepJsonFile: params.stepJsonFile,
     timing: redactTiming(step.timing, params.bindings),
     trace: redactTrace(step.trace, params.bindings),
   };
+}
+
+function computeVideoOffsetMs(
+  stepTimestamp: string | undefined,
+  recordingStartedAt: string | undefined,
+): number | undefined {
+  if (!stepTimestamp || !recordingStartedAt) {
+    return undefined;
+  }
+
+  const stepTimeMs = new Date(stepTimestamp).getTime();
+  const recordingStartMs = new Date(recordingStartedAt).getTime();
+  if (!Number.isFinite(stepTimeMs) || !Number.isFinite(recordingStartMs)) {
+    return undefined;
+  }
+
+  return Math.max(0, stepTimeMs - recordingStartMs);
 }
 
 function decodeScreenshot(value: string): Buffer {

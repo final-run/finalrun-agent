@@ -323,7 +323,7 @@ export function renderHtmlReport(params: {
       overflow: auto;
     }
 
-    .screenshot-shell {
+    .media-shell {
       border: 1px solid var(--border);
       border-radius: 18px;
       background: linear-gradient(180deg, #fbfdff 0%, #edf2f7 100%);
@@ -335,13 +335,32 @@ export function renderHtmlReport(params: {
       overflow: hidden;
     }
 
-    .screenshot-shell img {
+    .recording-shell {
+      min-height: 260px;
+    }
+
+    .media-shell img {
       max-width: 100%;
       max-height: 620px;
       border-radius: 24px;
       border: 6px solid #111827;
       background: white;
       object-fit: contain;
+    }
+
+    .recording-shell video {
+      width: 100%;
+      max-height: 480px;
+      border-radius: 18px;
+      background: #0f172a;
+      object-fit: contain;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .recording-meta {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
     }
 
     .empty-shot {
@@ -537,6 +556,8 @@ export function renderHtmlReport(params: {
         }
       }
 
+      syncRecording(container, spec, step);
+
       container.querySelector('[data-role="action-title"]').textContent = step.naturalLanguageAction || step.actionType;
       container.querySelector('[data-role="reason"]').textContent = step.reason || 'No reasoning recorded.';
       container.querySelector('[data-role="analysis"]').textContent = step.analysis || 'No step analysis recorded.';
@@ -580,6 +601,7 @@ export function renderHtmlReport(params: {
       const links = [
         step.stepJsonFile ? ['step.json', step.stepJsonFile] : null,
         step.screenshotFile ? ['screenshot', step.screenshotFile] : null,
+        spec.recordingFile ? ['recording', spec.recordingFile] : null,
       ].filter(Boolean);
       if (links.length === 0) {
         rawLinks.innerHTML = '<span class="muted">No step artifact links recorded.</span>';
@@ -597,6 +619,70 @@ export function renderHtmlReport(params: {
       const ms = Number(durationMs || 0);
       const seconds = ms / 1000;
       return seconds >= 10 ? seconds.toFixed(0) + 's' : seconds.toFixed(1) + 's';
+    }
+
+    function formatVideoClock(totalSeconds) {
+      const seconds = Math.max(0, Number(totalSeconds || 0));
+      const minutesPart = Math.floor(seconds / 60);
+      const secondsPart = seconds - (minutesPart * 60);
+      return String(minutesPart).padStart(2, '0') + ':' + secondsPart.toFixed(1).padStart(4, '0');
+    }
+
+    function syncRecording(container, spec, step) {
+      const video = container.querySelector('[data-role="recording-video"]');
+      const empty = container.querySelector('[data-role="empty-recording"]');
+      const label = container.querySelector('[data-role="recording-caption"]');
+
+      if (!video) {
+        return;
+      }
+
+      if (!spec.recordingFile) {
+        if (empty) empty.style.display = 'block';
+        video.style.display = 'none';
+        if (label) label.textContent = 'No session recording was captured for this spec.';
+        return;
+      }
+
+      if (empty) empty.style.display = 'none';
+      video.style.display = 'block';
+
+      if (step.videoOffsetMs === undefined || step.videoOffsetMs === null) {
+        video.pause();
+        if (label) label.textContent = 'No synced recording timestamp is available for the selected step.';
+        return;
+      }
+
+      const seekSeconds = Math.max(0, step.videoOffsetMs / 1000);
+      if (label) {
+        label.textContent = 'Paused at ' + formatVideoClock(seekSeconds) + ' for the selected step.';
+      }
+
+      const applySeek = () => {
+        const duration = Number.isFinite(video.duration) ? video.duration : undefined;
+        const clampedSeconds =
+          duration === undefined
+            ? seekSeconds
+            : Math.min(seekSeconds, Math.max(duration - 0.05, 0));
+        video.pause();
+        if (typeof video.fastSeek === 'function') {
+          video.fastSeek(clampedSeconds);
+        } else {
+          video.currentTime = clampedSeconds;
+        }
+      };
+
+      if (video.readyState >= 1) {
+        applySeek();
+        return;
+      }
+
+      const handleLoadedMetadata = () => {
+        video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        applySeek();
+      };
+      video.addEventListener('loadedmetadata', handleLoadedMetadata);
+      video.load();
     }
 
     for (const spec of reportPayload.specs) {
@@ -631,8 +717,22 @@ function renderSpecSection(spec: SpecArtifactRecord): string {
             : '<p class="muted">No steps were recorded for this spec.</p>'}
         </div>
         <div class="detail-panel" data-spec-detail="${escapeHtml(spec.specId)}">
+          <h3>Session Recording</h3>
+          <div class="media-shell recording-shell">
+            ${spec.recordingFile
+              ? `<video data-role="recording-video" controls preload="metadata" src="${escapeHtml(spec.recordingFile)}"></video>`
+              : '<div class="empty-shot" data-role="empty-recording">No session recording was captured for this spec.</div>'}
+            ${spec.recordingFile
+              ? '<div class="empty-shot" data-role="empty-recording" style="display:none">No session recording was captured for this spec.</div>'
+              : ''}
+          </div>
+          <div class="recording-meta" data-role="recording-caption">
+            ${spec.recordingFile
+              ? `Paused at ${formatVideoTimestamp(initialStep?.videoOffsetMs)} for the selected step.`
+              : 'No session recording was captured for this spec.'}
+          </div>
           <h3>Selected Step</h3>
-          <div class="screenshot-shell">
+          <div class="media-shell">
             <img data-role="screenshot" alt="" style="display:${initialStep?.screenshotFile ? 'block' : 'none'}" />
             <div class="empty-shot" data-role="empty-shot" style="display:${initialStep?.screenshotFile ? 'none' : 'block'}">
               No screenshot recorded for the selected step.
@@ -680,6 +780,9 @@ function renderSpecSection(spec: SpecArtifactRecord): string {
           <summary>Raw Artifact Links</summary>
           <div class="artifact-list">
             <div class="artifact-row"><a href="tests/${escapeHtml(spec.specId)}/result.json">result.json</a></div>
+            ${spec.recordingFile
+              ? `<div class="artifact-row"><span>Session</span><a href="${escapeHtml(spec.recordingFile)}">recording</a></div>`
+              : ''}
             ${spec.steps.map((step) => `
               <div class="artifact-row">
                 <span>Step ${step.stepNumber}</span>
@@ -736,4 +839,15 @@ function escapeJs(value: string): string {
 function formatDuration(durationMs: number): string {
   const seconds = durationMs / 1000;
   return seconds >= 10 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`;
+}
+
+function formatVideoTimestamp(videoOffsetMs: number | undefined): string {
+  if (videoOffsetMs === undefined) {
+    return '00:00.0';
+  }
+
+  const totalSeconds = Math.max(0, videoOffsetMs / 1000);
+  const minutesPart = Math.floor(totalSeconds / 60);
+  const secondsPart = totalSeconds - minutesPart * 60;
+  return `${String(minutesPart).padStart(2, '0')}:${secondsPart.toFixed(1).padStart(4, '0')}`;
 }

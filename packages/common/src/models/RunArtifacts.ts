@@ -58,6 +58,7 @@ export interface StepArtifactRecord {
   durationMs?: number;
   timestamp: string;
   screenshotFile?: string;
+  videoOffsetMs?: number;
   stepJsonFile?: string;
   trace?: ArtifactStepTrace;
   timing?: ArtifactTimingMetadata;
@@ -75,6 +76,9 @@ export interface SpecArtifactRecord {
   startedAt: string;
   completedAt: string;
   durationMs: number;
+  recordingFile?: string;
+  recordingStartedAt?: string;
+  recordingCompletedAt?: string;
   steps: StepArtifactRecord[];
 }
 

@@ -129,6 +129,10 @@ export async function runTests(
           platform: resolvedPlatform,
           appOverridePath: checked.appOverride?.appPath,
           runtimeBindings: checked.environment.bindings,
+          recording: {
+            testRunId: path.basename(runDir),
+            testCaseId: spec.specId,
+          },
         });
 
         const specRecord = await reportWriter.writeSpecRecord(

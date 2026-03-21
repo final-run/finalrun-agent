@@ -5,10 +5,15 @@ import {
   DeviceInfo,
   Logger,
   PLATFORM_ANDROID,
+  RecordingRequest,
   type RuntimeBindings,
 } from '@finalrun/common';
 import { DeviceNode } from '@finalrun/device-node';
-import { HeadlessGoalExecutor, AIAgent } from '@finalrun/goal-executor';
+import {
+  HeadlessGoalExecutor,
+  AIAgent,
+  type GoalRecordingResult,
+} from '@finalrun/goal-executor';
 import type { GoalResult } from '@finalrun/goal-executor';
 import { CliFilePathUtil } from './filePathUtil.js';
 import { TerminalRenderer } from './terminalRenderer.js';
@@ -23,6 +28,10 @@ export interface GoalRunnerConfig {
   platform?: string;
   appOverridePath?: string;
   runtimeBindings?: RuntimeBindings;
+  recording?: {
+    testRunId: string;
+    testCaseId: string;
+  };
 }
 
 /**
@@ -34,6 +43,16 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
   const renderer = new TerminalRenderer();
   let deviceNode: DeviceNode | undefined;
   let cancelHandler: (() => void) | undefined;
+  let device:
+    | Awaited<ReturnType<DeviceNode['setUpDevice']>>
+    | undefined;
+  let activeRecording:
+    | {
+        testRunId: string;
+        testCaseId: string;
+        startedAt: string;
+      }
+    | undefined;
 
   try {
     // -- 1. Set up file path utility --
@@ -70,7 +89,7 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
 
     // -- 3. Set up device (install driver, connect gRPC) --
     Logger.i('Setting up device...');
-    const device = await deviceNode.setUpDevice(deviceInfo);
+    device = await deviceNode.setUpDevice(deviceInfo);
 
     if (config.appOverridePath) {
       Logger.i(`Installing app override: ${config.appOverridePath}`);
@@ -124,15 +143,81 @@ export async function runGoal(config: GoalRunnerConfig): Promise<GoalResult> {
     };
     process.on('SIGINT', cancelHandler);
 
+    if (config.recording && platform !== PLATFORM_ANDROID) {
+      const recordingResponse = await device.startRecording(
+        new RecordingRequest({
+          testRunId: config.recording.testRunId,
+          testCaseId: config.recording.testCaseId,
+          apiKey: config.apiKey,
+        }),
+      );
+
+      if (recordingResponse.success) {
+        activeRecording = {
+          testRunId: config.recording.testRunId,
+          testCaseId: config.recording.testCaseId,
+          startedAt:
+            typeof recordingResponse.data?.['startedAt'] === 'string'
+              ? (recordingResponse.data['startedAt'] as string)
+              : new Date().toISOString(),
+        };
+        Logger.i(
+          `Recording started for spec ${config.recording.testCaseId} at ${activeRecording.startedAt}`,
+        );
+      } else {
+        Logger.w(
+          `Unable to start recording for spec ${config.recording.testCaseId}: ${recordingResponse.message ?? 'unknown recording error'}`,
+        );
+      }
+    }
+
     // Execute!
     const result = await executor.executeGoal((event) => renderer.onProgress(event));
-    // Print summary
-    renderer.printSummary(result);
 
-    return result;
+    let recording: GoalRecordingResult | undefined;
+    if (activeRecording) {
+      const stopResponse = await device.stopRecording(
+        activeRecording.testRunId,
+        activeRecording.testCaseId,
+      );
+      if (stopResponse.success) {
+        const filePath = stopResponse.data?.['filePath'];
+        if (typeof filePath === 'string') {
+          recording = {
+            filePath,
+            startedAt:
+              typeof stopResponse.data?.['startedAt'] === 'string'
+                ? (stopResponse.data['startedAt'] as string)
+                : activeRecording.startedAt,
+            completedAt:
+              typeof stopResponse.data?.['completedAt'] === 'string'
+                ? (stopResponse.data['completedAt'] as string)
+                : new Date().toISOString(),
+          };
+        }
+      } else {
+        Logger.w(
+          `Unable to stop recording for spec ${activeRecording.testCaseId}: ${stopResponse.message ?? 'unknown recording error'}`,
+        );
+      }
+      activeRecording = undefined;
+    }
+
+    const finalResult = recording ? { ...result, recording } : result;
+    // Print summary
+    renderer.printSummary(finalResult);
+
+    return finalResult;
   } finally {
     if (cancelHandler) {
       process.removeListener('SIGINT', cancelHandler);
+    }
+    if (activeRecording && device) {
+      try {
+        await device.abortRecording(activeRecording.testRunId, false);
+      } catch (error) {
+        Logger.w('Failed to abort active recording during cleanup:', error);
+      }
     }
     if (deviceNode) {
       try {
