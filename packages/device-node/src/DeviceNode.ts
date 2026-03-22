@@ -3,10 +3,12 @@
 
 import type { FilePathUtil, DeviceInfo } from '@finalrun/common';
 import { Logger } from '@finalrun/common';
-import { DeviceManager } from './device/DeviceManager.js';
+import { DeviceDiscoveryService } from './discovery/DeviceDiscoveryService.js';
 import { DevicePool } from './device/DevicePool.js';
 import { Device } from './device/Device.js';
 import { GrpcDriverSetup } from './grpc/GrpcDriverSetup.js';
+import { AdbClient } from './infra/android/AdbClient.js';
+import { SimctlClient } from './infra/ios/SimctlClient.js';
 
 /**
  * Singleton manager for detecting, tracking, and providing access to connected devices.
@@ -16,14 +18,18 @@ import { GrpcDriverSetup } from './grpc/GrpcDriverSetup.js';
 export class DeviceNode {
   private static _instance: DeviceNode | null = null;
 
-  private _deviceManager: DeviceManager;
+  private _deviceDiscoveryService: DeviceDiscoveryService;
   private _devicePool: DevicePool;
   private _grpcDriverSetup: GrpcDriverSetup | null = null;
   private _initialized: boolean = false;
+  private _adbClient: AdbClient;
+  private _simctlClient: SimctlClient;
 
   private constructor() {
-    this._deviceManager = new DeviceManager();
+    this._deviceDiscoveryService = new DeviceDiscoveryService();
     this._devicePool = new DevicePool();
+    this._adbClient = new AdbClient();
+    this._simctlClient = new SimctlClient();
   }
 
   /** Get the singleton instance. */
@@ -45,7 +51,8 @@ export class DeviceNode {
    */
   init(filePathUtil: FilePathUtil): void {
     this._grpcDriverSetup = new GrpcDriverSetup({
-      deviceManager: this._deviceManager,
+      adbClient: this._adbClient,
+      simctlClient: this._simctlClient,
       filePathUtil,
     });
     this._initialized = true;
@@ -59,11 +66,11 @@ export class DeviceNode {
     const devices: DeviceInfo[] = [];
 
     if (adbPath) {
-      const androidDevices = await this._deviceManager.getAndroidDevices(adbPath);
+      const androidDevices = await this._deviceDiscoveryService.getAndroidDevices(adbPath);
       devices.push(...androidDevices);
     }
 
-    const iosDevices = await this._deviceManager.getIOSDevices();
+    const iosDevices = await this._deviceDiscoveryService.getIOSDevices();
     devices.push(...iosDevices);
 
     Logger.i(`Detected ${devices.length} device(s)`);
@@ -111,7 +118,15 @@ export class DeviceNode {
     }
   }
 
-  get deviceManager(): DeviceManager {
-    return this._deviceManager;
+  async installAndroidApp(
+    adbPath: string,
+    deviceId: string,
+    appPath: string,
+  ): Promise<boolean> {
+    return await this._adbClient.installApp(adbPath, deviceId, appPath);
+  }
+
+  async installIOSApp(deviceId: string, appPath: string): Promise<boolean> {
+    return await this._simctlClient.installApp(deviceId, appPath);
   }
 }

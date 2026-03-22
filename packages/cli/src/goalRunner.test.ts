@@ -78,14 +78,12 @@ function createDependencies(params: {
   };
 
   const deviceNode = {
-    deviceManager: {
-      async installAndroidApp(adbPath: string, deviceId: string, appPath: string) {
-        return await (params.onInstallAndroidApp ??
-          (async () => true))(adbPath, deviceId, appPath);
-      },
-      async installIOSApp(deviceId: string, appPath: string) {
-        return await (params.onInstallIOSApp ?? (async () => true))(deviceId, appPath);
-      },
+    async installAndroidApp(adbPath: string, deviceId: string, appPath: string) {
+      return await (params.onInstallAndroidApp ??
+        (async () => true))(adbPath, deviceId, appPath);
+    },
+    async installIOSApp(deviceId: string, appPath: string) {
+      return await (params.onInstallIOSApp ?? (async () => true))(deviceId, appPath);
     },
     init() {
       params.onInit?.();

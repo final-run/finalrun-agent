@@ -20,7 +20,7 @@ import { TerminalRenderer } from './terminalRenderer.js';
 
 type GoalRunnerDeviceNode = Pick<
   DeviceNode,
-  'init' | 'detectDevices' | 'setUpDevice' | 'cleanup' | 'deviceManager'
+  'init' | 'detectDevices' | 'setUpDevice' | 'cleanup' | 'installAndroidApp' | 'installIOSApp'
 >;
 
 type GoalRunnerDevice = Awaited<ReturnType<DeviceNode['setUpDevice']>>;
@@ -127,7 +127,7 @@ export async function prepareGoalSession(
         if (!deviceInfo.id) {
           throw new Error('Android device serial is required to install an app override.');
         }
-        const installed = await deviceNode.deviceManager.installAndroidApp(
+        const installed = await deviceNode.installAndroidApp(
           adbPath!,
           deviceInfo.id,
           config.appOverridePath,
@@ -139,7 +139,7 @@ export async function prepareGoalSession(
         if (!deviceInfo.id) {
           throw new Error('iOS simulator ID is required to install an app override.');
         }
-        const installed = await deviceNode.deviceManager.installIOSApp(
+        const installed = await deviceNode.installIOSApp(
           deviceInfo.id,
           config.appOverridePath,
         );
