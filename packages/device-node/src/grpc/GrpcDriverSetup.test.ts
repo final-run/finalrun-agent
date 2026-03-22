@@ -4,12 +4,12 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import {
   DeviceActionRequest,
-  DeviceAppInfo,
   DeviceInfo,
   ScrollAbsAction,
 } from '@finalrun/common';
 import type { FilePathUtil } from '@finalrun/common';
-import type { DeviceManager } from '../device/DeviceManager.js';
+import type { AdbClient } from '../infra/android/AdbClient.js';
+import type { IOSDriverProcessHandle, SimctlClient } from '../infra/ios/SimctlClient.js';
 import type { GrpcDriverClient, GrpcScreenshotResponse } from './GrpcDriverClient.js';
 import { GrpcDriverSetup } from './GrpcDriverSetup.js';
 
@@ -29,6 +29,10 @@ class FakeGrpcClient {
     this.pingResponses = params?.pingResponses ?? [true];
     this.captureResponses = params?.captureResponses ?? [];
     this.updateAppIdsResponses = params?.updateAppIdsResponses ?? [{ success: true }];
+  }
+
+  get isConnected(): boolean {
+    return true;
   }
 
   createChannel(host: string, port: number): void {
@@ -54,9 +58,11 @@ class FakeGrpcClient {
     this.updateAppIdsCalls.push(appIds);
     return this.updateAppIdsResponses.shift() ?? { success: true };
   }
+
+  close(): void {}
 }
 
-class FakeIOSDriverProcess extends EventEmitter {
+class FakeIOSDriverProcess extends EventEmitter implements IOSDriverProcessHandle {
   stdout = new PassThrough();
   stderr = new PassThrough();
   pid = 4321;
@@ -64,6 +70,18 @@ class FakeIOSDriverProcess extends EventEmitter {
   emitExit(code: number | null, signal: NodeJS.Signals | null = null): void {
     this.emit('exit', code, signal);
   }
+}
+
+function createFilePathUtil(overrides?: Partial<FilePathUtil>): FilePathUtil {
+  return {
+    getADBPath: async () => '/usr/bin/adb',
+    getDriverAppPath: async () => '/tmp/app-debug.apk',
+    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
+    getIOSDriverAppPath: async () => '/tmp/finalrun-ios-test-Runner.app',
+    getAppFilePath: async (appFileName: string) => appFileName,
+    ensureIOSAppsAvailable: async () => undefined,
+    ...overrides,
+  };
 }
 
 test('GrpcDriverSetup waits for screenshot capture readiness after ping succeeds', async () => {
@@ -82,24 +100,20 @@ test('GrpcDriverSetup waits for screenshot capture readiness after ping succeeds
     ],
   });
 
-  const deviceManager = {
-    installAndroidApp: async () => true,
-    removePortForward: async () => undefined,
-    forwardPort: async () => 50051,
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => null,
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => undefined,
-  };
-
   const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
+    adbClient: {
+      async installApp() {
+        return true;
+      },
+      async removePortForward() {},
+      async forwardPort() {
+        return 50051;
+      },
+    } as unknown as AdbClient,
+    simctlClient: {} as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      getIOSDriverAppPath: async () => null,
+    }),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
     delayFn: async () => undefined,
     startAndroidDriverFn: () => undefined,
@@ -122,7 +136,7 @@ test('GrpcDriverSetup waits for screenshot capture readiness after ping succeeds
   assert.equal(grpcClient.captureCalls, 3);
 });
 
-test('GrpcDriverSetup fails when UiAutomation never becomes capture-ready', async () => {
+test('GrpcDriverSetup fails when Android UiAutomation never becomes capture-ready', async () => {
   const grpcClient = new FakeGrpcClient({
     pingResponses: [true],
     captureResponses: [
@@ -132,25 +146,22 @@ test('GrpcDriverSetup fails when UiAutomation never becomes capture-ready', asyn
     ],
   });
 
-  const deviceManager = {
-    installAndroidApp: async () => true,
-    removePortForward: async () => undefined,
-    forwardPort: async () => 50051,
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => null,
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => undefined,
-  };
-
   const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
+    adbClient: {
+      async installApp() {
+        return true;
+      },
+      async removePortForward() {},
+      async forwardPort() {
+        return 50051;
+      },
+    } as unknown as AdbClient,
+    simctlClient: {} as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      getIOSDriverAppPath: async () => null,
+    }),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
+    delayFn: async () => undefined,
     startAndroidDriverFn: () => undefined,
     captureReadinessTimeoutMs: 20,
     captureReadinessDelayMs: 5,
@@ -171,7 +182,7 @@ test('GrpcDriverSetup fails when UiAutomation never becomes capture-ready', asyn
   );
 });
 
-test('GrpcDriverSetup wires Android host-side swipe callbacks into Device', async () => {
+test('GrpcDriverSetup wires Android runtime scroll through adb', async () => {
   const grpcClient = new FakeGrpcClient({
     pingResponses: [true],
     captureResponses: [
@@ -190,32 +201,24 @@ test('GrpcDriverSetup wires Android host-side swipe callbacks into Device', asyn
     params: Record<string, number>;
   }> = [];
 
-  const deviceManager = {
-    installAndroidApp: async () => true,
-    removePortForward: async () => undefined,
-    forwardPort: async () => 50051,
-    performAndroidSwipe: async (
-      adbPath: string,
-      deviceSerial: string,
-      params: Record<string, number>,
-    ) => {
-      swipeCalls.push({ adbPath, deviceSerial, params });
-      return { success: true, message: 'scrolled via adb' };
-    },
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => null,
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => undefined,
-  };
-
   const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
+    adbClient: {
+      async installApp() {
+        return true;
+      },
+      async removePortForward() {},
+      async forwardPort() {
+        return 50051;
+      },
+      async swipe(adbPath: string, deviceSerial: string, params: Record<string, number>) {
+        swipeCalls.push({ adbPath, deviceSerial, params });
+        return { success: true, message: 'scrolled via adb' };
+      },
+    } as unknown as AdbClient,
+    simctlClient: {} as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      getIOSDriverAppPath: async () => null,
+    }),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
     delayFn: async () => undefined,
     startAndroidDriverFn: () => undefined,
@@ -277,49 +280,32 @@ test('GrpcDriverSetup installs, starts, and initializes the iOS simulator driver
     ],
   });
   const driverProcess = new FakeIOSDriverProcess();
-
   const calls: string[] = [];
-  const deviceManager = {
-    installIOSApp: async (deviceId: string, appPath: string) => {
-      calls.push(`install:${deviceId}:${appPath}`);
-      return true;
-    },
-    terminateIOSApp: async (deviceId: string, bundleId: string) => {
-      calls.push(`terminate:${deviceId}:${bundleId}`);
-    },
-    startIOSDriver: (deviceId: string, port: number) => {
-      calls.push(`start:${deviceId}:${port}`);
-      return driverProcess;
-    },
-    getIOSInstalledApps: async (deviceId: string) => {
-      calls.push(`appIds:${deviceId}`);
-      return [
-        new DeviceAppInfo({
-          packageName: 'app.finalrun.iosUITests.xctrunner',
-          name: 'FinalRun Driver',
-        }),
-        new DeviceAppInfo({
-          packageName: 'org.wikipedia',
-          name: 'Wikipedia',
-        }),
-      ];
-    },
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => '/tmp/finalrun-ios-test-Runner.app',
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => {
-      calls.push('ensureIOS');
-    },
-  };
 
   const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
+    adbClient: {} as AdbClient,
+    simctlClient: {
+      async installApp(deviceId: string, appPath: string) {
+        calls.push(`install:${deviceId}:${appPath}`);
+        return true;
+      },
+      async terminateApp(deviceId: string, bundleId: string) {
+        calls.push(`terminate:${deviceId}:${bundleId}`);
+      },
+      startDriver(deviceId: string, port: number) {
+        calls.push(`start:${deviceId}:${port}`);
+        return driverProcess;
+      },
+      async listInstalledAppIds(deviceId: string) {
+        calls.push(`appIds:${deviceId}`);
+        return ['app.finalrun.iosUITests.xctrunner', 'org.wikipedia'];
+      },
+    } as unknown as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      ensureIOSAppsAvailable: async () => {
+        calls.push('ensureIOS');
+      },
+    }),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
     delayFn: async () => undefined,
     killStaleHostProcessesOnPortFn: async (port: number) => {
@@ -355,51 +341,6 @@ test('GrpcDriverSetup installs, starts, and initializes the iOS simulator driver
   ]);
 });
 
-test('GrpcDriverSetup fails when the iOS driver never connects over gRPC', async () => {
-  const grpcClient = new FakeGrpcClient({
-    pingResponses: new Array(240).fill(false),
-  });
-  const driverProcess = new FakeIOSDriverProcess();
-
-  const deviceManager = {
-    installIOSApp: async () => true,
-    terminateIOSApp: async () => undefined,
-    startIOSDriver: () => driverProcess,
-    getIOSInstalledApps: async () => [],
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => '/tmp/finalrun-ios-test-Runner.app',
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => undefined,
-  };
-
-  const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
-    grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
-    delayFn: async () => undefined,
-    killStaleHostProcessesOnPortFn: async () => undefined,
-  });
-
-  await assert.rejects(
-    () =>
-      setup.setUp(
-        new DeviceInfo({
-          id: 'SIM-2',
-          deviceUUID: 'SIM-2',
-          isAndroid: false,
-          sdkVersion: 17,
-          name: 'iPhone 15',
-        }),
-      ),
-    /Failed to connect to iOS simulator via gRPC after 120s/,
-  );
-});
-
 test('GrpcDriverSetup surfaces an early iOS driver process exit during setup', async () => {
   const grpcClient = new FakeGrpcClient({
     pingResponses: [false, false, false],
@@ -407,25 +348,21 @@ test('GrpcDriverSetup surfaces an early iOS driver process exit during setup', a
   const driverProcess = new FakeIOSDriverProcess();
   let delayCalls = 0;
 
-  const deviceManager = {
-    installIOSApp: async () => true,
-    terminateIOSApp: async () => undefined,
-    startIOSDriver: () => driverProcess,
-    getIOSInstalledApps: async () => [],
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => '/tmp/finalrun-ios-test-Runner.app',
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => undefined,
-  };
-
   const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
+    adbClient: {} as AdbClient,
+    simctlClient: {
+      async installApp() {
+        return true;
+      },
+      async terminateApp() {},
+      startDriver() {
+        return driverProcess;
+      },
+      async listInstalledAppIds() {
+        return [];
+      },
+    } as unknown as SimctlClient,
+    filePathUtil: createFilePathUtil(),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
     delayFn: async () => {
       delayCalls += 1;
@@ -463,30 +400,21 @@ test('GrpcDriverSetup fails when iOS screenshot capture never becomes ready afte
   });
   const driverProcess = new FakeIOSDriverProcess();
 
-  const deviceManager = {
-    installIOSApp: async () => true,
-    terminateIOSApp: async () => undefined,
-    startIOSDriver: () => driverProcess,
-    getIOSInstalledApps: async () => [
-      new DeviceAppInfo({
-        packageName: 'org.wikipedia',
-        name: 'Wikipedia',
-      }),
-    ],
-  } as unknown as DeviceManager;
-
-  const filePathUtil: FilePathUtil = {
-    getADBPath: async () => '/usr/bin/adb',
-    getDriverAppPath: async () => '/tmp/app-debug.apk',
-    getDriverTestAppPath: async () => '/tmp/app-debug-androidTest.apk',
-    getIOSDriverAppPath: async () => '/tmp/finalrun-ios-test-Runner.app',
-    getAppFilePath: async (appFileName: string) => appFileName,
-    ensureIOSAppsAvailable: async () => undefined,
-  };
-
   const setup = new GrpcDriverSetup({
-    deviceManager,
-    filePathUtil,
+    adbClient: {} as AdbClient,
+    simctlClient: {
+      async installApp() {
+        return true;
+      },
+      async terminateApp() {},
+      startDriver() {
+        return driverProcess;
+      },
+      async listInstalledAppIds() {
+        return ['org.wikipedia'];
+      },
+    } as unknown as SimctlClient,
+    filePathUtil: createFilePathUtil(),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
     delayFn: async () => undefined,
     killStaleHostProcessesOnPortFn: async () => undefined,

@@ -2,7 +2,13 @@
 
 export { DeviceNode } from './DeviceNode.js';
 export { Device } from './device/Device.js';
-export { DeviceManager } from './device/DeviceManager.js';
+export { AndroidDevice } from './device/android/AndroidDevice.js';
+export { IOSSimulator } from './device/ios/IOSSimulator.js';
+export { CommonDriverActions } from './device/shared/CommonDriverActions.js';
+export type {
+  DeviceRuntime,
+  DeviceScreenshotAndHierarchy,
+} from './device/shared/DeviceRuntime.js';
 export { DevicePool } from './device/DevicePool.js';
 export { AndroidRecordingProvider } from './device/AndroidRecordingProvider.js';
 export { IOSRecordingProvider } from './device/IOSRecordingProvider.js';
@@ -29,3 +35,10 @@ export type {
   GrpcRotateResponse,
 } from './grpc/GrpcDriverClient.js';
 export { GrpcDriverSetup } from './grpc/GrpcDriverSetup.js';
+export { DeviceDiscoveryService } from './discovery/DeviceDiscoveryService.js';
+export { AdbClient } from './infra/android/AdbClient.js';
+export {
+  SimctlClient,
+  IOS_DRIVER_RUNNER_BUNDLE_ID,
+} from './infra/ios/SimctlClient.js';
+export type { IOSDriverProcessHandle } from './infra/ios/SimctlClient.js';
