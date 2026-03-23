@@ -5,17 +5,22 @@ import {
   type CheckAppInForegroundAction,
   type DeeplinkAction,
   type DeviceAppInfo,
+  type EraseTextAction,
   type EnterTextAction,
+  type GetHierarchyAction,
+  type GetScreenshotAction,
   type HideKeyboardAction,
   type HomeAction,
   type KillAppAction,
   type LaunchAppAction,
   type LongPressAction,
   type PressKeyAction,
+  type RotateAction,
   type ScrollAbsAction,
   type SetLocationAction,
   type SwitchToPrimaryAppAction,
   type TapAction,
+  type TapPercentAction,
 } from '@finalrun/common';
 import {
   IOS_DRIVER_RUNNER_BUNDLE_ID,
@@ -54,12 +59,20 @@ export class IOSSimulator implements DeviceRuntime {
     return await this._commonDriverActions.tap(action);
   }
 
+  async tapPercent(action: TapPercentAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.tapPercent(action);
+  }
+
   async longPress(action: LongPressAction): Promise<DeviceNodeResponse> {
     return await this._commonDriverActions.longPress(action);
   }
 
   async enterText(action: EnterTextAction): Promise<DeviceNodeResponse> {
     return await this._commonDriverActions.enterText(action);
+  }
+
+  async eraseText(action: EraseTextAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.eraseText(action);
   }
 
   async scrollAbs(action: ScrollAbsAction): Promise<DeviceNodeResponse> {
@@ -71,7 +84,13 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async home(_action: HomeAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.home();
+    return this._toResponse(
+      await this._simctlClient.pressButton(this._deviceId, 'home'),
+    );
+  }
+
+  async rotate(action: RotateAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.rotate(action);
   }
 
   async hideKeyboard(_action: HideKeyboardAction): Promise<DeviceNodeResponse> {
@@ -79,6 +98,13 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async pressKey(action: PressKeyAction): Promise<DeviceNodeResponse> {
+    const physicalButton = this._getPhysicalButtonForKey(action.key);
+    if (physicalButton) {
+      return this._toResponse(
+        await this._simctlClient.pressButton(this._deviceId, physicalButton),
+      );
+    }
+
     return await this._commonDriverActions.pressKey(action);
   }
 
@@ -89,11 +115,53 @@ export class IOSSimulator implements DeviceRuntime {
       Logger.w('Failed to refresh iOS app IDs before launch:', error);
     }
 
+    if (action.stopAppBeforeLaunch) {
+      const terminateResult = await this._simctlClient.terminateAppResult(
+        this._deviceId,
+        action.appUpload.packageName,
+      );
+      if (!terminateResult.success) {
+        return this._toResponse(terminateResult);
+      }
+    }
+
+    if (action.clearState) {
+      return new DeviceNodeResponse({
+        success: false,
+        message:
+          'iOS clearState is not supported in finalrun-ts without an install artifact path for reinstall.',
+      });
+    }
+
+    if (action.allowAllPermissions) {
+      const permissionsResult = await this._simctlClient.allowAllPermissions(
+        this._deviceId,
+        action.appUpload.packageName,
+      );
+      if (!permissionsResult.success) {
+        return this._toResponse(permissionsResult);
+      }
+    } else if (Object.keys(action.permissions).length > 0) {
+      const permissionsResult = await this._simctlClient.togglePermissions(
+        this._deviceId,
+        action.appUpload.packageName,
+        action.permissions,
+      );
+      if (!permissionsResult.success) {
+        return this._toResponse(permissionsResult);
+      }
+    }
+
     return await this._commonDriverActions.launchApp(action);
   }
 
   async killApp(action: KillAppAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.killApp(action.packageName);
+    return this._toResponse(
+      await this._simctlClient.terminateAppResult(
+        this._deviceId,
+        action.packageName,
+      ),
+    );
   }
 
   async openDeepLink(action: DeeplinkAction): Promise<DeviceNodeResponse> {
@@ -107,13 +175,24 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async setLocation(action: SetLocationAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.setLocation(action);
+    return this._toResponse(
+      await this._simctlClient.setLocation(
+        this._deviceId,
+        action.lat,
+        action.long,
+      ),
+    );
   }
 
   async switchToPrimaryApp(
     action: SwitchToPrimaryAppAction,
   ): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.switchToPrimaryApp(action);
+    return this._toResponse(
+      await this._simctlClient.bringAppToForeground(
+        this._deviceId,
+        action.packageName,
+      ),
+    );
   }
 
   async checkAppInForeground(
@@ -138,6 +217,14 @@ export class IOSSimulator implements DeviceRuntime {
 
   async getInstalledApps(): Promise<DeviceAppInfo[]> {
     return await this._simctlClient.listInstalledApps(this._deviceId);
+  }
+
+  async getScreenshot(action: GetScreenshotAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.getScreenshot(action);
+  }
+
+  async getHierarchy(action: GetHierarchyAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.getHierarchy(action);
   }
 
   async getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy> {
@@ -172,5 +259,37 @@ export class IOSSimulator implements DeviceRuntime {
 
   killDriver(): void {
     this._commonDriverActions.killDriver();
+  }
+
+  private _getPhysicalButtonForKey(key: string): string | null {
+    const normalizedKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    switch (normalizedKey) {
+      case 'home':
+      case 'menu':
+        return 'home';
+      case 'lock':
+      case 'power':
+        return 'lock';
+      case 'volume_up':
+      case 'volumeup':
+        return 'volumeup';
+      case 'volume_down':
+      case 'volumedown':
+        return 'volumedown';
+      default:
+        return null;
+    }
+  }
+
+  private _toResponse(result: {
+    success: boolean;
+    message?: string;
+    data?: Record<string, unknown>;
+  }): DeviceNodeResponse {
+    return new DeviceNodeResponse({
+      success: result.success,
+      message: result.message,
+      data: result.data,
+    });
   }
 }

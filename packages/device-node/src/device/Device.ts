@@ -11,14 +11,19 @@ import {
   type RecordingRequest,
   StepAction,
   TapAction,
+  TapPercentAction,
   LongPressAction,
   EnterTextAction,
+  EraseTextAction,
   ScrollAbsAction,
   BackAction,
   HomeAction,
+  RotateAction,
   HideKeyboardAction,
   PressKeyAction,
   LaunchAppAction,
+  GetHierarchyAction,
+  GetScreenshotAction,
   SetLocationAction,
   KillAppAction,
   SwitchToPrimaryAppAction,
@@ -76,11 +81,17 @@ export class Device implements Agent {
         case StepAction.TAP:
           return await this._runtime.tap(action as TapAction);
 
+        case StepAction.TAP_PERCENT:
+          return await this._runtime.tapPercent(action as TapPercentAction);
+
         case StepAction.LONG_PRESS:
           return await this._runtime.longPress(action as LongPressAction);
 
         case StepAction.ENTER_TEXT:
           return await this._runtime.enterText(action as EnterTextAction);
+
+        case StepAction.ERASE_TEXT:
+          return await this._runtime.eraseText(action as EraseTextAction);
 
         case StepAction.SCROLL_ABS:
           return await this._runtime.scrollAbs(action as ScrollAbsAction);
@@ -90,6 +101,9 @@ export class Device implements Agent {
 
         case StepAction.HOME:
           return await this._runtime.home(action as HomeAction);
+
+        case StepAction.ROTATE:
+          return await this._runtime.rotate(action as RotateAction);
 
         case StepAction.HIDE_KEYBOARD:
           return await this._runtime.hideKeyboard(action as HideKeyboardAction);
@@ -124,6 +138,12 @@ export class Device implements Agent {
 
         case StepAction.GET_SCREENSHOT_AND_HIERARCHY:
           return await this._runtime.captureState(request.traceStep);
+
+        case StepAction.GET_SCREENSHOT:
+          return await this._runtime.getScreenshot(action as GetScreenshotAction);
+
+        case StepAction.GET_HIERARCHY:
+          return await this._runtime.getHierarchy(action as GetHierarchyAction);
 
         case StepAction.GET_APP_LIST:
           return await this._runtime.getInstalledAppsResponse();

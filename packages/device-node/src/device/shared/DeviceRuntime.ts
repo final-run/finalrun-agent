@@ -4,17 +4,22 @@ import type {
   DeeplinkAction,
   DeviceAppInfo,
   DeviceNodeResponse,
+  EraseTextAction,
   EnterTextAction,
+  GetHierarchyAction,
+  GetScreenshotAction,
   HideKeyboardAction,
   HomeAction,
   KillAppAction,
   LaunchAppAction,
   LongPressAction,
   PressKeyAction,
+  RotateAction,
   ScrollAbsAction,
   SetLocationAction,
   SwitchToPrimaryAppAction,
   TapAction,
+  TapPercentAction,
 } from '@finalrun/common';
 
 export interface DeviceScreenshotAndHierarchy {
@@ -22,17 +27,22 @@ export interface DeviceScreenshotAndHierarchy {
   hierarchy: string | undefined;
   screenWidth: number;
   screenHeight: number;
+  deviceTime?: string;
+  timezone?: string;
 }
 
 export interface DeviceRuntime {
   setShouldEnsureStability(shouldEnsureStability: boolean | undefined): void;
   isConnected(): boolean;
   tap(action: TapAction): Promise<DeviceNodeResponse>;
+  tapPercent(action: TapPercentAction): Promise<DeviceNodeResponse>;
   longPress(action: LongPressAction): Promise<DeviceNodeResponse>;
   enterText(action: EnterTextAction): Promise<DeviceNodeResponse>;
+  eraseText(action: EraseTextAction): Promise<DeviceNodeResponse>;
   scrollAbs(action: ScrollAbsAction): Promise<DeviceNodeResponse>;
   back(action: BackAction): Promise<DeviceNodeResponse>;
   home(action: HomeAction): Promise<DeviceNodeResponse>;
+  rotate(action: RotateAction): Promise<DeviceNodeResponse>;
   hideKeyboard(action: HideKeyboardAction): Promise<DeviceNodeResponse>;
   pressKey(action: PressKeyAction): Promise<DeviceNodeResponse>;
   launchApp(action: LaunchAppAction): Promise<DeviceNodeResponse>;
@@ -44,6 +54,8 @@ export interface DeviceRuntime {
   captureState(traceStep?: number | null): Promise<DeviceNodeResponse>;
   getInstalledAppsResponse(): Promise<DeviceNodeResponse>;
   getInstalledApps(): Promise<DeviceAppInfo[]>;
+  getScreenshot(action: GetScreenshotAction): Promise<DeviceNodeResponse>;
+  getHierarchy(action: GetHierarchyAction): Promise<DeviceNodeResponse>;
   getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy>;
   close(): Promise<void>;
   killDriver(): void;

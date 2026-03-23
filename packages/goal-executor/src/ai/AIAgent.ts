@@ -33,6 +33,7 @@ import {
   PLANNER_ACTION_SCROLL,
   PLANNER_ACTION_BACK,
   PLANNER_ACTION_HOME,
+  PLANNER_ACTION_ROTATE,
   PLANNER_ACTION_HIDE_KEYBOARD,
   PLANNER_ACTION_PRESS_ENTER,
   PLANNER_ACTION_LAUNCH_APP,
@@ -620,6 +621,8 @@ function normalizePromptAction(
       };
     case 'navigate_home':
       return { act: PLANNER_ACTION_HOME, reason: 'Navigate to the device home screen.' };
+    case 'rotate':
+      return { act: PLANNER_ACTION_ROTATE, reason: 'Rotate the device orientation.' };
     case 'navigate_back':
       return { act: PLANNER_ACTION_BACK, reason: 'Navigate back one screen.' };
     case 'hide_keyboard':

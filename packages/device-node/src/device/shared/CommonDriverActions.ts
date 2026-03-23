@@ -1,15 +1,20 @@
 import {
   DeviceAppInfo,
   DeviceNodeResponse,
+  EraseTextAction,
   EnterTextAction,
+  GetHierarchyAction,
+  GetScreenshotAction,
   LaunchAppAction,
   LongPressAction,
   PressKeyAction,
+  RotateAction,
   ScrollAbsAction,
   SetLocationAction,
   SingleArgument,
   SwitchToPrimaryAppAction,
   TapAction,
+  TapPercentAction,
   CheckAppInForegroundAction,
 } from '@finalrun/common';
 import { ScreenshotCaptureCoordinator } from '../../capture/ScreenshotCaptureCoordinator.js';
@@ -62,6 +67,14 @@ export class CommonDriverActions {
     });
   }
 
+  async tapPercent(action: TapPercentAction): Promise<DeviceNodeResponse> {
+    const response = await this._grpcClient.tapPercent({
+      xPercent: action.point.xPercent,
+      yPercent: action.point.yPercent,
+    });
+    return this._toResponse(response);
+  }
+
   async longPress(action: LongPressAction): Promise<DeviceNodeResponse> {
     const response = await this._grpcClient.tap({
       x: action.point.x,
@@ -78,6 +91,10 @@ export class CommonDriverActions {
       eraseCount: action.eraseCount ?? undefined,
     });
     return this._toResponse(response);
+  }
+
+  async eraseText(_action: EraseTextAction): Promise<DeviceNodeResponse> {
+    return this._toResponse(await this._grpcClient.eraseText());
   }
 
   async swipe(action: ScrollAbsAction): Promise<DeviceNodeResponse> {
@@ -97,6 +114,13 @@ export class CommonDriverActions {
 
   async home(): Promise<DeviceNodeResponse> {
     return this._toResponse(await this._grpcClient.home());
+  }
+
+  async rotate(_action: RotateAction): Promise<DeviceNodeResponse> {
+    const response = await this._grpcClient.rotate();
+    return this._toResponse(response, {
+      orientation: response.orientation,
+    });
   }
 
   async hideKeyboard(): Promise<DeviceNodeResponse> {
@@ -191,7 +215,19 @@ export class CommonDriverActions {
       hierarchy: response.hierarchy,
       screenWidth: response.screenWidth,
       screenHeight: response.screenHeight,
+      deviceTime: response.deviceTime,
+      timezone: response.timezone,
     };
+  }
+
+  async getScreenshot(_action: GetScreenshotAction): Promise<DeviceNodeResponse> {
+    const response = await this._grpcClient.getScreenshot();
+    return this._toResponse(response, this._toCaptureData(response));
+  }
+
+  async getHierarchy(_action: GetHierarchyAction): Promise<DeviceNodeResponse> {
+    const response = await this._grpcClient.getHierarchy();
+    return this._toResponse(response, this._toCaptureData(response));
   }
 
   async updateAppIds(appIds: string[]): Promise<GrpcResponse> {
@@ -215,5 +251,23 @@ export class CommonDriverActions {
       message: response.message,
       data,
     });
+  }
+
+  private _toCaptureData(response: {
+    screenshot?: string;
+    hierarchy?: string;
+    screenWidth: number;
+    screenHeight: number;
+    deviceTime?: string;
+    timezone?: string;
+  }): Record<string, unknown> {
+    return {
+      screenshot: response.screenshot,
+      hierarchy: response.hierarchy,
+      screenWidth: response.screenWidth,
+      screenHeight: response.screenHeight,
+      deviceTime: response.deviceTime,
+      timezone: response.timezone,
+    };
   }
 }

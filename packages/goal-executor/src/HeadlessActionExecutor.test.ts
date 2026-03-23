@@ -7,12 +7,14 @@ import {
   EnterTextAction,
   DeeplinkAction,
   LaunchAppAction,
+  RotateAction,
   GetAppListAction,
   FEATURE_GROUNDER,
   FEATURE_INPUT_FOCUS_GROUNDER,
   FEATURE_LAUNCH_APP_GROUNDER,
   PLANNER_ACTION_TAP,
   PLANNER_ACTION_TYPE,
+  PLANNER_ACTION_ROTATE,
   PLANNER_ACTION_DEEPLINK,
   PLANNER_ACTION_LAUNCH_APP,
   PLANNER_ACTION_WAIT,
@@ -294,6 +296,32 @@ test('HeadlessActionExecutor traces wait actions without calling the device', as
   assert.equal(result.success, true);
   assert.equal(executedActions.length, 0);
   assertTraceNames(result.trace, ['action.wait']);
+});
+
+test('HeadlessActionExecutor executes rotate without calling the grounder', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions);
+  const aiAgent = createAiAgent(async () => {
+    throw new Error('Grounder should not be called for rotate actions');
+  });
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_ROTATE,
+    reason: 'Rotate the device.',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  assert.ok(executedActions[0] instanceof RotateAction);
+  assertTraceNames(result.trace, ['action.device']);
 });
 
 test('HeadlessActionExecutor records visual fallback explicitly in the trace', async () => {

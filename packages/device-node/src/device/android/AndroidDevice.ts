@@ -4,19 +4,27 @@ import {
   type CheckAppInForegroundAction,
   type DeeplinkAction,
   type DeviceAppInfo,
+  type EraseTextAction,
   type EnterTextAction,
+  type GetHierarchyAction,
+  type GetScreenshotAction,
   type HideKeyboardAction,
   type HomeAction,
   type KillAppAction,
   type LaunchAppAction,
   type LongPressAction,
   type PressKeyAction,
+  type RotateAction,
   type ScrollAbsAction,
   type SetLocationAction,
   type SwitchToPrimaryAppAction,
   type TapAction,
+  type TapPercentAction,
 } from '@finalrun/common';
-import type { AdbClient } from '../../infra/android/AdbClient.js';
+import type {
+  AdbClient,
+  AndroidCommandResult,
+} from '../../infra/android/AdbClient.js';
 import { CommonDriverActions } from '../shared/CommonDriverActions.js';
 import type {
   DeviceRuntime,
@@ -53,12 +61,20 @@ export class AndroidDevice implements DeviceRuntime {
     return await this._commonDriverActions.tap(action);
   }
 
+  async tapPercent(action: TapPercentAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.tapPercent(action);
+  }
+
   async longPress(action: LongPressAction): Promise<DeviceNodeResponse> {
     return await this._commonDriverActions.longPress(action);
   }
 
   async enterText(action: EnterTextAction): Promise<DeviceNodeResponse> {
     return await this._commonDriverActions.enterText(action);
+  }
+
+  async eraseText(action: EraseTextAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.eraseText(action);
   }
 
   async scrollAbs(action: ScrollAbsAction): Promise<DeviceNodeResponse> {
@@ -76,27 +92,102 @@ export class AndroidDevice implements DeviceRuntime {
   }
 
   async back(_action: BackAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.back();
+    return this._toResponse(await this._adbClient.back(this._adbPath, this._deviceSerial));
   }
 
   async home(_action: HomeAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.home();
+    return this._toResponse(await this._adbClient.home(this._adbPath, this._deviceSerial));
+  }
+
+  async rotate(action: RotateAction): Promise<DeviceNodeResponse> {
+    return this._toResponse(
+      await this._adbClient.rotate(this._adbPath, this._deviceSerial),
+    );
   }
 
   async hideKeyboard(_action: HideKeyboardAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.hideKeyboard();
+    return this._toResponse(
+      await this._adbClient.hideKeyboard(this._adbPath, this._deviceSerial),
+    );
   }
 
   async pressKey(action: PressKeyAction): Promise<DeviceNodeResponse> {
+    const adbResult = await this._adbClient.performKeyPress(
+      this._adbPath,
+      this._deviceSerial,
+      action.key,
+    );
+    if (adbResult.success || adbResult.data?.['handled'] !== false) {
+      return this._toResponse(adbResult);
+    }
+
     return await this._commonDriverActions.pressKey(action);
   }
 
   async launchApp(action: LaunchAppAction): Promise<DeviceNodeResponse> {
+    const packageCheck = await this._adbClient.isPackageInstalled(
+      this._adbPath,
+      this._deviceSerial,
+      action.appUpload.packageName,
+    );
+    if (!packageCheck.success) {
+      return this._toResponse(packageCheck);
+    }
+
+    if (action.stopAppBeforeLaunch) {
+      const stopResult = await this._adbClient.forceStop(
+        this._adbPath,
+        this._deviceSerial,
+        action.appUpload.packageName,
+      );
+      if (!stopResult.success) {
+        return this._toResponse(stopResult);
+      }
+    }
+
+    if (action.clearState) {
+      const clearResult = await this._adbClient.clearAppData(
+        this._adbPath,
+        this._deviceSerial,
+        action.appUpload.packageName,
+      );
+      if (!clearResult.success) {
+        return this._toResponse(clearResult);
+      }
+    }
+
+    if (action.allowAllPermissions) {
+      const permissionsResult = await this._adbClient.allowAllPermissions(
+        this._adbPath,
+        this._deviceSerial,
+        action.appUpload.packageName,
+      );
+      if (!permissionsResult.success) {
+        return this._toResponse(permissionsResult);
+      }
+    } else if (Object.keys(action.permissions).length > 0) {
+      const permissionsResult = await this._adbClient.togglePermissions(
+        this._adbPath,
+        this._deviceSerial,
+        action.appUpload.packageName,
+        action.permissions,
+      );
+      if (!permissionsResult.success) {
+        return this._toResponse(permissionsResult);
+      }
+    }
+
     return await this._commonDriverActions.launchApp(action);
   }
 
   async killApp(action: KillAppAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.killApp(action.packageName);
+    return this._toResponse(
+      await this._adbClient.forceStop(
+        this._adbPath,
+        this._deviceSerial,
+        action.packageName,
+      ),
+    );
   }
 
   async openDeepLink(action: DeeplinkAction): Promise<DeviceNodeResponse> {
@@ -114,13 +205,27 @@ export class AndroidDevice implements DeviceRuntime {
   }
 
   async setLocation(action: SetLocationAction): Promise<DeviceNodeResponse> {
+    const mockLocationResult = await this._adbClient.performMockLocation(
+      this._adbPath,
+      this._deviceSerial,
+    );
+    if (!mockLocationResult.success) {
+      return this._toResponse(mockLocationResult);
+    }
+
     return await this._commonDriverActions.setLocation(action);
   }
 
   async switchToPrimaryApp(
     action: SwitchToPrimaryAppAction,
   ): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.switchToPrimaryApp(action);
+    return this._toResponse(
+      await this._adbClient.bringAppToForeground(
+        this._adbPath,
+        this._deviceSerial,
+        action.packageName,
+      ),
+    );
   }
 
   async checkAppInForeground(
@@ -141,6 +246,14 @@ export class AndroidDevice implements DeviceRuntime {
     return await this._commonDriverActions.getInstalledAppsFromDriver();
   }
 
+  async getScreenshot(action: GetScreenshotAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.getScreenshot(action);
+  }
+
+  async getHierarchy(action: GetHierarchyAction): Promise<DeviceNodeResponse> {
+    return await this._commonDriverActions.getHierarchy(action);
+  }
+
   async getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy> {
     return await this._commonDriverActions.getScreenshotAndHierarchy();
   }
@@ -155,5 +268,13 @@ export class AndroidDevice implements DeviceRuntime {
 
   killDriver(): void {
     this._commonDriverActions.killDriver();
+  }
+
+  private _toResponse(result: AndroidCommandResult): DeviceNodeResponse {
+    return new DeviceNodeResponse({
+      success: result.success,
+      message: result.message,
+      data: result.data,
+    });
   }
 }

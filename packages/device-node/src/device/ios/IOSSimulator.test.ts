@@ -4,7 +4,9 @@ import {
   AppUpload,
   DeviceAppInfo,
   LaunchAppAction,
+  PressKeyAction,
   ScrollAbsAction,
+  SetLocationAction,
 } from '@finalrun/common';
 import type { GrpcDriverClient } from '../../grpc/GrpcDriverClient.js';
 import { CommonDriverActions } from '../shared/CommonDriverActions.js';
@@ -52,6 +54,7 @@ test('IOSSimulator refreshes app IDs before launchApp', async () => {
         platform: 'ios',
         packageName: 'org.wikipedia',
       }),
+      allowAllPermissions: false,
     }),
   );
 
@@ -156,4 +159,156 @@ test('IOSSimulator terminates the runner before closing gRPC', async () => {
   await runtime.close();
 
   assert.deepEqual(calls, ['terminate', 'close']);
+});
+
+test('IOSSimulator routes home and physical button keys through simctl', async () => {
+  const calls: string[] = [];
+  const runtime = new IOSSimulator({
+    commonDriverActions: new CommonDriverActions({
+      grpcClient: {
+        isConnected: true,
+        async pressKey(key: string) {
+          calls.push(`grpc:${key}`);
+          return { success: true, message: 'pressed via grpc' };
+        },
+        close() {},
+      } as unknown as GrpcDriverClient,
+    }),
+    simctlClient: {
+      async pressButton(_deviceId: string, button: string) {
+        calls.push(`simctl:${button}`);
+        return { success: true, message: `pressed ${button}` };
+      },
+      async terminateApp() {},
+      async terminateAppResult() {
+        return { success: true };
+      },
+      async listInstalledAppIds() {
+        return [];
+      },
+      async listInstalledApps() {
+        return [];
+      },
+      async openUrl() {
+        return true;
+      },
+    } as never,
+    deviceId: 'SIM-1',
+  });
+
+  const homeResponse = await runtime.home({} as never);
+  const powerResponse = await runtime.pressKey(
+    new PressKeyAction({
+      key: 'power',
+    }),
+  );
+  const enterResponse = await runtime.pressKey(
+    new PressKeyAction({
+      key: 'enter',
+    }),
+  );
+
+  assert.equal(homeResponse.message, 'pressed home');
+  assert.equal(powerResponse.message, 'pressed lock');
+  assert.equal(enterResponse.message, 'pressed via grpc');
+  assert.deepEqual(calls, ['simctl:home', 'simctl:lock', 'grpc:enter']);
+});
+
+test('IOSSimulator uses simctl for setLocation', async () => {
+  const calls: string[] = [];
+  const runtime = new IOSSimulator({
+    commonDriverActions: new CommonDriverActions({
+      grpcClient: {
+        isConnected: true,
+        close() {},
+      } as unknown as GrpcDriverClient,
+    }),
+    simctlClient: {
+      async setLocation(_deviceId: string, lat: string, long: string) {
+        calls.push(`${lat},${long}`);
+        return { success: true, message: 'location set via simctl' };
+      },
+      async terminateApp() {},
+      async terminateAppResult() {
+        return { success: true };
+      },
+      async listInstalledAppIds() {
+        return [];
+      },
+      async listInstalledApps() {
+        return [];
+      },
+      async openUrl() {
+        return true;
+      },
+    } as never,
+    deviceId: 'SIM-1',
+  });
+
+  const response = await runtime.setLocation(
+    new SetLocationAction({
+      lat: '37.7749',
+      long: '-122.4194',
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.message, 'location set via simctl');
+  assert.deepEqual(calls, ['37.7749,-122.4194']);
+});
+
+test('IOSSimulator fails explicitly when clearState is requested without reinstall context', async () => {
+  const calls: string[] = [];
+  const runtime = new IOSSimulator({
+    commonDriverActions: new CommonDriverActions({
+      grpcClient: {
+        isConnected: true,
+        async updateAppIds() {
+          return { success: true };
+        },
+        async launchApp() {
+          calls.push('grpc:launch');
+          return { success: true, message: 'launched' };
+        },
+        close() {},
+      } as unknown as GrpcDriverClient,
+    }),
+    simctlClient: {
+      async listInstalledAppIds() {
+        return ['org.wikipedia'];
+      },
+      async terminateApp() {},
+      async terminateAppResult() {
+        calls.push('simctl:terminate');
+        return { success: true };
+      },
+      async listInstalledApps() {
+        return [];
+      },
+      async openUrl() {
+        return true;
+      },
+    } as never,
+    deviceId: 'SIM-1',
+  });
+
+  const response = await runtime.launchApp(
+    new LaunchAppAction({
+      appUpload: new AppUpload({
+        id: '',
+        platform: 'ios',
+        packageName: 'org.wikipedia',
+      }),
+      clearState: true,
+      stopAppBeforeLaunch: true,
+      allowAllPermissions: false,
+    }),
+  );
+
+  assert.equal(response.success, false);
+  assert.match(
+    response.message ?? '',
+    /clearState is not supported in finalrun-ts/i,
+  );
+  assert.deepEqual(calls, ['simctl:terminate']);
 });

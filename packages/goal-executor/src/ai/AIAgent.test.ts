@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { PLANNER_ACTION_ROTATE } from '@finalrun/common';
 import { AIAgent, GrounderResponse, PlannerResponse } from './AIAgent.js';
 
 type LLMPhase = 'planner' | 'grounder';
@@ -262,6 +263,22 @@ test('AIAgent applies Anthropic effort defaults without model-family gating', ()
       effort: 'medium',
     },
   });
+});
+
+test('AIAgent normalizes rotate planner actions', () => {
+  const response = parsePlannerResponse(
+    JSON.stringify({
+      output: {
+        action: {
+          action_type: 'rotate',
+        },
+        remember: [],
+      },
+    }),
+  );
+
+  assert.equal(response.act, PLANNER_ACTION_ROTATE);
+  assert.equal(response.reason, 'Rotate the device orientation.');
 });
 
 test('AIAgent normalizes nested planner output from planner prompt schema', () => {
