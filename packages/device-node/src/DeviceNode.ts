@@ -1,7 +1,13 @@
 // Port of device_node/lib/device_node.dart
 // Singleton entry point for device management.
 
-import type { FilePathUtil, DeviceInfo } from '@finalrun/common';
+import type {
+  FilePathUtil,
+  DeviceInfo,
+  DeviceInventoryDiagnostic,
+  DeviceInventoryEntry,
+  DeviceInventoryReport,
+} from '@finalrun/common';
 import { Logger } from '@finalrun/common';
 import { DeviceDiscoveryService } from './discovery/DeviceDiscoveryService.js';
 import { DevicePool } from './device/DevicePool.js';
@@ -62,19 +68,24 @@ export class DeviceNode {
    * Detect all connected devices (Android + iOS).
    * Dart: Future<List<DeviceInfo>> detectDevices()
    */
+  async detectInventory(adbPath: string | null): Promise<DeviceInventoryReport> {
+    const inventory = await this._deviceDiscoveryService.detectInventory(adbPath);
+    Logger.i(`Detected ${inventory.entries.length} target(s)`);
+    return inventory;
+  }
+
   async detectDevices(adbPath: string | null): Promise<DeviceInfo[]> {
-    const devices: DeviceInfo[] = [];
+    const inventory = await this.detectInventory(adbPath);
+    return inventory.entries
+      .filter((entry) => entry.runnable && entry.deviceInfo !== null)
+      .map((entry) => entry.deviceInfo as DeviceInfo);
+  }
 
-    if (adbPath) {
-      const androidDevices = await this._deviceDiscoveryService.getAndroidDevices(adbPath);
-      devices.push(...androidDevices);
-    }
-
-    const iosDevices = await this._deviceDiscoveryService.getIOSDevices();
-    devices.push(...iosDevices);
-
-    Logger.i(`Detected ${devices.length} device(s)`);
-    return devices;
+  async startTarget(
+    entry: DeviceInventoryEntry,
+    adbPath: string | null,
+  ): Promise<DeviceInventoryDiagnostic | null> {
+    return await this._deviceDiscoveryService.startTarget(entry, adbPath);
   }
 
   /**

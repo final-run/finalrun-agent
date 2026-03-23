@@ -3,14 +3,18 @@ import {
   Logger,
   LogLevel,
   type DeviceInfo,
+  type DeviceInventoryDiagnostic,
+  type LogEntry,
   type RuntimeBindings,
   type SpecArtifactRecord,
 } from '@finalrun/common';
 import {
   executeGoalOnSession,
+  isDevicePreparationError,
   prepareGoalSession,
   type GoalSession,
 } from './goalRunner.js';
+import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
 import { runCheck, type CheckRunnerOptions } from './checkRunner.js';
 import { ReportWriter } from './reportWriter.js';
@@ -47,6 +51,10 @@ export const testRunnerDependencies = {
 export async function runTests(
   options: TestRunnerOptions,
 ): Promise<TestRunnerResult> {
+  Logger.init({
+    level: options.debug ? LogLevel.DEBUG : LogLevel.INFO,
+    resetSinks: true,
+  });
   const workspace = await testRunnerDependencies.resolveWorkspace(options.cwd);
   await testRunnerDependencies.ensureWorkspaceDirectories(workspace);
 
@@ -58,6 +66,11 @@ export async function runTests(
   let logSink: ReturnType<ReportWriter['createLoggerSink']> | undefined;
   let goalSession: GoalSession | undefined;
   const fallbackEnvName = await resolveRunEnvName(workspace.envDir, options.envName);
+  const bufferedLogEntries: LogEntry[] = [];
+  const bufferingSink = (entry: LogEntry) => {
+    bufferedLogEntries.push(entry);
+  };
+  Logger.addSink(bufferingSink);
 
   let checked;
   try {
@@ -74,6 +87,7 @@ export async function runTests(
       startedAt,
       bindings: EMPTY_RUNTIME_BINDINGS,
       message: `Run validation failed: ${message}`,
+      bufferedLogEntries,
     });
     return failedRun;
   }
@@ -95,6 +109,8 @@ export async function runTests(
       startedAt,
       bindings: checked.environment.bindings,
       message: `Run setup failed before execution: ${message}`,
+      bufferedLogEntries,
+      diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
     });
     return failedRun;
   }
@@ -106,12 +122,9 @@ export async function runTests(
     startedAt,
     bindings: checked.environment.bindings,
   }));
-
-  Logger.init({
-    level: options.debug ? LogLevel.DEBUG : LogLevel.INFO,
-    resetSinks: true,
-  });
   logSink = reportWriter.createLoggerSink();
+  flushBufferedLogEntries(bufferedLogEntries, logSink);
+  Logger.removeSink(bufferingSink);
   Logger.addSink(logSink);
 
   try {
@@ -179,9 +192,6 @@ export async function runTests(
       specResults,
     };
   } finally {
-    if (logSink) {
-      Logger.removeSink(logSink);
-    }
     if (goalSession) {
       try {
         await goalSession.cleanup();
@@ -189,6 +199,10 @@ export async function runTests(
         Logger.w('Failed to clean up device resources:', error);
       }
     }
+    if (logSink) {
+      Logger.removeSink(logSink);
+    }
+    Logger.removeSink(bufferingSink);
   }
 }
 
@@ -251,6 +265,8 @@ async function writeRunFailureArtifacts(params: {
   startedAt: Date;
   bindings: RuntimeBindings;
   message: string;
+  bufferedLogEntries: LogEntry[];
+  diagnostics?: DeviceInventoryDiagnostic[];
 }): Promise<TestRunnerResult> {
   const { reportWriter, runDir } = await createReportWriter({
     workspace: params.workspace,
@@ -259,7 +275,11 @@ async function writeRunFailureArtifacts(params: {
     startedAt: params.startedAt,
     bindings: params.bindings,
   });
+  flushBufferedLogEntries(params.bufferedLogEntries, reportWriter.createLoggerSink());
   reportWriter.appendLogLine(params.message);
+  if (params.diagnostics && params.diagnostics.length > 0) {
+    reportWriter.appendRawBlock(formatDiagnosticsForOutput(params.diagnostics));
+  }
   await reportWriter.finalize({
     startedAt: params.startedAt.toISOString(),
     completedAt: new Date().toISOString(),
@@ -300,4 +320,14 @@ async function resolveRunEnvName(
   } catch {
     return requestedEnvName ?? 'none';
   }
+}
+
+function flushBufferedLogEntries(
+  entries: LogEntry[],
+  sink: ReturnType<ReportWriter['createLoggerSink']>,
+): void {
+  for (const entry of entries) {
+    sink(entry);
+  }
+  entries.length = 0;
 }

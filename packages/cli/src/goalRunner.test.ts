@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import {
   DeviceInfo,
   DeviceNodeResponse,
   PLATFORM_ANDROID,
+  type DeviceInventoryDiagnostic,
+  type DeviceInventoryEntry,
+  type DeviceInventoryReport,
   type RecordingRequest,
 } from '@finalrun/common';
 import type { GoalResult } from '@finalrun/goal-executor';
@@ -37,20 +41,83 @@ function createAndroidDeviceInfo(): DeviceInfo {
   });
 }
 
+function createIOSDeviceInfo(): DeviceInfo {
+  return new DeviceInfo({
+    id: 'BOOTED-DEVICE-1',
+    deviceUUID: 'BOOTED-DEVICE-1',
+    isAndroid: false,
+    sdkVersion: 17,
+    name: 'iPhone 15 Pro',
+  });
+}
+
+function createInventoryEntryFromDevice(deviceInfo: DeviceInfo): DeviceInventoryEntry {
+  const platform = deviceInfo.isAndroid ? 'android' : 'ios';
+  const targetKind = deviceInfo.isAndroid ? 'android-emulator' : 'ios-simulator';
+  const state = deviceInfo.isAndroid ? 'connected' : 'booted';
+  return {
+    selectionId: `${platform}:${deviceInfo.id}`,
+    platform,
+    targetKind,
+    state,
+    runnable: true,
+    startable: false,
+    displayName: `${deviceInfo.name ?? deviceInfo.id} - ${deviceInfo.id}`,
+    rawId: deviceInfo.id ?? deviceInfo.deviceUUID,
+    modelName: deviceInfo.name,
+    osVersionLabel: deviceInfo.isAndroid ? 'Android 14' : 'iOS 17.5',
+    deviceInfo,
+    transcripts: [],
+  };
+}
+
+function createStartableIOSEntry(): DeviceInventoryEntry {
+  return {
+    selectionId: 'ios-simulator:SHUTDOWN-DEVICE-1',
+    platform: 'ios',
+    targetKind: 'ios-simulator',
+    state: 'shutdown',
+    runnable: false,
+    startable: true,
+    displayName: 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1',
+    rawId: 'SHUTDOWN-DEVICE-1',
+    modelName: 'iPhone 15',
+    osVersionLabel: 'iOS 17.5',
+    deviceInfo: null,
+    transcripts: [],
+  };
+}
+
 function createDependencies(params: {
   startRecording?: (request: RecordingRequest) => Promise<DeviceNodeResponse>;
   stopRecording?: (testRunId: string, testCaseId: string) => Promise<DeviceNodeResponse>;
   executeGoal?: () => Promise<GoalResult>;
   devices?: DeviceInfo[];
+  inventoryReports?: DeviceInventoryReport[];
   adbPath?: string | null;
   onInit?: () => void;
   onDetectDevices?: () => void;
   onSetUpDevice?: () => void;
   onCleanup?: () => void | Promise<void>;
+  onStartTarget?: (
+    entry: DeviceInventoryEntry,
+    adbPath: string | null,
+  ) => DeviceInventoryDiagnostic | null | Promise<DeviceInventoryDiagnostic | null>;
   onInstallAndroidApp?: (adbPath: string, deviceId: string, appPath: string) => boolean | Promise<boolean>;
   onInstallIOSApp?: (deviceId: string, appPath: string) => boolean | Promise<boolean>;
+  selectionInput?: string;
 }): GoalRunnerDependencies {
   const printedResults: GoalResult[] = [];
+  const selectionInput = new PassThrough();
+  if (params.selectionInput) {
+    selectionInput.end(params.selectionInput);
+  }
+  const selectionOutput = new PassThrough();
+  let selectionOutputText = '';
+  selectionOutput.on('data', (chunk: Buffer | string) => {
+    selectionOutputText += String(chunk);
+  });
+  let inventoryCallCount = 0;
   const device = {
     async startRecording(request: RecordingRequest) {
       return await (params.startRecording ??
@@ -88,9 +155,20 @@ function createDependencies(params: {
     init() {
       params.onInit?.();
     },
-    async detectDevices() {
+    async detectInventory() {
       params.onDetectDevices?.();
-      return params.devices ?? [createAndroidDeviceInfo()];
+      const defaultReport: DeviceInventoryReport = {
+        entries: (params.devices ?? [createAndroidDeviceInfo()]).map(createInventoryEntryFromDevice),
+        diagnostics: [],
+      };
+      const nextReport = params.inventoryReports?.[inventoryCallCount] ??
+        params.inventoryReports?.[params.inventoryReports.length - 1] ??
+        defaultReport;
+      inventoryCallCount += 1;
+      return nextReport;
+    },
+    async startTarget(entry: DeviceInventoryEntry, adbPath: string | null) {
+      return await (params.onStartTarget ?? (async () => null))(entry, adbPath);
     },
     async setUpDevice() {
       params.onSetUpDevice?.();
@@ -109,6 +187,11 @@ function createDependencies(params: {
         },
       }) as unknown as ReturnType<GoalRunnerDependencies['createFilePathUtil']>,
     getDeviceNode: () => deviceNode as unknown as DeviceNode,
+    createSelectionIO: () => ({
+      input: selectionInput,
+      output: selectionOutput,
+      isTTY: true,
+    }),
     createAiAgent: () => ({}) as never,
     createExecutor: () =>
       ({
@@ -128,6 +211,7 @@ function createDependencies(params: {
 
   Object.assign(dependencies, {
     __printedResults: printedResults,
+    __selectionOutputText: () => selectionOutputText,
   });
 
   return dependencies;
@@ -219,6 +303,83 @@ test('prepareGoalSession installs the Android app override once during shared se
   } finally {
     await session.cleanup();
     assert.equal(cleanupCalls, 1);
+  }
+});
+
+test('prepareGoalSession prompts for a device when multiple runnable targets are available', async () => {
+  const androidEntry = createInventoryEntryFromDevice(createAndroidDeviceInfo());
+  const iosEntry = createInventoryEntryFromDevice(createIOSDeviceInfo());
+  const dependencies = createDependencies({
+    inventoryReports: [
+      {
+        entries: [androidEntry, iosEntry],
+        diagnostics: [],
+      },
+    ],
+    selectionInput: '2\n',
+  });
+
+  const session = await prepareGoalSession({}, dependencies);
+
+  try {
+    assert.equal(session.platform, 'ios');
+    const output = (dependencies as GoalRunnerDependencies & {
+      __selectionOutputText: () => string;
+    }).__selectionOutputText();
+    assert.match(output, /Runnable Android Devices/);
+    assert.match(output, /Runnable iOS Simulators/);
+  } finally {
+    await session.cleanup();
+  }
+});
+
+test('prepareGoalSession starts a selected shutdown simulator before setup', async () => {
+  const shutdownEntry = createStartableIOSEntry();
+  const bootedEntry: DeviceInventoryEntry = {
+    selectionId: 'ios-simulator:SHUTDOWN-DEVICE-1',
+    platform: 'ios',
+    targetKind: 'ios-simulator',
+    state: 'booted',
+    runnable: true,
+    startable: false,
+    displayName: 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1',
+    rawId: 'SHUTDOWN-DEVICE-1',
+    modelName: 'iPhone 15',
+    osVersionLabel: 'iOS 17.5',
+    deviceInfo: new DeviceInfo({
+      id: 'SHUTDOWN-DEVICE-1',
+      deviceUUID: 'SHUTDOWN-DEVICE-1',
+      isAndroid: false,
+      sdkVersion: 17,
+      name: 'iPhone 15',
+    }),
+    transcripts: [],
+  };
+  let startedTargets = 0;
+  const dependencies = createDependencies({
+    inventoryReports: [
+      {
+        entries: [shutdownEntry],
+        diagnostics: [],
+      },
+      {
+        entries: [bootedEntry],
+        diagnostics: [],
+      },
+    ],
+    async onStartTarget() {
+      startedTargets += 1;
+      return null;
+    },
+  });
+
+  const session = await prepareGoalSession({}, dependencies);
+
+  try {
+    assert.equal(session.platform, 'ios');
+    assert.equal(startedTargets, 1);
+  } finally {
+    await session.cleanup();
   }
 });
 

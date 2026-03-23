@@ -5,12 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  Logger,
   redactResolvedValue,
   type LoadedRepoTestSpec,
   type RuntimeBindings,
 } from '@finalrun/common';
 import type { GoalResult } from '@finalrun/goal-executor';
 import { ReportWriter } from './reportWriter.js';
+import { DevicePreparationError } from './goalRunner.js';
 import { runTests, selectExecutionPlatform, testRunnerDependencies } from './testRunner.js';
 
 function createDevice(platform: string): { getPlatform(): string } {
@@ -630,6 +632,64 @@ test('runTests writes failure artifacts when no selectors are provided', async (
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
     assert.equal(runnerLog.includes('At least one test selector is required'), true);
   } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests persists buffered setup logs and raw command transcripts when device setup fails early', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-setup-buffering-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+
+  testRunnerDependencies.prepareGoalSession = async () => {
+    Logger.i('Buffered setup log before runner.log exists');
+    throw new DevicePreparationError('No runnable devices or startable targets were found.', [
+      {
+        scope: 'android-connected',
+        summary: 'Android device discovery failed.',
+        blocking: true,
+        transcripts: [
+          {
+            command: 'adb devices -l',
+            stdout: '',
+            stderr: 'adb executable missing',
+            exitCode: 1,
+          },
+        ],
+      },
+    ]);
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    const runnerLogPath = path.join(result.runDir, 'runner.log');
+    const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
+
+    assert.match(runnerLog, /Buffered setup log before runner\.log exists/);
+    assert.match(runnerLog, /Run setup failed before execution/);
+    assert.match(runnerLog, /Command: adb devices -l/);
+    assert.match(runnerLog, /stderr:\nadb executable missing/);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
