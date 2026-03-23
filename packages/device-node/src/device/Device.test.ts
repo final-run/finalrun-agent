@@ -2,11 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AppUpload,
+  EraseTextAction,
   DeviceActionRequest,
   DeviceInfo,
   DeviceNodeResponse,
+  GetHierarchyAction,
+  GetScreenshotAction,
   LaunchAppAction,
+  PointPercent,
   RecordingRequest,
+  RotateAction,
+  TapPercentAction,
 } from '@finalrun/common';
 import { Device } from './Device.js';
 import type {
@@ -23,10 +29,16 @@ function createRuntime(overrides?: Partial<DeviceRuntime>): DeviceRuntime {
     async tap() {
       return new DeviceNodeResponse({ success: true });
     },
+    async tapPercent() {
+      return new DeviceNodeResponse({ success: true });
+    },
     async longPress() {
       return new DeviceNodeResponse({ success: true });
     },
     async enterText() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async eraseText() {
       return new DeviceNodeResponse({ success: true });
     },
     async scrollAbs() {
@@ -36,6 +48,9 @@ function createRuntime(overrides?: Partial<DeviceRuntime>): DeviceRuntime {
       return new DeviceNodeResponse({ success: true });
     },
     async home() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async rotate() {
       return new DeviceNodeResponse({ success: true });
     },
     async hideKeyboard() {
@@ -70,6 +85,12 @@ function createRuntime(overrides?: Partial<DeviceRuntime>): DeviceRuntime {
     },
     async getInstalledApps() {
       return [];
+    },
+    async getScreenshot() {
+      return new DeviceNodeResponse({ success: true, data: { screenshot: 'image' } });
+    },
+    async getHierarchy() {
+      return new DeviceNodeResponse({ success: true, data: { hierarchy: '[]' } });
     },
     async getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy> {
       return {
@@ -129,6 +150,77 @@ test('Device delegates launchApp and stability preference to the runtime', async
   assert.equal(response.success, true);
   assert.equal(response.message, 'launched');
   assert.deepEqual(calls, [false, 'launch']);
+});
+
+test('Device routes parity primitives to the runtime', async () => {
+  const calls: string[] = [];
+  const runtime = createRuntime({
+    async tapPercent() {
+      calls.push('tapPercent');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async eraseText() {
+      calls.push('eraseText');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async rotate() {
+      calls.push('rotate');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async getScreenshot() {
+      calls.push('getScreenshot');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async getHierarchy() {
+      calls.push('getHierarchy');
+      return new DeviceNodeResponse({ success: true });
+    },
+  });
+  const device = new Device({
+    deviceInfo: createIOSDeviceInfo(),
+    runtime,
+  });
+
+  await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-1',
+      action: new TapPercentAction({
+        point: new PointPercent({ xPercent: 0.5, yPercent: 0.5 }),
+      }),
+    }),
+  );
+  await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-2',
+      action: new EraseTextAction(),
+    }),
+  );
+  await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-3',
+      action: new RotateAction(),
+    }),
+  );
+  await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-4',
+      action: new GetScreenshotAction(),
+    }),
+  );
+  await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-5',
+      action: new GetHierarchyAction(),
+    }),
+  );
+
+  assert.deepEqual(calls, [
+    'tapPercent',
+    'eraseText',
+    'rotate',
+    'getScreenshot',
+    'getHierarchy',
+  ]);
 });
 
 test('Device exposes runtime screenshot and installed app helpers', async () => {

@@ -77,3 +77,84 @@ test('SimctlClient.openUrl uses simctl openurl', async () => {
     },
   ]);
 });
+
+test('SimctlClient.setLocation uses simctl location set', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const simctlClient = new SimctlClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await simctlClient.setLocation('SIM-1', '37.7749', '-122.4194');
+
+  assert.equal(result.success, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'location', 'SIM-1', 'set', '37.7749,-122.4194'],
+    },
+  ]);
+});
+
+test('SimctlClient.pressButton uses simctl io ui for physical buttons', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const simctlClient = new SimctlClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await simctlClient.pressButton('SIM-1', 'home');
+
+  assert.equal(result.success, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'io', 'SIM-1', 'ui', 'home'],
+    },
+  ]);
+});
+
+test('SimctlClient.togglePermissions uses simctl privacy for location and applesimutils for others', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const simctlClient = new SimctlClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (file === 'which') {
+        return { stdout: '/usr/local/bin/applesimutils\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await simctlClient.togglePermissions('SIM-1', 'org.wikipedia', {
+    location: 'allow',
+    camera: 'deny',
+  });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'privacy', 'SIM-1', 'grant', 'location-always', 'org.wikipedia'],
+    },
+    {
+      file: 'which',
+      args: ['applesimutils'],
+    },
+    {
+      file: 'applesimutils',
+      args: [
+        '--byId',
+        'SIM-1',
+        '--bundle',
+        'org.wikipedia',
+        '--setPermissions',
+        'camera=NO',
+      ],
+    },
+  ]);
+});
