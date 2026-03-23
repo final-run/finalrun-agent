@@ -6,6 +6,8 @@ import {
   Logger,
   PLATFORM_ANDROID,
   RecordingRequest,
+  type DeviceInventoryDiagnostic,
+  type DeviceInventoryEntry,
   type RuntimeBindings,
 } from '@finalrun/common';
 import { DeviceNode } from '@finalrun/device-node';
@@ -16,11 +18,22 @@ import {
 } from '@finalrun/goal-executor';
 import type { GoalResult } from '@finalrun/goal-executor';
 import { CliFilePathUtil } from './filePathUtil.js';
+import {
+  type DeviceSelectionIO,
+  printDiagnosticsFailure,
+  promptForDeviceSelection,
+} from './deviceInventoryPresenter.js';
 import { TerminalRenderer } from './terminalRenderer.js';
 
 type GoalRunnerDeviceNode = Pick<
   DeviceNode,
-  'init' | 'detectDevices' | 'setUpDevice' | 'cleanup' | 'installAndroidApp' | 'installIOSApp'
+  | 'init'
+  | 'detectInventory'
+  | 'startTarget'
+  | 'setUpDevice'
+  | 'cleanup'
+  | 'installAndroidApp'
+  | 'installIOSApp'
 >;
 
 type GoalRunnerDevice = Awaited<ReturnType<DeviceNode['setUpDevice']>>;
@@ -59,6 +72,7 @@ export interface GoalSessionConfig {
 export interface GoalRunnerDependencies {
   createFilePathUtil(): CliFilePathUtil;
   getDeviceNode(): GoalRunnerDeviceNode;
+  createSelectionIO(): DeviceSelectionIO;
   createAiAgent(params: ConstructorParameters<typeof AIAgent>[0]): AIAgent;
   createExecutor(
     params: ConstructorParameters<typeof HeadlessGoalExecutor>[0],
@@ -74,9 +88,28 @@ export interface GoalSession {
   cleanup(): Promise<void>;
 }
 
+export class DevicePreparationError extends Error {
+  readonly diagnostics: DeviceInventoryDiagnostic[];
+
+  constructor(message: string, diagnostics: DeviceInventoryDiagnostic[] = []) {
+    super(message);
+    this.name = 'DevicePreparationError';
+    this.diagnostics = diagnostics;
+  }
+}
+
+export function isDevicePreparationError(error: unknown): error is DevicePreparationError {
+  return error instanceof DevicePreparationError;
+}
+
 export const goalRunnerDependencies: GoalRunnerDependencies = {
   createFilePathUtil: () => new CliFilePathUtil(),
   getDeviceNode: () => DeviceNode.getInstance(),
+  createSelectionIO: () => ({
+    input: process.stdin,
+    output: process.stdout,
+    isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
+  }),
   createAiAgent: (params) => new AIAgent(params),
   createExecutor: (params) => new HeadlessGoalExecutor(params),
   createRenderer: () => new TerminalRenderer(),
@@ -87,9 +120,10 @@ export async function prepareGoalSession(
   dependencies: GoalRunnerDependencies = goalRunnerDependencies,
 ): Promise<GoalSession> {
   const filePathUtil = dependencies.createFilePathUtil();
-  Logger.i('Detecting connected devices...');
+  Logger.i('Detecting local devices...');
   const adbPath = await filePathUtil.getADBPath();
   const deviceNode = dependencies.getDeviceNode();
+  const selectionIO = dependencies.createSelectionIO();
   deviceNode.init(filePathUtil);
   let cleanedUp = false;
 
@@ -102,21 +136,61 @@ export async function prepareGoalSession(
   };
 
   try {
-    const devices: DeviceInfo[] = await deviceNode.detectDevices(adbPath);
-    if (devices.length === 0) {
-      throw new Error(
-        'No devices found. Connect an Android or iOS device and try again.',
-      );
+    let inventory = await deviceNode.detectInventory(adbPath);
+    let scopedEntries = filterInventoryEntries(inventory.entries, config.platform);
+    let scopedDiagnostics = filterInventoryDiagnostics(inventory.diagnostics, config.platform);
+
+    let selectedEntry = await chooseInventoryEntry({
+      entries: scopedEntries,
+      diagnostics: scopedDiagnostics,
+      requestedPlatform: config.platform,
+      selectionIO,
+    });
+
+    if (selectedEntry.startable) {
+      Logger.i(`Starting device: ${selectedEntry.displayName}`);
+      Logger.i('Waiting for the selected device to become ready...');
+      const startupDiagnostic = await deviceNode.startTarget(selectedEntry, adbPath);
+      if (startupDiagnostic) {
+        printDiagnosticsFailure({
+          heading: 'Device startup failed',
+          diagnostics: [startupDiagnostic],
+          output: selectionIO.output,
+        });
+        throw new DevicePreparationError(startupDiagnostic.summary, [startupDiagnostic]);
+      }
+
+      inventory = await deviceNode.detectInventory(adbPath);
+      scopedEntries = filterInventoryEntries(inventory.entries, config.platform);
+      scopedDiagnostics = filterInventoryDiagnostics(inventory.diagnostics, config.platform);
+      const startedEntry = scopedEntries.find(
+        (entry) => entry.selectionId === selectedEntry.selectionId && entry.runnable,
+      ) ?? null;
+
+      if (!startedEntry?.deviceInfo) {
+        if (scopedDiagnostics.length > 0) {
+          printDiagnosticsFailure({
+            heading: 'Device startup failed',
+            diagnostics: scopedDiagnostics,
+            output: selectionIO.output,
+          });
+        }
+        throw new DevicePreparationError(
+          'The selected device did not become runnable after startup.',
+          scopedDiagnostics,
+        );
+      }
+
+      selectedEntry = startedEntry;
     }
 
-    const selectedPlatform = selectPlatform(devices, config.platform);
-    const deviceInfo = devices.find((candidate) => candidate.getPlatform() === selectedPlatform);
-    if (!deviceInfo) {
-      throw new Error(`No ${selectedPlatform} device found.`);
+    if (!selectedEntry?.deviceInfo) {
+      throw new DevicePreparationError('No runnable device is available for this run.');
     }
 
+    const deviceInfo = selectedEntry.deviceInfo;
     const platform = deviceInfo.isAndroid ? PLATFORM_ANDROID : 'ios';
-    Logger.i(`Using device: ${deviceInfo.name ?? deviceInfo.id} (${platform})`);
+    Logger.i(`Using device: ${selectedEntry.displayName}`);
 
     Logger.i('Setting up device...');
     const device = await deviceNode.setUpDevice(deviceInfo);
@@ -377,25 +451,104 @@ function printRunBanner(config: GoalRunnerConfig): void {
   console.log('─'.repeat(50) + '\n');
 }
 
-function selectPlatform(
-  devices: DeviceInfo[],
+async function chooseInventoryEntry(params: {
+  entries: DeviceInventoryEntry[];
+  diagnostics: DeviceInventoryDiagnostic[];
   requestedPlatform?: string,
-): string {
-  if (requestedPlatform) {
-    const normalizedPlatform = requestedPlatform.toLowerCase();
-    const hasPlatform = devices.some((device) => device.getPlatform() === normalizedPlatform);
-    if (!hasPlatform) {
-      throw new Error(`No ${normalizedPlatform} devices found.`);
-    }
-    return normalizedPlatform;
+  selectionIO: DeviceSelectionIO;
+}): Promise<DeviceInventoryEntry> {
+  const runnableEntries = params.entries.filter((entry) => entry.runnable);
+  if (runnableEntries.length === 1) {
+    return runnableEntries[0]!;
+  }
+  if (runnableEntries.length > 1) {
+    return await promptForDeviceSelection({
+      heading: 'Select a device',
+      entries: runnableEntries,
+      io: params.selectionIO,
+    });
   }
 
-  const platforms = new Set(devices.map((device) => device.getPlatform()));
-  if (platforms.size > 1) {
-    throw new Error(
-      'Multiple platforms are available. Choose --platform android or --platform ios.',
+  const startableEntries = params.entries.filter((entry) => entry.startable);
+  if (startableEntries.length === 1) {
+    return startableEntries[0]!;
+  }
+  if (startableEntries.length > 1) {
+    return await promptForDeviceSelection({
+      heading: 'Select a device to start',
+      entries: startableEntries,
+      io: params.selectionIO,
+    });
+  }
+
+  if (params.diagnostics.length > 0) {
+    printDiagnosticsFailure({
+      heading: 'Device discovery failed',
+      diagnostics: params.diagnostics,
+      output: params.selectionIO.output,
+    });
+  } else {
+    const unavailableEntries = params.entries.filter(
+      (entry) => !entry.runnable && !entry.startable,
+    );
+    if (unavailableEntries.length > 0) {
+      params.selectionIO.output.write('\nDetected targets are not ready to run:\n');
+      unavailableEntries.forEach((entry, index) => {
+        params.selectionIO.output.write(
+          `  ${index + 1}. ${entry.displayName} (${entry.state})\n`,
+        );
+      });
+    }
+  }
+
+  throw new DevicePreparationError(
+    buildNoUsableTargetMessage(params.requestedPlatform),
+    params.diagnostics,
+  );
+}
+
+function filterInventoryEntries(
+  entries: DeviceInventoryEntry[],
+  requestedPlatform?: string,
+): DeviceInventoryEntry[] {
+  if (!requestedPlatform) {
+    return entries;
+  }
+
+  const normalizedPlatform = requestedPlatform.toLowerCase();
+  return entries.filter((entry) => entry.platform === normalizedPlatform);
+}
+
+function filterInventoryDiagnostics(
+  diagnostics: DeviceInventoryDiagnostic[],
+  requestedPlatform?: string,
+): DeviceInventoryDiagnostic[] {
+  if (!requestedPlatform) {
+    return diagnostics;
+  }
+
+  const normalizedPlatform = requestedPlatform.toLowerCase();
+  if (normalizedPlatform === PLATFORM_ANDROID) {
+    return diagnostics.filter(
+      (diagnostic) =>
+        diagnostic.scope === 'android-connected' ||
+        diagnostic.scope === 'android-targets' ||
+        diagnostic.scope === 'startup',
     );
   }
+  if (normalizedPlatform === 'ios') {
+    return diagnostics.filter(
+      (diagnostic) =>
+        diagnostic.scope === 'ios-simulators' ||
+        diagnostic.scope === 'startup',
+    );
+  }
+  return diagnostics;
+}
 
-  return devices[0]!.getPlatform();
+function buildNoUsableTargetMessage(requestedPlatform?: string): string {
+  if (requestedPlatform) {
+    return `No runnable ${requestedPlatform.toLowerCase()} devices or startable targets were found.`;
+  }
+  return 'No runnable devices or startable targets were found.';
 }

@@ -6,6 +6,16 @@ export type { FilePathUtil } from './interfaces/FilePathUtil.js';
 
 // Models
 export { DeviceInfo } from './models/DeviceInfo.js';
+export type {
+  CommandTranscript,
+  DeviceInventoryDiagnostic,
+  DeviceInventoryDiagnosticScope,
+  DeviceInventoryEntry,
+  DeviceInventoryPlatform,
+  DeviceInventoryReport,
+  DeviceInventoryState,
+  DeviceInventoryTargetKind,
+} from './models/DeviceInventory.js';
 export { DeviceActionRequest } from './models/DeviceActionRequest.js';
 export { DeviceNodeResponse } from './models/DeviceNodeResponse.js';
 export { DeviceAppInfo } from './models/DeviceAppInfo.js';

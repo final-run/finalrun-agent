@@ -68,6 +68,15 @@ export class ReportWriter {
     );
   }
 
+  appendRawBlock(block: string): void {
+    const renderedBlock = redactResolvedValue(block, this._bindings) ?? block;
+    fs.appendFileSync(
+      this._runnerLogPath,
+      renderedBlock.endsWith('\n') ? renderedBlock : `${renderedBlock}\n`,
+      'utf-8',
+    );
+  }
+
   async writeSpecRecord(
     spec: LoadedRepoTestSpec,
     result: GoalResult,

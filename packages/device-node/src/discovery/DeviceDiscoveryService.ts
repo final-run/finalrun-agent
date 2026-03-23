@@ -1,6 +1,16 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { DeviceInfo, Logger } from '@finalrun/common';
+import { execFile, spawn, type ChildProcess } from 'child_process';
+import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
+import { homedir } from 'node:os';
+import * as path from 'node:path';
+import { promisify } from 'node:util';
+import {
+  DeviceInfo,
+  type CommandTranscript,
+  type DeviceInventoryDiagnostic,
+  type DeviceInventoryEntry,
+  type DeviceInventoryReport,
+} from '@finalrun/common';
 
 const execFileAsync = promisify(execFile);
 
@@ -9,123 +19,940 @@ type ExecFileFn = (
   args: readonly string[],
 ) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
 
-export class DeviceDiscoveryService {
-  private _execFileFn: ExecFileFn;
+type ReadFileFn = (
+  filePath: string,
+  encoding: BufferEncoding,
+) => Promise<string>;
 
-  constructor(params?: { execFileFn?: ExecFileFn }) {
+type DelayFn = (ms: number) => Promise<void>;
+
+interface ProbeResult {
+  entries: DeviceInventoryEntry[];
+  diagnostics: DeviceInventoryDiagnostic[];
+}
+
+interface CommandResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  transcript: CommandTranscript;
+}
+
+interface AndroidConnectedDetails {
+  modelName: string | null;
+  sdkVersion: number;
+  releaseVersion: string | null;
+  emulator: boolean;
+  avdName: string | null;
+  transcripts: CommandTranscript[];
+}
+
+interface AvdMetadata {
+  name: string;
+  configDir: string | null;
+  modelName: string | null;
+  osVersionLabel: string | null;
+}
+
+interface AvdManagerRecord {
+  name: string;
+  path: string | null;
+}
+
+export class DeviceDiscoveryService {
+  static readonly STARTUP_TIMEOUT_MS = 120_000;
+  static readonly POLL_INTERVAL_MS = 1_500;
+  static readonly ANDROID_LAUNCH_SETTLE_MS = 1_000;
+
+  private readonly _execFileFn: ExecFileFn;
+  private readonly _spawnFn: typeof spawn;
+  private readonly _delayFn: DelayFn;
+  private readonly _readFileFn: ReadFileFn;
+  private readonly _fileExistsFn: (filePath: string) => boolean;
+  private readonly _env: NodeJS.ProcessEnv;
+  private readonly _homeDir: string;
+
+  constructor(params?: {
+    execFileFn?: ExecFileFn;
+    spawnFn?: typeof spawn;
+    delayFn?: DelayFn;
+    readFileFn?: ReadFileFn;
+    fileExistsFn?: (filePath: string) => boolean;
+    env?: NodeJS.ProcessEnv;
+    homeDir?: string;
+  }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
+    this._spawnFn = params?.spawnFn ?? spawn;
+    this._delayFn =
+      params?.delayFn ??
+      ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this._readFileFn = params?.readFileFn ?? ((filePath, encoding) => fsp.readFile(filePath, encoding));
+    this._fileExistsFn = params?.fileExistsFn ?? fs.existsSync;
+    this._env = params?.env ?? process.env;
+    this._homeDir = params?.homeDir ?? homedir();
   }
 
   async getAndroidDevices(adbPath: string): Promise<DeviceInfo[]> {
-    try {
-      const { stdout } = await this._execFileFn(adbPath, ['devices', '-l']);
-      const lines = stdout.toString().split('\n').filter((line) => line.includes('device '));
-      const devices: DeviceInfo[] = [];
-
-      for (const line of lines) {
-        const serial = line.split(/\s+/)[0];
-        if (!serial || serial === 'List') {
-          continue;
-        }
-
-        let sdkVersion = 0;
-        try {
-          const { stdout: sdkOut } = await this._execFileFn(adbPath, [
-            '-s',
-            serial,
-            'shell',
-            'getprop',
-            'ro.build.version.sdk',
-          ]);
-          sdkVersion = parseInt(sdkOut.toString().trim(), 10) || 0;
-        } catch {
-          // Ignore per-device property fetch failures.
-        }
-
-        let name: string | null = null;
-        try {
-          const { stdout: nameOut } = await this._execFileFn(adbPath, [
-            '-s',
-            serial,
-            'shell',
-            'getprop',
-            'ro.product.model',
-          ]);
-          name = nameOut.toString().trim() || null;
-        } catch {
-          // Ignore per-device property fetch failures.
-        }
-
-        devices.push(
-          new DeviceInfo({
-            id: serial,
-            deviceUUID: serial,
-            isAndroid: true,
-            sdkVersion,
-            name,
-          }),
-        );
-      }
-
-      return devices;
-    } catch (error) {
-      Logger.e('Failed to detect Android devices:', error);
-      return [];
-    }
+    const result = await this._probeAndroidConnected(adbPath);
+    return result.entries
+      .filter((entry) => entry.runnable && entry.deviceInfo !== null)
+      .map((entry) => entry.deviceInfo as DeviceInfo);
   }
 
   async getIOSDevices(): Promise<DeviceInfo[]> {
+    const result = await this._probeIOSSimulators();
+    return result.entries
+      .filter((entry) => entry.runnable && entry.deviceInfo !== null)
+      .map((entry) => entry.deviceInfo as DeviceInfo);
+  }
+
+  async detectInventory(adbPath: string | null): Promise<DeviceInventoryReport> {
+    const [androidConnected, iosSimulators] = await Promise.all([
+      this._probeAndroidConnected(adbPath),
+      this._probeIOSSimulators(),
+    ]);
+    const runningEmulatorSelectionIds = new Set(
+      androidConnected.entries
+        .filter((entry) => entry.targetKind === 'android-emulator' && entry.runnable)
+        .map((entry) => entry.selectionId),
+    );
+    const androidTargets = await this._probeAndroidTargets(adbPath, runningEmulatorSelectionIds);
+
+    return {
+      entries: [
+        ...androidConnected.entries,
+        ...androidTargets.entries,
+        ...iosSimulators.entries,
+      ],
+      diagnostics: [
+        ...androidConnected.diagnostics,
+        ...androidTargets.diagnostics,
+        ...iosSimulators.diagnostics,
+      ],
+    };
+  }
+
+  async startTarget(
+    entry: DeviceInventoryEntry,
+    adbPath: string | null,
+  ): Promise<DeviceInventoryDiagnostic | null> {
+    if (!entry.startable) {
+      return null;
+    }
+
+    if (entry.targetKind === 'ios-simulator') {
+      return await this._startIOSSimulator(entry, adbPath);
+    }
+
+    if (entry.targetKind === 'android-emulator') {
+      return await this._startAndroidEmulator(entry, adbPath);
+    }
+
+    return {
+      scope: 'startup',
+      summary: `Automatic startup is not supported for ${entry.displayName}.`,
+      blocking: true,
+      transcripts: [],
+    };
+  }
+
+  private async _probeAndroidConnected(adbPath: string | null): Promise<ProbeResult> {
+    if (!adbPath) {
+      return {
+        entries: [],
+        diagnostics: [
+          {
+            scope: 'android-connected',
+            summary: 'Android discovery is unavailable because adb was not found.',
+            blocking: true,
+            transcripts: [],
+          },
+        ],
+      };
+    }
+
+    const listResult = await this._runCommand(adbPath, ['devices', '-l']);
+    if (!listResult.ok) {
+      return {
+        entries: [],
+        diagnostics: [
+          {
+            scope: 'android-connected',
+            summary: 'Android device discovery failed.',
+            blocking: true,
+            transcripts: [listResult.transcript],
+          },
+        ],
+      };
+    }
+
+    const entries: DeviceInventoryEntry[] = [];
+    const lines = listResult.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('List of devices attached'));
+
+    for (const line of lines) {
+      const [serial, state] = line.split(/\s+/, 3);
+      if (!serial || !state) {
+        continue;
+      }
+
+      const inlineModel = this._parseInlineAdbField(line, 'model');
+      if (state === 'offline' || state === 'unauthorized') {
+        const emulator = serial.startsWith('emulator-');
+        entries.push({
+          selectionId: emulator ? `android-emulator:${serial}` : `android-device:${serial}`,
+          platform: 'android',
+          targetKind: emulator ? 'android-emulator' : 'android-device',
+          state,
+          runnable: false,
+          startable: false,
+          displayName: this._formatAndroidDisplayName({
+            modelName: inlineModel,
+            osVersionLabel: null,
+            id: serial,
+          }),
+          rawId: serial,
+          modelName: inlineModel,
+          osVersionLabel: null,
+          deviceInfo: null,
+          transcripts: [],
+        });
+        continue;
+      }
+
+      if (state !== 'device') {
+        continue;
+      }
+
+      const details = await this._loadAndroidConnectedDetails(adbPath, serial, inlineModel);
+      const primaryName = details.avdName ?? details.modelName ?? inlineModel;
+      const osVersionLabel = this._formatAndroidOsLabel({
+        releaseVersion: details.releaseVersion,
+        sdkVersion: details.sdkVersion,
+      });
+      const selectionId = details.avdName
+        ? `android-avd:${details.avdName}`
+        : details.emulator
+          ? `android-emulator:${serial}`
+          : `android-device:${serial}`;
+
+      entries.push({
+        selectionId,
+        platform: 'android',
+        targetKind: details.emulator ? 'android-emulator' : 'android-device',
+        state: 'connected',
+        runnable: true,
+        startable: false,
+        displayName: this._formatAndroidDisplayName({
+          modelName: primaryName,
+          osVersionLabel,
+          id: serial,
+        }),
+        rawId: serial,
+        modelName: primaryName ?? null,
+        osVersionLabel,
+        deviceInfo: new DeviceInfo({
+          id: serial,
+          deviceUUID: serial,
+          isAndroid: true,
+          sdkVersion: details.sdkVersion,
+          name: primaryName ?? inlineModel,
+        }),
+        transcripts: details.transcripts,
+      });
+    }
+
+    return { entries, diagnostics: [] };
+  }
+
+  private async _probeAndroidTargets(
+    adbPath: string | null,
+    runningEmulatorSelectionIds: Set<string>,
+  ): Promise<ProbeResult> {
+    if (!adbPath) {
+      return { entries: [], diagnostics: [] };
+    }
+
+    const emulatorPath = await this._resolveAndroidToolPath('emulator', [
+      ['emulator', 'emulator'],
+    ]);
+    if (!emulatorPath) {
+      return {
+        entries: [],
+        diagnostics: [
+          {
+            scope: 'android-targets',
+            summary: 'Android emulator inventory is unavailable because the emulator binary was not found.',
+            blocking: false,
+            transcripts: [],
+          },
+        ],
+      };
+    }
+
+    const listResult = await this._runCommand(emulatorPath, ['-list-avds']);
+    if (!listResult.ok) {
+      return {
+        entries: [],
+        diagnostics: [
+          {
+            scope: 'android-targets',
+            summary: 'Android emulator inventory failed.',
+            blocking: false,
+            transcripts: [listResult.transcript],
+          },
+        ],
+      };
+    }
+
+    const avdNames = listResult.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (avdNames.length === 0) {
+      return { entries: [], diagnostics: [] };
+    }
+
+    const diagnostics: DeviceInventoryDiagnostic[] = [];
+    const avdRecords = await this._loadAvdManagerRecords(diagnostics);
+    const avdMetadata = await Promise.all(
+      avdNames.map((name) => this._loadAvdMetadata(name, avdRecords)),
+    );
+
+    const entries: DeviceInventoryEntry[] = avdMetadata
+      .filter((metadata) => !runningEmulatorSelectionIds.has(`android-avd:${metadata.name}`))
+      .map((metadata): DeviceInventoryEntry => {
+        const displayName = this._formatAndroidDisplayName({
+          modelName: metadata.modelName ?? metadata.name,
+          osVersionLabel: metadata.osVersionLabel,
+          id: metadata.name,
+        });
+
+        return {
+          selectionId: `android-avd:${metadata.name}`,
+          platform: 'android',
+          targetKind: 'android-emulator',
+          state: 'shutdown' as const,
+          runnable: false,
+          startable: true,
+          displayName,
+          rawId: metadata.name,
+          modelName: metadata.modelName,
+          osVersionLabel: metadata.osVersionLabel,
+          deviceInfo: null,
+          transcripts: [],
+        };
+      });
+
+    return { entries, diagnostics };
+  }
+
+  private async _probeIOSSimulators(): Promise<ProbeResult> {
+    const listResult = await this._runCommand('xcrun', ['simctl', 'list', '-j']);
+    if (!listResult.ok) {
+      return {
+        entries: [],
+        diagnostics: [
+          {
+            scope: 'ios-simulators',
+            summary: 'iOS simulator discovery failed.',
+            blocking: true,
+            transcripts: [listResult.transcript],
+          },
+        ],
+      };
+    }
+
+    let parsed: { devices?: Record<string, Array<Record<string, unknown>>> };
     try {
-      const { stdout } = await this._execFileFn('xcrun', [
-        'simctl',
-        'list',
-        'devices',
-        'booted',
-        '--json',
-      ]);
-      const parsed = JSON.parse(stdout.toString()) as {
+      parsed = JSON.parse(listResult.stdout) as {
         devices?: Record<string, Array<Record<string, unknown>>>;
       };
-      const devices: DeviceInfo[] = [];
+    } catch {
+      return {
+        entries: [],
+        diagnostics: [
+          {
+            scope: 'ios-simulators',
+            summary: 'iOS simulator discovery returned invalid JSON.',
+            blocking: true,
+            transcripts: [listResult.transcript],
+          },
+        ],
+      };
+    }
 
-      for (const [runtime, runtimeDevices] of Object.entries(parsed.devices ?? {})) {
-        const sdkVersion = this._parseRuntimeVersion(runtime);
-        for (const device of runtimeDevices) {
-          if (device['state'] !== 'Booted' || device['isAvailable'] === false) {
-            continue;
-          }
+    const entries: DeviceInventoryEntry[] = [];
+    for (const [runtime, runtimeDevices] of Object.entries(parsed.devices ?? {})) {
+      const runtimeLabel = this._parseIOSRuntimeLabel(runtime);
+      if (!runtimeLabel || !runtime.includes('SimRuntime.iOS-')) {
+        continue;
+      }
 
-          const udid = typeof device['udid'] === 'string' ? device['udid'] : null;
-          const name = typeof device['name'] === 'string' ? device['name'] : null;
-          if (!udid) {
-            continue;
-          }
+      for (const device of runtimeDevices) {
+        if (device['isAvailable'] === false) {
+          continue;
+        }
 
-          devices.push(
-            new DeviceInfo({
+        const udid =
+          typeof device['udid'] === 'string' && device['udid'].trim().length > 0
+            ? device['udid'].trim()
+            : null;
+        const name =
+          typeof device['name'] === 'string' && device['name'].trim().length > 0
+            ? device['name'].trim()
+            : null;
+        const state =
+          typeof device['state'] === 'string' && device['state'].trim().length > 0
+            ? device['state'].trim()
+            : null;
+        if (!udid || !name) {
+          continue;
+        }
+
+        if (state === 'Booted') {
+          entries.push({
+            selectionId: `ios-simulator:${udid}`,
+            platform: 'ios',
+            targetKind: 'ios-simulator',
+            state: 'booted',
+            runnable: true,
+            startable: false,
+            displayName: this._formatIOSDisplayName(name, runtimeLabel.label, udid),
+            rawId: udid,
+            modelName: name,
+            osVersionLabel: runtimeLabel.label,
+            deviceInfo: new DeviceInfo({
               id: udid,
               deviceUUID: udid,
               isAndroid: false,
-              sdkVersion,
+              sdkVersion: runtimeLabel.sdkVersion,
               name,
             }),
-          );
+            transcripts: [],
+          });
+        } else if (state === 'Shutdown') {
+          entries.push({
+            selectionId: `ios-simulator:${udid}`,
+            platform: 'ios',
+            targetKind: 'ios-simulator',
+            state: 'shutdown',
+            runnable: false,
+            startable: true,
+            displayName: this._formatIOSDisplayName(name, runtimeLabel.label, udid),
+            rawId: udid,
+            modelName: name,
+            osVersionLabel: runtimeLabel.label,
+            deviceInfo: null,
+            transcripts: [],
+          });
+        }
+      }
+    }
+
+    return { entries, diagnostics: [] };
+  }
+
+  private async _startIOSSimulator(
+    entry: DeviceInventoryEntry,
+    adbPath: string | null,
+  ): Promise<DeviceInventoryDiagnostic | null> {
+    const bootResult = await this._runCommand('xcrun', ['simctl', 'boot', entry.rawId]);
+    if (!bootResult.ok) {
+      return {
+        scope: 'startup',
+        summary: `Device startup failed for ${entry.displayName}.`,
+        blocking: true,
+        transcripts: [bootResult.transcript],
+      };
+    }
+
+    const started = await this._waitForStartableEntry(entry.selectionId, adbPath, 'ios');
+    if (!started.ok) {
+      return {
+        scope: 'startup',
+        summary: `Device startup timed out for ${entry.displayName}.`,
+        blocking: true,
+        transcripts: [bootResult.transcript, ...started.transcripts],
+      };
+    }
+
+    return null;
+  }
+
+  private async _startAndroidEmulator(
+    entry: DeviceInventoryEntry,
+    adbPath: string | null,
+  ): Promise<DeviceInventoryDiagnostic | null> {
+    if (!adbPath) {
+      return {
+        scope: 'startup',
+        summary: `Device startup failed for ${entry.displayName}.`,
+        blocking: true,
+        transcripts: [],
+      };
+    }
+
+    const emulatorPath = await this._resolveAndroidToolPath('emulator', [
+      ['emulator', 'emulator'],
+    ]);
+    if (!emulatorPath) {
+      return {
+        scope: 'startup',
+        summary: 'Device startup failed because the Android emulator binary was not found.',
+        blocking: true,
+        transcripts: [],
+      };
+    }
+
+    const args = ['-avd', entry.rawId, '-netdelay', 'none', '-netspeed', 'full'];
+    const command = this._formatCommand(emulatorPath, args);
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    let spawnError: Error | null = null;
+
+    const child = this._spawnFn(emulatorPath, args, {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }) as ChildProcess;
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdoutChunks.push(String(chunk));
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderrChunks.push(String(chunk));
+    });
+    child.once('error', (error) => {
+      spawnError = error;
+      stderrChunks.push(error.message);
+    });
+
+    await this._delayFn(DeviceDiscoveryService.ANDROID_LAUNCH_SETTLE_MS);
+
+    if (spawnError || child.exitCode !== null) {
+      return {
+        scope: 'startup',
+        summary: `Device startup failed for ${entry.displayName}.`,
+        blocking: true,
+        transcripts: [
+          {
+            command,
+            stdout: stdoutChunks.join(''),
+            stderr: stderrChunks.join(''),
+            exitCode: child.exitCode ?? null,
+          },
+        ],
+      };
+    }
+
+    const started = await this._waitForStartableEntry(entry.selectionId, adbPath, 'android');
+    if (started.ok) {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.unref();
+      return null;
+    }
+
+    return {
+      scope: 'startup',
+      summary: `Device startup timed out for ${entry.displayName}.`,
+      blocking: true,
+      transcripts: [
+        {
+          command,
+          stdout: stdoutChunks.join(''),
+          stderr: stderrChunks.join(''),
+          exitCode: child.exitCode ?? null,
+        },
+        ...started.transcripts,
+      ],
+    };
+  }
+
+  private async _waitForStartableEntry(
+    selectionId: string,
+    adbPath: string | null,
+    platform: 'android' | 'ios',
+  ): Promise<{ ok: boolean; transcripts: CommandTranscript[] }> {
+    const deadline = Date.now() + DeviceDiscoveryService.STARTUP_TIMEOUT_MS;
+    let lastTranscript: CommandTranscript | null = null;
+
+    while (Date.now() < deadline) {
+      if (platform === 'android') {
+        const probe = await this._probeAndroidConnected(adbPath);
+        const match = probe.entries.find(
+          (entry) => entry.selectionId === selectionId && entry.runnable,
+        );
+        if (match?.deviceInfo?.id && adbPath) {
+          const bootResult = await this._runCommand(adbPath, [
+            '-s',
+            match.deviceInfo.id,
+            'shell',
+            'getprop',
+            'sys.boot_completed',
+          ]);
+          lastTranscript = bootResult.transcript;
+          if (bootResult.ok && bootResult.stdout.trim() === '1') {
+            return { ok: true, transcripts: [] };
+          }
+        } else if (probe.diagnostics.length > 0) {
+          lastTranscript = probe.diagnostics[0]?.transcripts[0] ?? lastTranscript;
+        }
+      } else {
+        const probe = await this._probeIOSSimulators();
+        const match = probe.entries.find(
+          (entry) => entry.selectionId === selectionId && entry.runnable,
+        );
+        if (match) {
+          return { ok: true, transcripts: [] };
+        }
+        if (probe.diagnostics.length > 0) {
+          lastTranscript = probe.diagnostics[0]?.transcripts[0] ?? lastTranscript;
         }
       }
 
-      return devices;
+      await this._delayFn(DeviceDiscoveryService.POLL_INTERVAL_MS);
+    }
+
+    return {
+      ok: false,
+      transcripts: lastTranscript ? [lastTranscript] : [],
+    };
+  }
+
+  private async _loadAndroidConnectedDetails(
+    adbPath: string,
+    serial: string,
+    fallbackModelName: string | null,
+  ): Promise<AndroidConnectedDetails> {
+    const transcripts: CommandTranscript[] = [];
+    const sdkResult = await this._runAndroidProperty(adbPath, serial, 'ro.build.version.sdk');
+    if (sdkResult.transcript) {
+      transcripts.push(sdkResult.transcript);
+    }
+    const releaseResult = await this._runAndroidProperty(adbPath, serial, 'ro.build.version.release');
+    if (releaseResult.transcript) {
+      transcripts.push(releaseResult.transcript);
+    }
+    const modelResult = await this._runAndroidProperty(adbPath, serial, 'ro.product.model');
+    if (modelResult.transcript) {
+      transcripts.push(modelResult.transcript);
+    }
+    const qemuResult = await this._runAndroidProperty(adbPath, serial, 'ro.kernel.qemu');
+    if (qemuResult.transcript) {
+      transcripts.push(qemuResult.transcript);
+    }
+
+    const emulator =
+      qemuResult.value === '1' ||
+      serial.startsWith('emulator-');
+    let avdName: string | null = null;
+    if (emulator) {
+      const avdNameResult = await this._runCommand(adbPath, ['-s', serial, 'emu', 'avd', 'name']);
+      transcripts.push(avdNameResult.transcript);
+      if (avdNameResult.ok) {
+        avdName = this._parseAvdNameOutput(avdNameResult.stdout);
+      }
+    }
+
+    return {
+      modelName: modelResult.value ?? fallbackModelName,
+      sdkVersion: parseInt(sdkResult.value ?? '', 10) || 0,
+      releaseVersion: releaseResult.value,
+      emulator,
+      avdName,
+      transcripts,
+    };
+  }
+
+  private async _loadAvdManagerRecords(
+    diagnostics: DeviceInventoryDiagnostic[],
+  ): Promise<Map<string, AvdManagerRecord>> {
+    const avdManagerPath = await this._resolveAndroidToolPath('avdmanager', [
+      ['cmdline-tools', 'latest', 'bin', 'avdmanager'],
+      ['cmdline-tools', 'bin', 'avdmanager'],
+      ['tools', 'bin', 'avdmanager'],
+    ]);
+    if (!avdManagerPath) {
+      return new Map();
+    }
+
+    const result = await this._runCommand(avdManagerPath, ['list', 'avd']);
+    if (!result.ok) {
+      diagnostics.push({
+        scope: 'android-targets',
+        summary: 'Android AVD metadata lookup failed.',
+        blocking: false,
+        transcripts: [result.transcript],
+      });
+      return new Map();
+    }
+
+    return this._parseAvdManagerList(result.stdout);
+  }
+
+  private async _loadAvdMetadata(
+    name: string,
+    avdRecords: Map<string, AvdManagerRecord>,
+  ): Promise<AvdMetadata> {
+    const configuredPath = avdRecords.get(name)?.path;
+    const configDir = configuredPath ?? path.join(this._getAvdHome(), `${name}.avd`);
+    const configPath = path.join(configDir, 'config.ini');
+    if (!this._fileExistsFn(configPath)) {
+      return {
+        name,
+        configDir: this._fileExistsFn(configDir) ? configDir : null,
+        modelName: null,
+        osVersionLabel: null,
+      };
+    }
+
+    let rawConfig = '';
+    try {
+      rawConfig = await this._readFileFn(configPath, 'utf-8');
+    } catch {
+      return {
+        name,
+        configDir,
+        modelName: null,
+        osVersionLabel: null,
+      };
+    }
+
+    const values = this._parseIni(rawConfig);
+    const modelName =
+      this._normalizeLabel(values['avd.ini.displayname']) ??
+      this._normalizeLabel(values['hw.device.name']);
+    const imageSysDir =
+      values['image.sysdir.1'] ??
+      values['image.sysdir.2'] ??
+      values['target'];
+    const apiMatch = imageSysDir?.match(/android-(\d+)/i);
+    const osVersionLabel = apiMatch ? `Android API ${apiMatch[1]}` : null;
+
+    return {
+      name,
+      configDir,
+      modelName,
+      osVersionLabel,
+    };
+  }
+
+  private async _runAndroidProperty(
+    adbPath: string,
+    serial: string,
+    property: string,
+  ): Promise<{ value: string | null; transcript: CommandTranscript | null }> {
+    const result = await this._runCommand(adbPath, ['-s', serial, 'shell', 'getprop', property]);
+    return {
+      value: result.ok ? result.stdout.trim() || null : null,
+      transcript: result.transcript,
+    };
+  }
+
+  private async _runCommand(
+    file: string,
+    args: readonly string[],
+  ): Promise<CommandResult> {
+    try {
+      const { stdout, stderr } = await this._execFileFn(file, args);
+      return {
+        ok: true,
+        stdout: stdout.toString(),
+        stderr: stderr.toString(),
+        transcript: {
+          command: this._formatCommand(file, args),
+          stdout: stdout.toString(),
+          stderr: stderr.toString(),
+          exitCode: 0,
+        },
+      };
     } catch (error) {
-      Logger.d('iOS device detection unavailable:', error);
-      return [];
+      const stdout =
+        typeof (error as { stdout?: string | Buffer }).stdout === 'string' ||
+        Buffer.isBuffer((error as { stdout?: string | Buffer }).stdout)
+          ? (error as { stdout?: string | Buffer }).stdout!.toString()
+          : '';
+      const stderr =
+        typeof (error as { stderr?: string | Buffer }).stderr === 'string' ||
+        Buffer.isBuffer((error as { stderr?: string | Buffer }).stderr)
+          ? (error as { stderr?: string | Buffer }).stderr!.toString()
+          : '';
+      const exitCode = typeof (error as { code?: number }).code === 'number'
+        ? (error as { code?: number }).code ?? null
+        : null;
+
+      return {
+        ok: false,
+        stdout,
+        stderr,
+        transcript: {
+          command: this._formatCommand(file, args),
+          stdout,
+          stderr,
+          exitCode,
+        },
+      };
     }
   }
 
-  private _parseRuntimeVersion(runtime: string): number {
-    const match = runtime.match(/iOS-(\d+)(?:-(\d+))?/i);
-    if (!match) {
-      return 0;
+  private async _resolveAndroidToolPath(
+    commandName: string,
+    sdkRelativePaths: string[][],
+  ): Promise<string | null> {
+    const sdkRoot = this._env['ANDROID_HOME'] ?? this._env['ANDROID_SDK_ROOT'];
+    if (sdkRoot) {
+      for (const parts of sdkRelativePaths) {
+        const candidate = path.join(sdkRoot, ...parts);
+        if (this._fileExistsFn(candidate)) {
+          return candidate;
+        }
+      }
     }
 
-    return parseInt(match[1], 10) || 0;
+    const result = await this._runCommand('which', [commandName]);
+    if (!result.ok) {
+      return null;
+    }
+
+    const resolved = result.stdout.trim();
+    return resolved.length > 0 && this._fileExistsFn(resolved) ? resolved : null;
+  }
+
+  private _parseAvdManagerList(output: string): Map<string, AvdManagerRecord> {
+    const result = new Map<string, AvdManagerRecord>();
+    const sections = output.split(/(?:\r?\n){2,}/);
+    for (const section of sections) {
+      const lines = section.split(/\r?\n/);
+      let name: string | null = null;
+      let recordPath: string | null = null;
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        const nameMatch = line.match(/^Name:\s*(.+)$/i);
+        if (nameMatch) {
+          name = nameMatch[1]?.trim() ?? null;
+          continue;
+        }
+        const pathMatch = line.match(/^Path:\s*(.+)$/i);
+        if (pathMatch) {
+          recordPath = pathMatch[1]?.trim() ?? null;
+        }
+      }
+
+      if (name) {
+        result.set(name, { name, path: recordPath });
+      }
+    }
+
+    return result;
+  }
+
+  private _parseIni(rawConfig: string): Record<string, string> {
+    const values: Record<string, string> = {};
+    for (const rawLine of rawConfig.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) {
+        continue;
+      }
+
+      const separatorIndex = line.indexOf('=');
+      if (separatorIndex === -1) {
+        continue;
+      }
+
+      const key = line.slice(0, separatorIndex).trim();
+      const value = line.slice(separatorIndex + 1).trim();
+      if (key) {
+        values[key] = value;
+      }
+    }
+    return values;
+  }
+
+  private _parseIOSRuntimeLabel(runtime: string): {
+    label: string;
+    sdkVersion: number;
+  } | null {
+    const match = runtime.match(/iOS-(\d+)(?:-(\d+))?/i);
+    if (!match) {
+      return null;
+    }
+
+    const major = parseInt(match[1] ?? '', 10) || 0;
+    const minor = match[2] ? parseInt(match[2], 10) : null;
+    return {
+      label: minor !== null ? `iOS ${major}.${minor}` : `iOS ${major}`,
+      sdkVersion: major,
+    };
+  }
+
+  private _parseInlineAdbField(line: string, fieldName: string): string | null {
+    const match = line.match(new RegExp(`${fieldName}:([^\\s]+)`));
+    return this._normalizeLabel(match?.[1] ?? null);
+  }
+
+  private _parseAvdNameOutput(output: string): string | null {
+    const line = output
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .find((part) => part.length > 0 && part.toUpperCase() !== 'OK');
+    return line && line.length > 0 ? line : null;
+  }
+
+  private _normalizeLabel(value: string | null | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+    const normalized = value.replace(/_/g, ' ').trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private _formatAndroidOsLabel(params: {
+    releaseVersion: string | null;
+    sdkVersion: number;
+  }): string | null {
+    if (params.releaseVersion) {
+      return `Android ${params.releaseVersion}`;
+    }
+    if (params.sdkVersion > 0) {
+      return `Android API ${params.sdkVersion}`;
+    }
+    return null;
+  }
+
+  private _formatAndroidDisplayName(params: {
+    modelName: string | null;
+    osVersionLabel: string | null;
+    id: string;
+  }): string {
+    const parts = [params.modelName ?? 'Android target'];
+    if (params.osVersionLabel) {
+      parts.push(params.osVersionLabel);
+    }
+    parts.push(params.id);
+    return parts.join(' - ');
+  }
+
+  private _formatIOSDisplayName(
+    name: string,
+    runtimeLabel: string | null,
+    udid: string,
+  ): string {
+    const parts = [name];
+    if (runtimeLabel) {
+      parts.push(runtimeLabel);
+    }
+    parts.push(udid);
+    return parts.join(' - ');
+  }
+
+  private _formatCommand(file: string, args: readonly string[]): string {
+    return [file, ...args].join(' ');
+  }
+
+  private _getAvdHome(): string {
+    return this._env['ANDROID_AVD_HOME'] ?? path.join(this._homeDir, '.android', 'avd');
   }
 }
