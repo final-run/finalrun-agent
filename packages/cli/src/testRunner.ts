@@ -5,6 +5,7 @@ import {
   type DeviceInfo,
   type DeviceInventoryDiagnostic,
   type LogEntry,
+  type RunTargetRecord,
   type RuntimeBindings,
   type SpecArtifactRecord,
 } from '@finalrun/common';
@@ -105,6 +106,7 @@ export async function runTests(
       cliContext: buildCliContext(options),
       modelContext: buildModelContext(options.provider, options.modelName),
       appContext: buildAppContext(options.appPath),
+      target: buildFallbackRunTarget(options),
       failurePhase: 'validation',
     });
     return failedRun;
@@ -131,11 +133,13 @@ export async function runTests(
       diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
       environment: checked.environment,
       specs: checked.specs,
+      suite: checked.suite,
       effectiveGoals,
       workspaceRoot: checked.workspace.rootDir,
       cliContext: buildCliContext(options),
       modelContext: buildModelContext(options.provider, options.modelName),
       appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+      target: checked.target,
       failurePhase: 'setup',
     });
     return failedRun;
@@ -162,6 +166,8 @@ export async function runTests(
       cli: buildCliContext(options),
       model: buildModelContext(options.provider, options.modelName),
       app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+      target: checked.target,
+      suite: checked.suite,
     });
     reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
 
@@ -308,11 +314,13 @@ async function writeRunFailureArtifacts(params: {
   diagnostics?: DeviceInventoryDiagnostic[];
   environment?: LoadedEnvironmentConfig;
   specs?: Awaited<ReturnType<typeof runCheck>>['specs'];
+  suite?: Awaited<ReturnType<typeof runCheck>>['suite'];
   effectiveGoals?: Map<string, string>;
   workspaceRoot?: string;
   cliContext: ReturnType<typeof buildCliContext>;
   modelContext: ReturnType<typeof buildModelContext>;
   appContext: ReturnType<typeof buildAppContext>;
+  target: RunTargetRecord;
   failurePhase: 'validation' | 'setup' | 'execution';
 }): Promise<TestRunnerResult> {
   const { reportWriter, runDir } = await createReportWriter({
@@ -321,6 +329,12 @@ async function writeRunFailureArtifacts(params: {
     platform: params.platform,
     startedAt: params.startedAt,
     bindings: params.bindings,
+  });
+  reportWriter.setRunContext({
+    cli: params.cliContext,
+    model: params.modelContext,
+    app: params.appContext,
+    target: params.target,
   });
   flushBufferedLogEntries(params.bufferedLogEntries, reportWriter.createLoggerSink());
   if (
@@ -333,7 +347,9 @@ async function writeRunFailureArtifacts(params: {
       workspaceRoot: params.workspaceRoot,
       environment: params.environment,
       specs: params.specs,
+      suite: params.suite,
       effectiveGoals: params.effectiveGoals,
+      target: params.target,
       cli: params.cliContext,
       model: params.modelContext,
       app: params.appContext,
@@ -407,14 +423,20 @@ function buildCliContext(
 ): {
   command: string;
   selectors: string[];
+  suitePath?: string;
   requestedPlatform?: string;
   appOverridePath?: string;
   debug: boolean;
   maxIterations?: number;
 } {
+  const commandParts = ['finalrun', 'test'];
+  if (options.suitePath) {
+    commandParts.push('--suite', options.suitePath);
+  }
   return {
-    command: 'finalrun test',
+    command: commandParts.join(' '),
     selectors: options.selectors ?? [],
+    suitePath: options.suitePath,
     requestedPlatform: options.platform,
     appOverridePath: options.appPath,
     debug: options.debug === true,
@@ -456,5 +478,16 @@ function buildAppContext(
     source: 'override',
     label: path.basename(appOverridePath),
     overridePath: appOverridePath,
+  };
+}
+
+function buildFallbackRunTarget(options: CheckRunnerOptions): RunTargetRecord {
+  if (!options.suitePath) {
+    return { type: 'direct' };
+  }
+
+  return {
+    type: 'suite',
+    suitePath: options.suitePath,
   };
 }

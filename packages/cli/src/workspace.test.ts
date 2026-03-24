@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { runCheck } from './checkRunner.js';
+import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from './checkRunner.js';
 import {
   ensureWorkspaceDirectories,
   resolveWorkspace,
@@ -15,15 +15,23 @@ function createTempWorkspace(params?: {
   envYaml?: string;
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
+  includeSuitesDir?: boolean;
   specs?: Record<string, string>;
+  suites?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-workspace-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
+  const suitesDir = path.join(rootDir, '.finalrun', 'suites');
   fs.mkdirSync(testsDir, { recursive: true });
   const includeEnvDir = params?.includeEnvDir ?? true;
   if (includeEnvDir) {
     fs.mkdirSync(envDir, { recursive: true });
+  }
+  const suites = params?.suites ?? {};
+  const includeSuitesDir = params?.includeSuitesDir ?? Object.keys(suites).length > 0;
+  if (includeSuitesDir) {
+    fs.mkdirSync(suitesDir, { recursive: true });
   }
 
   const envFiles = params?.envFiles ?? {
@@ -40,6 +48,12 @@ function createTempWorkspace(params?: {
   };
   for (const [relativePath, contents] of Object.entries(specs)) {
     const targetPath = path.join(testsDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, contents, 'utf-8');
+  }
+
+  for (const [relativePath, contents] of Object.entries(suites)) {
+    const targetPath = path.join(suitesDir, relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, contents, 'utf-8');
   }
@@ -369,6 +383,91 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
         'auth/profile/view.yaml',
         'auth/settings.yaml',
       ],
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck resolves suite manifests into an ordered shared spec list', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
+      'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
+      'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
+    },
+    suites: {
+      'login_suite.yaml': [
+        'name: login suite',
+        'tests:',
+        '  - smoke.yaml',
+        '  - auth/**',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({
+      envName: 'dev',
+      cwd: rootDir,
+      suitePath: 'login_suite.yaml',
+    });
+
+    assert.deepEqual(result.target, {
+      type: 'suite',
+      suiteId: 'login_suite',
+      suiteName: 'login suite',
+      suitePath: 'login_suite.yaml',
+    });
+    assert.equal(result.suite?.name, 'login suite');
+    assert.deepEqual(
+      result.specs.map((spec) => spec.relativePath),
+      ['smoke.yaml', 'auth/login.yaml', 'auth/settings.yaml'],
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects mixing --suite with positional selectors', async () => {
+  const rootDir = createTempWorkspace({
+    suites: {
+      'login_suite.yaml': ['name: login suite', 'tests:', '  - login.yaml'].join('\n'),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        runCheck({
+          envName: 'dev',
+          cwd: rootDir,
+          suitePath: 'login_suite.yaml',
+          selectors: ['login.yaml'],
+        }),
+      new RegExp(SUITE_SELECTOR_CONFLICT_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects suite manifests with empty tests arrays', async () => {
+  const rootDir = createTempWorkspace({
+    suites: {
+      'empty_suite.yaml': ['name: empty suite', 'tests: []'].join('\n'),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        runCheck({
+          envName: 'dev',
+          cwd: rootDir,
+          suitePath: 'empty_suite.yaml',
+        }),
+      /must define a non-empty tests array/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

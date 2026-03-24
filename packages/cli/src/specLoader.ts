@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import YAML from 'yaml';
 import type {
   LoadedRepoTestSpec,
+  LoadedRepoTestSuite,
   RepoEnvironmentConfig,
   RepoTestSpec,
   RepoVariableValue,
@@ -21,6 +22,7 @@ const SPEC_TOP_LEVEL_KEYS = new Set([
   'steps',
   'assertions',
 ]);
+const SUITE_TOP_LEVEL_KEYS = new Set(['name', 'tests']);
 const SECRET_PLACEHOLDER = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
 const SPEC_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
 
@@ -111,6 +113,31 @@ export async function loadTestSpec(
     sourcePath: filePath,
     relativePath,
     specId: sanitizeSpecId(relativePath),
+  };
+}
+
+export async function loadTestSuite(
+  filePath: string,
+  suitesDir: string,
+): Promise<LoadedRepoTestSuite> {
+  const raw = await fs.readFile(filePath, 'utf-8');
+  const parsed = parseYamlDocument(raw, filePath);
+  assertPlainObject(parsed, `Test suite ${filePath}`);
+  assertAllowedKeys(parsed, SUITE_TOP_LEVEL_KEYS, `Test suite ${filePath}`);
+
+  const name = readRequiredString(parsed['name'], `${filePath} name`);
+  const tests = readStringArray(parsed['tests'], `${filePath} tests`);
+  if (tests.length === 0) {
+    throw new Error(`Test suite ${filePath} must define a non-empty tests array.`);
+  }
+
+  const relativePath = path.relative(suitesDir, filePath).split(path.sep).join('/');
+  return {
+    name,
+    tests,
+    sourcePath: filePath,
+    relativePath,
+    suiteId: sanitizeSpecId(relativePath),
   };
 }
 

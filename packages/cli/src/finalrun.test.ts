@@ -9,15 +9,22 @@ import test from 'node:test';
 function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
+  includeSuitesDir?: boolean;
   specLines?: string[];
   specs?: Record<string, string>;
+  suites?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-bin-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
+  const suitesDir = path.join(rootDir, '.finalrun', 'suites');
   fs.mkdirSync(testsDir, { recursive: true });
   if (params?.includeEnvDir !== false) {
     fs.mkdirSync(envDir, { recursive: true });
+  }
+  const suites = params?.suites ?? {};
+  if ((params?.includeSuitesDir ?? Object.keys(suites).length > 0) === true) {
+    fs.mkdirSync(suitesDir, { recursive: true });
   }
 
   const specs = params?.specs ?? {
@@ -29,6 +36,12 @@ function createTempWorkspace(params?: {
   };
   for (const [relativePath, contents] of Object.entries(specs)) {
     const targetPath = path.join(testsDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, contents, 'utf-8');
+  }
+
+  for (const [relativePath, contents] of Object.entries(suites)) {
+    const targetPath = path.join(suitesDir, relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, contents, 'utf-8');
   }
@@ -146,6 +159,32 @@ test('finalrun check accepts repeated selectors and comma-delimited selectors', 
   }
 });
 
+test('finalrun check validates suite manifests with --suite', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+      'dashboard/home.yaml': ['name: home', 'steps:', '  - Open dashboard.'].join('\n'),
+    },
+    suites: {
+      'login_suite.yaml': [
+        'name: login suite',
+        'tests:',
+        '  - login.yaml',
+        '  - dashboard/**',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['check', '--suite', 'login_suite.yaml'], rootDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Validated 2 spec\(s\)/);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('finalrun test reports missing selectors before API key validation', async () => {
   const rootDir = createTempWorkspace();
 
@@ -153,6 +192,23 @@ test('finalrun test reports missing selectors before API key validation', async 
     const result = runCli(['test'], rootDir);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /At least one test selector is required/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test rejects mixing --suite with selectors before API key validation', async () => {
+  const rootDir = createTempWorkspace({
+    suites: {
+      'login_suite.yaml': ['name: login suite', 'tests:', '  - login.yaml'].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['test', '--suite', 'login_suite.yaml', 'login.yaml'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Pass either --suite <path> or positional test selectors, not both/);
     assert.doesNotMatch(result.stderr, /API key is required/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

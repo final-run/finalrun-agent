@@ -27,11 +27,13 @@ export type {
   SecretReference,
 } from './models/RepoEnvironment.js';
 export type { RepoTestSpec, LoadedRepoTestSpec } from './models/RepoTestSpec.js';
+export type { RepoTestSuite, LoadedRepoTestSuite } from './models/RepoTestSuite.js';
 export type {
   PlannerThoughtRecord,
   ActionPayloadRecord,
   FailurePhase,
   BindingReferenceRecord,
+  RunTargetRecord,
   StepArtifactRecord,
   SpecArtifactRecord,
   RunSummaryRecord,
@@ -41,6 +43,7 @@ export type {
   RunManifestSpecRecord,
   RunManifestEnvironmentRecord,
   RunManifestSelectedSpecRecord,
+  RunManifestSuiteRecord,
   RunManifestCliRecord,
   RunManifestModelRecord,
   RunManifestAppRecord,

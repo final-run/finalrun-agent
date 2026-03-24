@@ -5,11 +5,15 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import type { RunManifestRecord } from '@finalrun/common';
+import type { RunManifestRecord, RunTargetRecord } from '@finalrun/common';
 import { serveReportArtifacts } from './reportServer.js';
 import { rebuildRunIndex } from './runIndex.js';
 
-function createRunManifest(runId: string, success: boolean): RunManifestRecord {
+function createRunManifest(
+  runId: string,
+  success: boolean,
+  target: RunTargetRecord = { type: 'direct' },
+): RunManifestRecord {
   return {
     schemaVersion: 1,
     run: {
@@ -31,6 +35,7 @@ function createRunManifest(runId: string, success: boolean): RunManifestRecord {
         label: 'repo app',
       },
       selectors: ['login.yaml'],
+      target,
       counts: {
         specs: {
           total: 1,
@@ -101,6 +106,44 @@ test('rebuildRunIndex writes runs.json and root index.html from run.json files',
     const html = await fsp.readFile(indexHtmlPath, 'utf-8');
     assert.match(html, /FinalRun Reports/);
     assert.match(html, /button not found/);
+  } finally {
+    await fsp.rm(artifactsDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildRunIndex carries compact suite target metadata into runs.json and the root HTML', async () => {
+  const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-run-index-'));
+  const runId = '2026-03-24T08-10-11.000Z-dev-android';
+  const runDir = path.join(artifactsDir, runId);
+  await fsp.mkdir(runDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(runDir, 'run.json'),
+    JSON.stringify(
+      createRunManifest(runId, true, {
+        type: 'suite',
+        suiteId: 'login_suite',
+        suiteName: 'login suite',
+        suitePath: 'login_suite.yaml',
+      }),
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const index = await rebuildRunIndex(artifactsDir);
+    assert.deepEqual(index.runs[0]?.target, {
+      type: 'suite',
+      suiteId: 'login_suite',
+      suiteName: 'login suite',
+      suitePath: 'login_suite.yaml',
+    });
+
+    const html = await fsp.readFile(path.join(artifactsDir, 'index.html'), 'utf-8');
+    assert.match(html, /Target/);
+    assert.match(html, /Suite/);
+    assert.match(html, /login suite/);
   } finally {
     await fsp.rm(artifactsDir, { recursive: true, force: true });
   }
