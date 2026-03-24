@@ -8,3 +8,5 @@ export { CliFilePathUtil } from './filePathUtil.js';
 export { TerminalRenderer } from './terminalRenderer.js';
 export { runCheck } from './checkRunner.js';
 export { runTests } from './testRunner.js';
+export { loadRunIndex, rebuildRunIndex, formatRunIndexForConsole } from './runIndex.js';
+export { serveReportArtifacts } from './reportServer.js';

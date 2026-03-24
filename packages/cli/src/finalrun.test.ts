@@ -158,3 +158,104 @@ test('finalrun test reports missing selectors before API key validation', async 
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test('finalrun runs --json prints the saved runs index', async () => {
+  const rootDir = createTempWorkspace();
+  const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
+  await fsp.mkdir(artifactsDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [
+          {
+            runId: '2026-03-23T18-00-00.000Z-dev-android',
+            success: false,
+            status: 'failure',
+            startedAt: '2026-03-23T18:00:00.000Z',
+            completedAt: '2026-03-23T18:00:10.000Z',
+            durationMs: 10000,
+            envName: 'dev',
+            platform: 'android',
+            modelLabel: 'openai/gpt-4o',
+            appLabel: 'repo app',
+            specCount: 1,
+            passedCount: 0,
+            failedCount: 1,
+            stepCount: 1,
+            paths: {
+              html: '2026-03-23T18-00-00.000Z-dev-android/index.html',
+              runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
+              log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const result = runCli(['runs', '--json'], rootDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /"runId": "2026-03-23T18-00-00.000Z-dev-android"/);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs prints a console summary and root report path', async () => {
+  const rootDir = createTempWorkspace();
+  const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
+  await fsp.mkdir(artifactsDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [
+          {
+            runId: '2026-03-23T18-00-00.000Z-dev-android',
+            success: true,
+            status: 'success',
+            startedAt: '2026-03-23T18:00:00.000Z',
+            completedAt: '2026-03-23T18:00:10.000Z',
+            durationMs: 10000,
+            envName: 'dev',
+            platform: 'android',
+            modelLabel: 'openai/gpt-4o',
+            appLabel: 'repo app',
+            specCount: 2,
+            passedCount: 2,
+            failedCount: 0,
+            stepCount: 4,
+            paths: {
+              html: '2026-03-23T18-00-00.000Z-dev-android/index.html',
+              runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
+              log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const result = runCli(['runs'], rootDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /PASS/);
+    assert.match(result.stdout, /Open .*\.finalrun\/artifacts\/index\.html/);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});

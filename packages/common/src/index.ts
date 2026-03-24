@@ -30,9 +30,24 @@ export type { RepoTestSpec, LoadedRepoTestSpec } from './models/RepoTestSpec.js'
 export type {
   PlannerThoughtRecord,
   ActionPayloadRecord,
+  FailurePhase,
+  BindingReferenceRecord,
   StepArtifactRecord,
   SpecArtifactRecord,
   RunSummaryRecord,
+  RunManifestAuthoredRefRecord,
+  RunManifestFirstFailureRecord,
+  RunManifestStepRecord,
+  RunManifestSpecRecord,
+  RunManifestEnvironmentRecord,
+  RunManifestSelectedSpecRecord,
+  RunManifestCliRecord,
+  RunManifestModelRecord,
+  RunManifestAppRecord,
+  RunManifestCountRecord,
+  RunManifestRecord,
+  RunIndexEntryRecord,
+  RunIndexRecord,
 } from './models/RunArtifacts.js';
 export { Hierarchy, HierarchyNode } from './models/Hierarchy.js';
 export {
