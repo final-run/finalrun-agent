@@ -312,3 +312,160 @@ test('IOSSimulator fails explicitly when clearState is requested without reinsta
   );
   assert.deepEqual(calls, ['simctl:terminate']);
 });
+
+test('IOSSimulator continues launch when allowAllPermissions warns about missing applesimutils', async () => {
+  const calls: string[] = [];
+  const runtime = new IOSSimulator({
+    commonDriverActions: new CommonDriverActions({
+      grpcClient: {
+        isConnected: true,
+        async updateAppIds() {
+          calls.push('grpc:updateAppIds');
+          return { success: true };
+        },
+        async launchApp() {
+          calls.push('grpc:launch');
+          return {
+            success: true,
+            message: 'launched',
+            data: { packageName: 'org.wikipedia' },
+          };
+        },
+        close() {},
+      } as unknown as GrpcDriverClient,
+    }),
+    simctlClient: {
+      async listInstalledAppIds() {
+        calls.push('simctl:listAppIds');
+        return ['org.wikipedia'];
+      },
+      async allowAllPermissions() {
+        calls.push('simctl:allowAllPermissions');
+        return {
+          success: true,
+          message:
+            'Skipped pre-granting iOS permissions because applesimutils is not installed: camera',
+          data: {
+            skippedPermissions: ['camera'],
+            permissionWarning:
+              'Skipped pre-granting iOS permissions because applesimutils is not installed: camera',
+          },
+        };
+      },
+      async terminateApp() {},
+      async terminateAppResult() {
+        return { success: true };
+      },
+      async listInstalledApps() {
+        return [];
+      },
+      async openUrl() {
+        return true;
+      },
+    } as never,
+    deviceId: 'SIM-1',
+  });
+
+  const response = await runtime.launchApp(
+    new LaunchAppAction({
+      appUpload: new AppUpload({
+        id: '',
+        platform: 'ios',
+        packageName: 'org.wikipedia',
+      }),
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(
+    response.message,
+    'launched Skipped pre-granting iOS permissions because applesimutils is not installed: camera',
+  );
+  assert.deepEqual(response.data, {
+    packageName: 'org.wikipedia',
+    skippedPermissions: ['camera'],
+    permissionWarning:
+      'Skipped pre-granting iOS permissions because applesimutils is not installed: camera',
+  });
+  assert.deepEqual(calls, [
+    'simctl:listAppIds',
+    'grpc:updateAppIds',
+    'simctl:allowAllPermissions',
+    'grpc:launch',
+  ]);
+});
+
+test('IOSSimulator applies supported custom permissions through simctl before launch', async () => {
+  const calls: string[] = [];
+  const runtime = new IOSSimulator({
+    commonDriverActions: new CommonDriverActions({
+      grpcClient: {
+        isConnected: true,
+        async updateAppIds() {
+          calls.push('grpc:updateAppIds');
+          return { success: true };
+        },
+        async launchApp() {
+          calls.push('grpc:launch');
+          return {
+            success: true,
+            message: 'launched',
+          };
+        },
+        close() {},
+      } as unknown as GrpcDriverClient,
+    }),
+    simctlClient: {
+      async listInstalledAppIds() {
+        calls.push('simctl:listAppIds');
+        return ['org.wikipedia'];
+      },
+      async togglePermissions() {
+        calls.push('simctl:togglePermissions');
+        return {
+          success: true,
+          data: {
+            appliedPermissions: ['calendar'],
+          },
+        };
+      },
+      async terminateApp() {},
+      async terminateAppResult() {
+        return { success: true };
+      },
+      async listInstalledApps() {
+        return [];
+      },
+      async openUrl() {
+        return true;
+      },
+    } as never,
+    deviceId: 'SIM-1',
+  });
+
+  const response = await runtime.launchApp(
+    new LaunchAppAction({
+      appUpload: new AppUpload({
+        id: '',
+        platform: 'ios',
+        packageName: 'org.wikipedia',
+      }),
+      allowAllPermissions: false,
+      permissions: {
+        calendar: 'allow',
+      },
+    }),
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.message, 'launched');
+  assert.deepEqual(response.data, {
+    appliedPermissions: ['calendar'],
+  });
+  assert.deepEqual(calls, [
+    'simctl:listAppIds',
+    'grpc:updateAppIds',
+    'simctl:togglePermissions',
+    'grpc:launch',
+  ]);
+});

@@ -132,14 +132,22 @@ test('SimctlClient.togglePermissions uses simctl privacy for location and apples
 
   const result = await simctlClient.togglePermissions('SIM-1', 'org.wikipedia', {
     location: 'allow',
+    calendar: 'deny',
     camera: 'deny',
   });
 
   assert.equal(result.success, true);
+  assert.deepEqual(result.data, {
+    appliedPermissions: ['location', 'calendar', 'camera'],
+  });
   assert.deepEqual(execCalls, [
     {
       file: 'xcrun',
       args: ['simctl', 'privacy', 'SIM-1', 'grant', 'location-always', 'org.wikipedia'],
+    },
+    {
+      file: 'xcrun',
+      args: ['simctl', 'privacy', 'SIM-1', 'revoke', 'calendar', 'org.wikipedia'],
     },
     {
       file: 'which',
@@ -155,6 +163,86 @@ test('SimctlClient.togglePermissions uses simctl privacy for location and apples
         '--setPermissions',
         'camera=NO',
       ],
+    },
+  ]);
+});
+
+test('SimctlClient.togglePermissions uses simctl privacy only for supported custom permissions', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const simctlClient = new SimctlClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await simctlClient.togglePermissions('SIM-1', 'org.wikipedia', {
+    calendar: 'allow',
+    photos: 'deny',
+  });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.data, {
+    appliedPermissions: ['calendar', 'photos'],
+  });
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'privacy', 'SIM-1', 'grant', 'calendar', 'org.wikipedia'],
+    },
+    {
+      file: 'xcrun',
+      args: ['simctl', 'privacy', 'SIM-1', 'revoke', 'photos', 'org.wikipedia'],
+    },
+  ]);
+});
+
+test('SimctlClient.allowAllPermissions continues when applesimutils is missing', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const simctlClient = new SimctlClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (file === 'which') {
+        return { stdout: '', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await simctlClient.allowAllPermissions('SIM-1', 'org.wikipedia');
+
+  assert.equal(result.success, true);
+  assert.match(result.message ?? '', /applesimutils is not installed/i);
+  assert.deepEqual(result.data, {
+    appliedPermissions: [
+      'calendar',
+      'contacts',
+      'location',
+      'medialibrary',
+      'microphone',
+      'motion',
+      'photos',
+      'reminders',
+      'siri',
+    ],
+    skippedPermissions: [
+      'camera',
+      'homeKit',
+      'notifications',
+      'speech',
+      'userTracking',
+    ],
+    permissionWarning:
+      'Skipped pre-granting iOS permissions because applesimutils is not installed: camera, homeKit, notifications, speech, userTracking',
+  });
+  assert.deepEqual(execCalls, [
+    {
+      file: 'xcrun',
+      args: ['simctl', 'privacy', 'SIM-1', 'grant', 'all', 'org.wikipedia'],
+    },
+    {
+      file: 'which',
+      args: ['applesimutils'],
     },
   ]);
 });

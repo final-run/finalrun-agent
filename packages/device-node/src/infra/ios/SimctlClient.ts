@@ -48,6 +48,22 @@ const IOS_PERMISSION_KEYS = [
   'userTracking',
 ];
 
+const IOS_SIMCTL_PERMISSION_SERVICES: Record<string, string> = {
+  calendar: 'calendar',
+  contacts: 'contacts',
+  location: 'location-always',
+  medialibrary: 'media-library',
+  microphone: 'microphone',
+  motion: 'motion',
+  photos: 'photos',
+  reminders: 'reminders',
+  siri: 'siri',
+};
+
+const IOS_APPLESIMUTILS_PERMISSION_NAMES: Record<string, string> = {
+  homeKit: 'homekit',
+};
+
 export class SimctlClient {
   private _execFileFn: ExecFileFn;
   private _spawnFn: typeof spawn;
@@ -202,10 +218,39 @@ export class SimctlClient {
     deviceId: string,
     bundleId: string,
   ): Promise<IOSCommandResult> {
-    const permissions = Object.fromEntries(
-      IOS_PERMISSION_KEYS.map((permission) => [permission, 'allow']),
+    const simctlResult = await this._runCommand(
+      'xcrun',
+      ['simctl', 'privacy', deviceId, 'grant', 'all', bundleId],
+      `Failed to grant iOS simulator permissions for ${bundleId} on ${deviceId}`,
     );
-    return await this.togglePermissions(deviceId, bundleId, permissions);
+    if (!simctlResult.success) {
+      return simctlResult;
+    }
+
+    const applesimutilsPermissions = Object.fromEntries(
+      IOS_PERMISSION_KEYS.filter(
+        (permission) => !(permission in IOS_SIMCTL_PERMISSION_SERVICES),
+      ).map((permission) => [permission, 'allow']),
+    );
+
+    const applesimutilsResult = await this._applyApplesimutilsPermissions(
+      deviceId,
+      bundleId,
+      applesimutilsPermissions,
+    );
+    if (!applesimutilsResult.success) {
+      return applesimutilsResult;
+    }
+
+    return this._mergePermissionResults([
+      {
+        success: true,
+        data: {
+          appliedPermissions: Object.keys(IOS_SIMCTL_PERMISSION_SERVICES),
+        },
+      },
+      applesimutilsResult,
+    ]);
   }
 
   async togglePermissions(
@@ -213,88 +258,36 @@ export class SimctlClient {
     bundleId: string,
     permissions: Record<string, string>,
   ): Promise<IOSCommandResult> {
-    const nonSimctlPermissions: string[] = [];
-
-    if ('location' in permissions) {
-      const locationAction = permissions['location'];
-      const locationCommand = ['simctl', 'privacy', deviceId];
-      switch (locationAction) {
-        case 'allow':
-          locationCommand.push('grant', 'location-always', bundleId);
-          break;
-        case 'deny':
-          locationCommand.push('revoke', 'location-always', bundleId);
-          break;
-        case 'unset':
-          locationCommand.push('reset', 'location-always', bundleId);
-          break;
-        default:
-          return {
-            success: false,
-            message: `Invalid action for location permission: ${locationAction}`,
-          };
-      }
-
-      const locationResult = await this._runCommand(
-        'xcrun',
-        locationCommand,
-        `Failed to update iOS location permission for ${bundleId} on ${deviceId}`,
-      );
-      if (!locationResult.success) {
-        return locationResult;
-      }
-    }
+    const simctlPermissions: Record<string, string> = {};
+    const applesimutilsPermissions: Record<string, string> = {};
 
     for (const [permissionName, action] of Object.entries(permissions)) {
-      if (permissionName === 'location') {
-        continue;
+      if (permissionName in IOS_SIMCTL_PERMISSION_SERVICES) {
+        simctlPermissions[permissionName] = action;
+      } else {
+        applesimutilsPermissions[permissionName] = action;
       }
-
-      let translatedValue: string;
-      switch (action) {
-        case 'allow':
-          translatedValue = 'YES';
-          break;
-        case 'deny':
-          translatedValue = 'NO';
-          break;
-        case 'unset':
-          translatedValue = 'unset';
-          break;
-        default:
-          return {
-            success: false,
-            message: `Invalid action for ${permissionName}: ${action}`,
-          };
-      }
-
-      nonSimctlPermissions.push(`${permissionName}=${translatedValue}`);
     }
 
-    if (nonSimctlPermissions.length === 0) {
-      return { success: true };
-    }
-
-    if (!(await this.isApplesimutilsInstalled())) {
-      return {
-        success: false,
-        message:
-          'applesimutils is not installed. Please install it to manage permissions.',
-      };
-    }
-
-    return await this._runCommand(
-      'applesimutils',
-      [
-        '--byId',
-        deviceId,
-        '--bundle',
-        bundleId,
-        '--setPermissions',
-        nonSimctlPermissions.join(','),
-      ],
-      `Failed to update iOS permissions for ${bundleId} on ${deviceId}`,
+    const simctlResult = await this._applySimctlPermissions(
+      deviceId,
+      bundleId,
+      simctlPermissions,
     );
+    if (!simctlResult.success) {
+      return simctlResult;
+    }
+
+    const applesimutilsResult = await this._applyApplesimutilsPermissions(
+      deviceId,
+      bundleId,
+      applesimutilsPermissions,
+    );
+    if (!applesimutilsResult.success) {
+      return applesimutilsResult;
+    }
+
+    return this._mergePermissionResults([simctlResult, applesimutilsResult]);
   }
 
   async isApplesimutilsInstalled(): Promise<boolean> {
@@ -481,6 +474,172 @@ export class SimctlClient {
             : `Failed to parse iOS app metadata: ${String(error)}`,
       };
     }
+  }
+
+  private async _applySimctlPermissions(
+    deviceId: string,
+    bundleId: string,
+    permissions: Record<string, string>,
+  ): Promise<IOSCommandResult> {
+    const appliedPermissions: string[] = [];
+
+    for (const [permissionName, action] of Object.entries(permissions)) {
+      const service = IOS_SIMCTL_PERMISSION_SERVICES[permissionName];
+      if (!service) {
+        continue;
+      }
+
+      let privacyAction: 'grant' | 'revoke' | 'reset';
+      switch (action) {
+        case 'allow':
+          privacyAction = 'grant';
+          break;
+        case 'deny':
+          privacyAction = 'revoke';
+          break;
+        case 'unset':
+          privacyAction = 'reset';
+          break;
+        default:
+          return {
+            success: false,
+            message: `Invalid action for ${permissionName}: ${action}`,
+          };
+      }
+
+      const result = await this._runCommand(
+        'xcrun',
+        ['simctl', 'privacy', deviceId, privacyAction, service, bundleId],
+        `Failed to update iOS ${permissionName} permission for ${bundleId} on ${deviceId}`,
+      );
+      if (!result.success) {
+        return result;
+      }
+      appliedPermissions.push(permissionName);
+    }
+
+    return appliedPermissions.length > 0
+      ? {
+          success: true,
+          data: { appliedPermissions },
+        }
+      : {
+          success: true,
+        };
+  }
+
+  private async _applyApplesimutilsPermissions(
+    deviceId: string,
+    bundleId: string,
+    permissions: Record<string, string>,
+  ): Promise<IOSCommandResult> {
+    const translatedPermissions: string[] = [];
+    const permissionNames = Object.keys(permissions);
+
+    for (const [permissionName, action] of Object.entries(permissions)) {
+      let translatedValue: string;
+      switch (action) {
+        case 'allow':
+          translatedValue = 'YES';
+          break;
+        case 'deny':
+          translatedValue = 'NO';
+          break;
+        case 'unset':
+          translatedValue = 'unset';
+          break;
+        default:
+          return {
+            success: false,
+            message: `Invalid action for ${permissionName}: ${action}`,
+          };
+      }
+
+      const translatedPermissionName =
+        IOS_APPLESIMUTILS_PERMISSION_NAMES[permissionName] ?? permissionName;
+      translatedPermissions.push(
+        `${translatedPermissionName}=${translatedValue}`,
+      );
+    }
+
+    if (translatedPermissions.length === 0) {
+      return { success: true };
+    }
+
+    if (!(await this.isApplesimutilsInstalled())) {
+      const warning =
+        `Skipped pre-granting iOS permissions because applesimutils is not installed: ${permissionNames.join(', ')}`;
+      Logger.w(warning);
+      return {
+        success: true,
+        message: warning,
+        data: {
+          skippedPermissions: permissionNames,
+          permissionWarning: warning,
+        },
+      };
+    }
+
+    const result = await this._runCommand(
+      'applesimutils',
+      [
+        '--byId',
+        deviceId,
+        '--bundle',
+        bundleId,
+        '--setPermissions',
+        translatedPermissions.join(','),
+      ],
+      `Failed to update iOS permissions for ${bundleId} on ${deviceId}`,
+    );
+    if (!result.success) {
+      return result;
+    }
+
+    return {
+      success: true,
+      data: {
+        appliedPermissions: permissionNames,
+      },
+    };
+  }
+
+  private _mergePermissionResults(
+    results: IOSCommandResult[],
+  ): IOSCommandResult {
+    const messages = results
+      .map((result) => result.message)
+      .filter((message): message is string => Boolean(message));
+    const appliedPermissions = results.flatMap((result) =>
+      Array.isArray(result.data?.['appliedPermissions'])
+        ? (result.data?.['appliedPermissions'] as string[])
+        : [],
+    );
+    const skippedPermissions = results.flatMap((result) =>
+      Array.isArray(result.data?.['skippedPermissions'])
+        ? (result.data?.['skippedPermissions'] as string[])
+        : [],
+    );
+    const permissionWarning = results.find(
+      (result) => typeof result.data?.['permissionWarning'] === 'string',
+    )?.data?.['permissionWarning'] as string | undefined;
+
+    const data: Record<string, unknown> = {};
+    if (appliedPermissions.length > 0) {
+      data['appliedPermissions'] = appliedPermissions;
+    }
+    if (skippedPermissions.length > 0) {
+      data['skippedPermissions'] = skippedPermissions;
+    }
+    if (permissionWarning) {
+      data['permissionWarning'] = permissionWarning;
+    }
+
+    return {
+      success: true,
+      message: messages.length > 0 ? messages.join(' ') : undefined,
+      data: Object.keys(data).length > 0 ? data : undefined,
+    };
   }
 
   private async _runCommand(

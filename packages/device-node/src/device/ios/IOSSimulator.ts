@@ -133,26 +133,33 @@ export class IOSSimulator implements DeviceRuntime {
       });
     }
 
+    let permissionsResult:
+      | {
+          success: boolean;
+          message?: string;
+          data?: Record<string, unknown>;
+        }
+      | null = null;
+
     if (action.allowAllPermissions) {
-      const permissionsResult = await this._simctlClient.allowAllPermissions(
+      permissionsResult = await this._simctlClient.allowAllPermissions(
         this._deviceId,
         action.appUpload.packageName,
       );
-      if (!permissionsResult.success) {
-        return this._toResponse(permissionsResult);
-      }
     } else if (Object.keys(action.permissions).length > 0) {
-      const permissionsResult = await this._simctlClient.togglePermissions(
+      permissionsResult = await this._simctlClient.togglePermissions(
         this._deviceId,
         action.appUpload.packageName,
         action.permissions,
       );
-      if (!permissionsResult.success) {
-        return this._toResponse(permissionsResult);
-      }
     }
 
-    return await this._commonDriverActions.launchApp(action);
+    if (permissionsResult && !permissionsResult.success) {
+      return this._toResponse(permissionsResult);
+    }
+
+    const launchResponse = await this._commonDriverActions.launchApp(action);
+    return this._mergeLaunchResponse(launchResponse, permissionsResult);
   }
 
   async killApp(action: KillAppAction): Promise<DeviceNodeResponse> {
@@ -290,6 +297,32 @@ export class IOSSimulator implements DeviceRuntime {
       success: result.success,
       message: result.message,
       data: result.data,
+    });
+  }
+
+  private _mergeLaunchResponse(
+    launchResponse: DeviceNodeResponse,
+    permissionsResult:
+      | {
+          success: boolean;
+          message?: string;
+          data?: Record<string, unknown>;
+        }
+      | null,
+  ): DeviceNodeResponse {
+    if (!permissionsResult?.message && !permissionsResult?.data) {
+      return launchResponse;
+    }
+
+    return new DeviceNodeResponse({
+      success: launchResponse.success,
+      message: [launchResponse.message, permissionsResult.message]
+        .filter((message): message is string => Boolean(message))
+        .join(' '),
+      data: {
+        ...(launchResponse.data ?? {}),
+        ...(permissionsResult.data ?? {}),
+      },
     });
   }
 }
