@@ -86,6 +86,13 @@ export interface SpecArtifactRecord {
   steps: StepArtifactRecord[];
 }
 
+export interface RunTargetRecord {
+  type: 'direct' | 'suite';
+  suiteId?: string;
+  suiteName?: string;
+  suitePath?: string;
+}
+
 export interface RunSummaryRecord {
   runId: string;
   envName: string;
@@ -99,6 +106,7 @@ export interface RunSummaryRecord {
   passedCount: number;
   failedCount: number;
   stepCount?: number;
+  target?: RunTargetRecord;
   variables: Record<string, RepoVariableValue>;
   tests: Array<{
     specId: string;
@@ -165,6 +173,16 @@ export interface RunManifestEnvironmentRecord {
   secretReferences: SecretReference[];
 }
 
+export interface RunManifestSuiteRecord {
+  suiteId: string;
+  suiteName: string;
+  workspaceSourcePath: string;
+  snapshotYamlPath: string;
+  snapshotJsonPath: string;
+  tests: string[];
+  resolvedSpecIds: string[];
+}
+
 export interface RunManifestSelectedSpecRecord {
   specId: string;
   specName: string;
@@ -178,6 +196,7 @@ export interface RunManifestSelectedSpecRecord {
 export interface RunManifestCliRecord {
   command: string;
   selectors: string[];
+  suitePath?: string;
   requestedPlatform?: string;
   appOverridePath?: string;
   debug: boolean;
@@ -217,6 +236,7 @@ export interface RunManifestRecord {
     model: RunManifestModelRecord;
     app: RunManifestAppRecord;
     selectors: string[];
+    target?: RunTargetRecord;
     counts: {
       specs: RunManifestCountRecord;
       steps: RunManifestCountRecord;
@@ -226,6 +246,7 @@ export interface RunManifestRecord {
   };
   input: {
     environment: RunManifestEnvironmentRecord;
+    suite?: RunManifestSuiteRecord;
     specs: RunManifestSelectedSpecRecord[];
     cli: RunManifestCliRecord;
   };
@@ -251,6 +272,7 @@ export interface RunIndexEntryRecord {
   platform: string;
   modelLabel: string;
   appLabel: string;
+  target?: RunTargetRecord;
   specCount: number;
   passedCount: number;
   failedCount: number;

@@ -25,6 +25,9 @@ export async function rebuildRunIndex(
       continue;
     }
 
+    const target = manifest.run.target ?? {
+      type: 'direct' as const,
+    };
     runs.push({
       runId: manifest.run.runId,
       success: manifest.run.success,
@@ -37,6 +40,7 @@ export async function rebuildRunIndex(
       platform: manifest.run.platform,
       modelLabel: manifest.run.model.label,
       appLabel: manifest.run.app.label,
+      target,
       specCount: manifest.run.counts.specs.total,
       passedCount: manifest.run.counts.specs.passed,
       failedCount: manifest.run.counts.specs.failed,

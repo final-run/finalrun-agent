@@ -251,6 +251,9 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
       effectiveGoals: new Map([
         [spec.specId, 'Test Name: login\n\nSteps:\n1. Enter ${secrets.email}.'],
       ]),
+      target: {
+        type: 'direct',
+      },
       cli: {
         command: 'finalrun test',
         selectors: ['auth/login.yaml'],
@@ -331,6 +334,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     assert.equal(html.includes('Reasoning'), true);
     assert.equal(html.includes('Planner Thought'), true);
     assert.equal(html.includes('Run Context'), true);
+    assert.equal(runJson.includes('"target": {\n      "type": "direct"'), true);
     assert.equal(html.includes('Effective Goal'), false);
     assert.equal(html.includes('Authored Spec'), false);
     assert.equal(html.includes('selectStep('), true);
@@ -341,6 +345,165 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     assert.equal(stepJson.includes('"videoOffsetMs": 1000'), true);
     assert.equal(runnerLog.includes('person@example.com'), false);
     assert.equal(runnerLog.includes('${secrets.email}'), true);
+  } finally {
+    await fsp.rm(runDir, { recursive: true, force: true });
+  }
+});
+
+test('ReportWriter persists suite snapshots and suite metadata without changing per-spec result files', async () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-report-'));
+  const workspaceRoot = path.join(runDir, 'workspace');
+  const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'login', 'valid_login.yaml');
+  const suiteSourcePath = path.join(
+    workspaceRoot,
+    '.finalrun',
+    'suites',
+    'login_suite.yaml',
+  );
+  const writer = new ReportWriter({
+    runDir,
+    envName: 'none',
+    platform: 'android',
+    runId: '2026-03-24T08-10-11.000Z-none-android',
+    bindings: {
+      secrets: {},
+      variables: {},
+    },
+  });
+
+  const spec: LoadedRepoTestSpec = {
+    name: 'valid login',
+    preconditions: [],
+    setup: [],
+    steps: ['Open login.', 'Submit valid credentials.'],
+    assertions: ['The dashboard is visible.'],
+    sourcePath: specSourcePath,
+    relativePath: 'login/valid_login.yaml',
+    specId: 'login__valid_login',
+  };
+
+  try {
+    await fsp.mkdir(path.dirname(specSourcePath), { recursive: true });
+    await fsp.mkdir(path.dirname(suiteSourcePath), { recursive: true });
+    await fsp.writeFile(
+      specSourcePath,
+      [
+        'name: valid login',
+        'steps:',
+        '  - Open login.',
+        '  - Submit valid credentials.',
+        'assertions:',
+        '  - The dashboard is visible.',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fsp.writeFile(
+      suiteSourcePath,
+      [
+        'name: login suite',
+        'tests:',
+        '  - login/valid_login.yaml',
+        '  - dashboard/**',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writer.init();
+    await writer.writeRunInputs({
+      workspaceRoot,
+      environment: {
+        envName: 'none',
+        config: {
+          secrets: {},
+          variables: {},
+        },
+        bindings: {
+          secrets: {},
+          variables: {},
+        },
+        secretReferences: [],
+      },
+      specs: [spec],
+      suite: {
+        name: 'login suite',
+        tests: ['login/valid_login.yaml', 'dashboard/**'],
+        sourcePath: suiteSourcePath,
+        relativePath: 'login_suite.yaml',
+        suiteId: 'login_suite',
+      },
+      effectiveGoals: new Map([
+        [spec.specId, 'Test Name: valid login\n\nSteps:\n1. Open login.\n2. Submit valid credentials.'],
+      ]),
+      target: {
+        type: 'suite',
+        suiteId: 'login_suite',
+        suiteName: 'login suite',
+        suitePath: 'login_suite.yaml',
+      },
+      cli: {
+        command: 'finalrun test --suite login_suite.yaml',
+        selectors: [],
+        suitePath: 'login_suite.yaml',
+        debug: false,
+      },
+      model: {
+        provider: 'openai',
+        modelName: 'gpt-4o',
+        label: 'openai/gpt-4o',
+      },
+      app: {
+        source: 'repo',
+        label: 'repo app',
+      },
+    });
+
+    const specRecord = await writer.writeSpecRecord(spec, createGoalResult(), {
+      secrets: {},
+      variables: {},
+    });
+    await writer.finalize({
+      startedAt: '2026-03-24T08:10:11.000Z',
+      completedAt: '2026-03-24T08:10:20.000Z',
+      specs: [specRecord],
+      successOverride: true,
+    });
+
+    const suiteSnapshotYamlPath = path.join(runDir, 'input', 'suite.snapshot.yaml');
+    const suiteSnapshotJsonPath = path.join(runDir, 'input', 'suite.json');
+    const runJsonPath = path.join(runDir, 'run.json');
+    const reportHtmlPath = path.join(runDir, 'index.html');
+    const resultJsonPath = path.join(runDir, 'tests', 'login__valid_login', 'result.json');
+
+    for (const targetPath of [
+      suiteSnapshotYamlPath,
+      suiteSnapshotJsonPath,
+      runJsonPath,
+      reportHtmlPath,
+      resultJsonPath,
+    ]) {
+      const stats = await fsp.stat(targetPath);
+      assert.equal(stats.isFile(), true);
+    }
+
+    const runJson = JSON.parse(await fsp.readFile(runJsonPath, 'utf-8'));
+    const resultJson = JSON.parse(await fsp.readFile(resultJsonPath, 'utf-8'));
+    const suiteJson = JSON.parse(await fsp.readFile(suiteSnapshotJsonPath, 'utf-8'));
+    const reportHtml = await fsp.readFile(reportHtmlPath, 'utf-8');
+
+    assert.deepEqual(runJson.run.target, {
+      type: 'suite',
+      suiteId: 'login_suite',
+      suiteName: 'login suite',
+      suitePath: 'login_suite.yaml',
+    });
+    assert.equal(runJson.input.suite.suiteName, 'login suite');
+    assert.deepEqual(runJson.input.suite.tests, ['login/valid_login.yaml', 'dashboard/**']);
+    assert.deepEqual(runJson.input.suite.resolvedSpecIds, ['login__valid_login']);
+    assert.equal(suiteJson.snapshotYamlPath, 'input/suite.snapshot.yaml');
+    assert.match(reportHtml, /Run Target/);
+    assert.match(reportHtml, /Suite Tests/);
+    assert.match(reportHtml, /login suite/);
+    assert.match(reportHtml, /input\/suite\.snapshot\.yaml/);
+    assert.equal(resultJson.suiteName, undefined);
   } finally {
     await fsp.rm(runDir, { recursive: true, force: true });
   }

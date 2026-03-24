@@ -79,6 +79,9 @@ The public CLI is now spec-first. `finalrun` expects a repo-local `.finalrun/` w
     add_and_delete_language.yaml
     auth/
       login.yaml
+  suites/               # optional
+    smoke.yaml
+    auth/login_suite.yaml
   env/                  # optional
     dev.yaml
     staging.yaml
@@ -86,6 +89,7 @@ The public CLI is now spec-first. `finalrun` expects a repo-local `.finalrun/` w
 ```
 
 - `.finalrun/tests/`: committed human-readable specs
+- `.finalrun/suites/`: optional committed suite manifests that expand to ordered test selections
 - `.finalrun/env/`: optional committed environment config
 - `.finalrun/artifacts/`: generated local run output, not committed
 
@@ -124,6 +128,23 @@ steps:
 
 - `${variables.*}` resolve before planning
 - `${secrets.*}` stay tokenized in planner input and resolve only at execution time
+
+### Test Suites
+
+Suite manifests live under `.finalrun/suites/` and expand into the same selector engine used by direct runs.
+
+```yaml
+name: login suite
+tests:
+  - auth/login.yaml
+  - dashboard/**
+  - profile/*
+```
+
+- `tests` must be a non-empty YAML string array
+- each entry is resolved relative to `.finalrun/tests/`
+- ordering is preserved by first match, with de-duplication across entries
+- `--suite` cannot be combined with positional selectors
 
 ### Fast Local Iteration
 
@@ -177,8 +198,17 @@ npm run dev:cli -- test '.finalrun/tests/auth/*' --env staging --platform ios --
 npm run dev:cli -- test '.finalrun/tests/auth/**' --env staging --platform ios --api-key=<YOUR_API_KEY>
 ```
 
+Validate or run a suite manifest:
+
+```sh
+npm run dev:cli -- check --suite smoke.yaml
+npm run dev:cli -- check --suite auth/login_suite.yaml --env staging
+npm run dev:cli -- test --suite auth/login_suite.yaml --env staging --platform android --api-key=<YOUR_API_KEY>
+```
+
 - `finalrun check` still validates the whole workspace when no selector is provided
 - `finalrun test` now requires at least one YAML file, directory, or glob selector
+- `finalrun check --suite <path>` and `finalrun test --suite <path>` resolve suite manifests from `.finalrun/suites/`
 - raw directory selectors recurse by default
 - `*` matches direct child YAML files only
 - `**` matches YAML files recursively
@@ -223,6 +253,8 @@ Each run writes a timestamped directory under `.finalrun/artifacts/`:
       run-context.json
       env.snapshot.yaml
       env.json
+      suite.snapshot.yaml    # suite runs only
+      suite.json             # suite runs only
       specs/
         <spec-id>.yaml
         <spec-id>.json
@@ -237,6 +269,7 @@ Each run writes a timestamped directory under `.finalrun/artifacts/`:
 ```
 
 The root `index.html` is a run-history page backed by `runs.json`.
+Suite runs record compact suite metadata in both `run.json` and `runs.json`, and persist the authored suite manifest under `input/suite.snapshot.yaml` and `input/suite.json`.
 
 Each run still also includes the raw drill-down artifacts:
 

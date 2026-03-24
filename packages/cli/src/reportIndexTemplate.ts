@@ -194,6 +194,7 @@ export function renderRunIndexHtml(index: RunIndexRecord): string {
         <thead>
           <tr>
             <th>Status</th>
+            <th>Target</th>
             <th>Run</th>
             <th>Env</th>
             <th>Platform</th>
@@ -234,6 +235,9 @@ export function renderRunIndexHtml(index: RunIndexRecord): string {
         }
         const haystack = [
           run.runId,
+          run.target?.type,
+          run.target?.suiteName,
+          run.target?.suitePath,
           run.envName,
           run.platform,
           run.modelLabel,
@@ -251,6 +255,11 @@ export function renderRunIndexHtml(index: RunIndexRecord): string {
         return \`
           <tr>
             <td><span class="status \${run.status}">\${run.status}</span></td>
+            <td><strong>\${escapeHtml(formatRunTarget(run.target))}</strong>\${
+              run.target?.suiteName
+                ? '<div class="muted">' + escapeHtml(run.target.suiteName) + '</div>'
+                : ''
+            }</td>
             <td><strong>\${escapeHtml(run.runId)}</strong><div class="muted">\${escapeHtml(run.modelLabel)}</div></td>
             <td>\${escapeHtml(run.envName)}</td>
             <td>\${escapeHtml(run.platform)}</td>
@@ -276,6 +285,10 @@ export function renderRunIndexHtml(index: RunIndexRecord): string {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function formatRunTarget(target) {
+      return target && target.type === 'suite' ? 'Suite' : 'Direct';
     }
 
     searchInput.addEventListener('input', render);

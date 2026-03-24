@@ -7,6 +7,7 @@ import {
   type FailurePhase,
   Logger,
   type LoadedRepoTestSpec,
+  type LoadedRepoTestSuite,
   type LogEntry,
   type LoggerSink,
   type RunManifestAppRecord,
@@ -17,7 +18,9 @@ import {
   type RunManifestRecord,
   type RunManifestSelectedSpecRecord,
   type RunManifestSpecRecord,
+  type RunManifestSuiteRecord,
   type RunManifestStepRecord,
+  type RunTargetRecord,
   type RunSummaryRecord,
   type RuntimeBindings,
   type SpecArtifactRecord,
@@ -56,12 +59,16 @@ export class ReportWriter {
   private readonly _bindings: RuntimeBindings;
   private readonly _runnerLogPath: string;
   private _inputEnvironment: RunManifestEnvironmentRecord;
+  private _inputSuite?: RunManifestSuiteRecord;
   private _inputSpecs: RunManifestSelectedSpecRecord[] = [];
   private readonly _specSnapshots = new Map<string, SpecSnapshotState>();
   private _cliContext: RunManifestCliRecord = {
     command: 'finalrun test',
     selectors: [],
     debug: false,
+  };
+  private _runTarget: RunTargetRecord = {
+    type: 'direct',
   };
   private _modelContext: RunManifestModelRecord = {
     provider: 'unknown',
@@ -129,11 +136,25 @@ export class ReportWriter {
     );
   }
 
+  setRunContext(params: {
+    cli: RunManifestCliRecord;
+    model: RunManifestModelRecord;
+    app: RunManifestAppRecord;
+    target?: RunTargetRecord;
+  }): void {
+    this._cliContext = params.cli;
+    this._modelContext = params.model;
+    this._appContext = params.app;
+    this._runTarget = params.target ?? { type: 'direct' };
+  }
+
   async writeRunInputs(params: {
     workspaceRoot: string;
     environment: LoadedEnvironmentConfig;
     specs: LoadedRepoTestSpec[];
+    suite?: LoadedRepoTestSuite;
     effectiveGoals: Map<string, string>;
+    target: RunTargetRecord;
     cli: RunManifestCliRecord;
     model: RunManifestModelRecord;
     app: RunManifestAppRecord;
@@ -142,9 +163,12 @@ export class ReportWriter {
     const specSnapshotDir = path.join(inputDir, 'specs');
     await fsp.mkdir(specSnapshotDir, { recursive: true });
 
-    this._cliContext = params.cli;
-    this._modelContext = params.model;
-    this._appContext = params.app;
+    this.setRunContext({
+      cli: params.cli,
+      model: params.model,
+      app: params.app,
+      target: params.target,
+    });
     this._runContextJsonPath = path.posix.join('input', 'run-context.json');
     await fsp.writeFile(
       path.join(this._runDir, this._runContextJsonPath),
@@ -153,6 +177,7 @@ export class ReportWriter {
           cli: params.cli,
           model: params.model,
           app: params.app,
+          target: params.target,
         },
         null,
         2,
@@ -186,6 +211,31 @@ export class ReportWriter {
       JSON.stringify(this._inputEnvironment, null, 2),
       'utf-8',
     );
+
+    this._inputSuite = undefined;
+    if (params.suite) {
+      const suiteSnapshotYamlPath = path.posix.join('input', 'suite.snapshot.yaml');
+      const suiteSnapshotJsonPath = path.posix.join('input', 'suite.json');
+      const suiteRecord: RunManifestSuiteRecord = {
+        suiteId: params.suite.suiteId,
+        suiteName: params.suite.name,
+        workspaceSourcePath: toDisplayPath(params.workspaceRoot, params.suite.sourcePath),
+        snapshotYamlPath: suiteSnapshotYamlPath,
+        snapshotJsonPath: suiteSnapshotJsonPath,
+        tests: params.suite.tests,
+        resolvedSpecIds: params.specs.map((spec) => spec.specId),
+      };
+      await fsp.copyFile(
+        params.suite.sourcePath,
+        path.join(this._runDir, suiteSnapshotYamlPath),
+      );
+      await fsp.writeFile(
+        path.join(this._runDir, suiteSnapshotJsonPath),
+        JSON.stringify(suiteRecord, null, 2),
+        'utf-8',
+      );
+      this._inputSuite = suiteRecord;
+    }
 
     const selectedSpecs: RunManifestSelectedSpecRecord[] = [];
     this._specSnapshots.clear();
@@ -343,6 +393,7 @@ export class ReportWriter {
       passedCount,
       failedCount,
       stepCount,
+      target: this._runTarget,
       variables: this._bindings.variables,
       tests: params.specs.map((spec) => ({
         specId: spec.specId,
@@ -510,6 +561,7 @@ export class ReportWriter {
         model: this._modelContext,
         app: this._appContext,
         selectors: this._cliContext.selectors,
+        target: this._runTarget,
         counts: {
           specs: {
             total: specRecords.length,
@@ -527,6 +579,7 @@ export class ReportWriter {
       },
       input: {
         environment: this._inputEnvironment,
+        suite: this._inputSuite,
         specs: this._inputSpecs,
         cli: this._cliContext,
       },

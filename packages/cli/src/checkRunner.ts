@@ -1,20 +1,30 @@
+import { type LoadedRepoTestSuite, type LoadedRepoTestSpec, type RunTargetRecord } from '@finalrun/common';
 import { CliEnv } from './env.js';
-import { loadEnvironmentConfig, loadTestSpec, validateSpecBindings } from './specLoader.js';
-import { selectSpecFiles } from './testSelection.js';
+import {
+  loadEnvironmentConfig,
+  loadTestSpec,
+  loadTestSuite,
+  validateSpecBindings,
+} from './specLoader.js';
+import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
 import {
   ensureWorkspaceDirectories,
   resolveWorkspace,
   resolveEnvironmentFile,
+  resolveSuiteManifestPath,
   validateAppOverride,
   type AppOverrideValidationResult,
   type FinalRunWorkspace,
 } from './workspace.js';
 import type { LoadedEnvironmentConfig } from './specLoader.js';
-import type { LoadedRepoTestSpec } from '@finalrun/common';
+
+export const SUITE_SELECTOR_CONFLICT_ERROR =
+  'Pass either --suite <path> or positional test selectors, not both.';
 
 export interface CheckRunnerOptions {
   envName?: string;
   selectors?: string[];
+  suitePath?: string;
   platform?: string;
   appPath?: string;
   cwd?: string;
@@ -25,6 +35,8 @@ export interface CheckRunnerResult {
   workspace: FinalRunWorkspace;
   environment: LoadedEnvironmentConfig;
   specs: LoadedRepoTestSpec[];
+  target: RunTargetRecord;
+  suite?: LoadedRepoTestSuite;
   appOverride?: AppOverrideValidationResult;
 }
 
@@ -46,9 +58,17 @@ export async function runCheck(
     resolvedEnvironment.envName,
     runtimeEnv,
   );
-  const selectedFiles = await selectSpecFiles(workspace.testsDir, options.selectors, {
-    requireSelection: options.requireSelection,
-  });
+  const resolvedRunTarget = await resolveRunTarget(workspace, options);
+  const selectedFiles = await selectSpecFiles(
+    workspace.testsDir,
+    resolvedRunTarget.specSelectors,
+    {
+      requireSelection:
+        resolvedRunTarget.target.type === 'suite'
+          ? false
+          : options.requireSelection,
+    },
+  );
   const specs = await Promise.all(
     selectedFiles.map(async (filePath) => {
       const spec = await loadTestSpec(filePath, workspace.testsDir);
@@ -67,6 +87,42 @@ export async function runCheck(
     workspace,
     environment,
     specs,
+    target: resolvedRunTarget.target,
+    suite: resolvedRunTarget.suite,
     appOverride,
+  };
+}
+
+async function resolveRunTarget(
+  workspace: FinalRunWorkspace,
+  options: CheckRunnerOptions,
+): Promise<{
+  target: RunTargetRecord;
+  specSelectors: string[];
+  suite?: LoadedRepoTestSuite;
+}> {
+  const normalizedSelectors = normalizeSpecSelectors(options.selectors);
+  if (options.suitePath && normalizedSelectors.length > 0) {
+    throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
+  }
+
+  if (!options.suitePath) {
+    return {
+      target: { type: 'direct' },
+      specSelectors: normalizedSelectors,
+    };
+  }
+
+  const suiteFilePath = await resolveSuiteManifestPath(workspace.suitesDir, options.suitePath);
+  const suite = await loadTestSuite(suiteFilePath, workspace.suitesDir);
+  return {
+    target: {
+      type: 'suite',
+      suiteId: suite.suiteId,
+      suiteName: suite.name,
+      suitePath: suite.relativePath,
+    },
+    specSelectors: suite.tests,
+    suite,
   };
 }
