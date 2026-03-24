@@ -99,6 +99,9 @@ test('redactResolvedValue preserves complete placeholders when secrets overlap',
 
 test('ReportWriter emits redacted JSON artifacts and the static reasoning-first HTML report', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-'));
+  const workspaceRoot = path.join(runDir, 'workspace');
+  const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'auth', 'login.yaml');
+  const envPath = path.join(workspaceRoot, '.finalrun', 'env', 'staging.yaml');
   const writer = new ReportWriter({
     runDir,
     envName: 'staging',
@@ -130,7 +133,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     setup: [],
     steps: ['Enter ${secrets.email} on the login screen.'],
     assertions: ['The feed is visible.'],
-    sourcePath: '/repo/.finalrun/tests/auth/login.yaml',
+    sourcePath: specSourcePath,
     relativePath: 'auth/login.yaml',
     specId: 'auth__login',
   };
@@ -202,8 +205,68 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
   };
 
   try {
+    await fsp.mkdir(path.dirname(specSourcePath), { recursive: true });
+    await fsp.mkdir(path.dirname(envPath), { recursive: true });
+    await fsp.writeFile(
+      specSourcePath,
+      [
+        'name: login',
+        'description: Verify a user can log in.',
+        'steps:',
+        '  - Enter ${secrets.email} on the login screen.',
+        'assertions:',
+        '  - The feed is visible.',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fsp.writeFile(
+      envPath,
+      ['secrets:', '  email: ${FINALRUN_TEST_EMAIL_SECRET}', 'variables:', '  language: Spanish'].join('\n'),
+      'utf-8',
+    );
     await fsp.writeFile(recordingPath, 'fake-video-data', 'utf-8');
     await writer.init();
+    await writer.writeRunInputs({
+      workspaceRoot,
+      environment: {
+        envName: 'staging',
+        envPath,
+        config: {
+          secrets: {
+            email: '${FINALRUN_TEST_EMAIL_SECRET}',
+          },
+          variables: {
+            language: 'Spanish',
+          },
+        },
+        bindings,
+        secretReferences: [
+          {
+            key: 'email',
+            envVar: 'FINALRUN_TEST_EMAIL_SECRET',
+          },
+        ],
+      },
+      specs: [spec],
+      effectiveGoals: new Map([
+        [spec.specId, 'Test Name: login\n\nSteps:\n1. Enter ${secrets.email}.'],
+      ]),
+      cli: {
+        command: 'finalrun test',
+        selectors: ['auth/login.yaml'],
+        debug: false,
+        maxIterations: 50,
+      },
+      model: {
+        provider: 'openai',
+        modelName: 'gpt-4o',
+        label: 'openai/gpt-4o',
+      },
+      app: {
+        source: 'repo',
+        label: 'repo app',
+      },
+    });
     writer.appendLogLine('report writer smoke check for person@example.com');
     writer.createLoggerSink()({
       level: 1,
@@ -227,8 +290,13 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     const recordingArtifactPath = path.join(runDir, 'tests', 'auth__login', 'recording.mp4');
     const resultJsonPath = path.join(runDir, 'tests', 'auth__login', 'result.json');
     const summaryJsonPath = path.join(runDir, 'summary.json');
+    const runJsonPath = path.join(runDir, 'run.json');
     const htmlPath = path.join(runDir, 'index.html');
     const runnerLogPath = path.join(runDir, 'runner.log');
+    const specSnapshotYamlPath = path.join(runDir, 'input', 'specs', 'auth__login.yaml');
+    const specSnapshotJsonPath = path.join(runDir, 'input', 'specs', 'auth__login.json');
+    const envSnapshotYamlPath = path.join(runDir, 'input', 'env.snapshot.yaml');
+    const envSnapshotJsonPath = path.join(runDir, 'input', 'env.json');
 
     for (const target of [
       stepJsonPath,
@@ -236,28 +304,40 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
       recordingArtifactPath,
       resultJsonPath,
       summaryJsonPath,
+      runJsonPath,
       htmlPath,
       runnerLogPath,
+      specSnapshotYamlPath,
+      specSnapshotJsonPath,
+      envSnapshotYamlPath,
+      envSnapshotJsonPath,
     ]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
 
     const stepJson = await fsp.readFile(stepJsonPath, 'utf-8');
+    const runJson = await fsp.readFile(runJsonPath, 'utf-8');
     const html = await fsp.readFile(htmlPath, 'utf-8');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
 
     assert.equal(stepJson.includes('person@example.com'), false);
     assert.equal(stepJson.includes('${secrets.email}'), true);
+    assert.equal(runJson.includes('person@example.com'), false);
+    assert.equal(runJson.includes('${secrets.email}'), true);
     assert.equal(html.includes('person@example.com'), false);
     assert.equal(html.includes('${secrets.email}'), true);
     assert.equal(stepJson.includes('driver echoed ${secrets.email}'), true);
     assert.equal(html.includes('Reasoning'), true);
     assert.equal(html.includes('Planner Thought'), true);
+    assert.equal(html.includes('Run Context'), true);
+    assert.equal(html.includes('Effective Goal'), false);
+    assert.equal(html.includes('Authored Spec'), false);
     assert.equal(html.includes('selectStep('), true);
     assert.equal(html.includes('tests/auth__login/screenshots/001.jpg'), true);
     assert.equal(html.includes('tests/auth__login/recording.mp4'), true);
     assert.equal(html.includes('recording-video'), true);
+    assert.equal(html.includes('input/specs/auth__login.yaml'), true);
     assert.equal(stepJson.includes('"videoOffsetMs": 1000'), true);
     assert.equal(runnerLog.includes('person@example.com'), false);
     assert.equal(runnerLog.includes('${secrets.email}'), true);
@@ -323,6 +403,7 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     );
 
     const summaryPath = path.join(result.runDir, 'summary.json');
+    const runJsonPath = path.join(result.runDir, 'run.json');
     const indexPath = path.join(result.runDir, 'index.html');
     const resultPath = path.join(result.runDir, 'tests', 'login', 'result.json');
     const stepPath = path.join(result.runDir, 'tests', 'login', 'steps', '001.json');
@@ -337,11 +418,13 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
 
     for (const target of [
       summaryPath,
+      runJsonPath,
       indexPath,
       resultPath,
       stepPath,
       screenshotPath,
       runnerLogPath,
+      result.runIndexPath,
     ]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
@@ -411,10 +494,11 @@ test('runTests succeeds without env config when the repo is env-free', async () 
     assert.match(result.runDir, /-none-android$/);
 
     const summaryPath = path.join(result.runDir, 'summary.json');
+    const runJsonPath = path.join(result.runDir, 'run.json');
     const indexPath = path.join(result.runDir, 'index.html');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
-    for (const target of [summaryPath, indexPath, runnerLogPath]) {
+    for (const target of [summaryPath, runJsonPath, indexPath, runnerLogPath, result.runIndexPath]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
@@ -585,10 +669,11 @@ test('runTests writes top-level artifacts when validation fails before platform 
     assert.equal(result.specResults.length, 0);
 
     const summaryPath = path.join(result.runDir, 'summary.json');
+    const runJsonPath = path.join(result.runDir, 'run.json');
     const indexPath = path.join(result.runDir, 'index.html');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
-    for (const target of [summaryPath, indexPath, runnerLogPath]) {
+    for (const target of [summaryPath, runJsonPath, indexPath, runnerLogPath, result.runIndexPath]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
@@ -631,6 +716,8 @@ test('runTests writes failure artifacts when no selectors are provided', async (
     const runnerLogPath = path.join(result.runDir, 'runner.log');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
     assert.equal(runnerLog.includes('At least one test selector is required'), true);
+    const runIndexStats = await fsp.stat(result.runIndexPath);
+    assert.equal(runIndexStats.isFile(), true);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -688,6 +775,12 @@ test('runTests persists buffered setup logs and raw command transcripts when dev
     assert.match(runnerLog, /Run setup failed before execution/);
     assert.match(runnerLog, /Command: adb devices -l/);
     assert.match(runnerLog, /stderr:\nadb executable missing/);
+    const runJson = await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8');
+    assert.match(runJson, /"failurePhase": "setup"/);
+    const specSnapshotStats = await fsp.stat(
+      path.join(result.runDir, 'input', 'specs', 'login.yaml'),
+    );
+    assert.equal(specSnapshotStats.isFile(), true);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });

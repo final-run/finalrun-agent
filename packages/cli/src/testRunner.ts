@@ -16,8 +16,14 @@ import {
 } from './goalRunner.js';
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
-import { runCheck, type CheckRunnerOptions } from './checkRunner.js';
+import {
+  runCheck,
+  type CheckRunnerOptions,
+  type CheckRunnerResult,
+} from './checkRunner.js';
 import { ReportWriter } from './reportWriter.js';
+import { rebuildRunIndex } from './runIndex.js';
+import type { LoadedEnvironmentConfig } from './specLoader.js';
 import {
   createRunId,
   ensureWorkspaceDirectories,
@@ -37,6 +43,7 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
 export interface TestRunnerResult {
   success: boolean;
   runDir: string;
+  runIndexPath: string;
   specResults: SpecArtifactRecord[];
 }
 
@@ -72,12 +79,19 @@ export async function runTests(
   };
   Logger.addSink(bufferingSink);
 
-  let checked;
+  let checked: CheckRunnerResult;
+  let effectiveGoals = new Map<string, string>();
   try {
     checked = await testRunnerDependencies.runCheck({
       ...options,
       requireSelection: true,
     });
+    effectiveGoals = new Map(
+      checked.specs.map((spec) => [
+        spec.specId,
+        compileSpecToGoal(spec, checked.environment.bindings),
+      ]),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failedRun = await writeRunFailureArtifacts({
@@ -88,6 +102,10 @@ export async function runTests(
       bindings: EMPTY_RUNTIME_BINDINGS,
       message: `Run validation failed: ${message}`,
       bufferedLogEntries,
+      cliContext: buildCliContext(options),
+      modelContext: buildModelContext(options.provider, options.modelName),
+      appContext: buildAppContext(options.appPath),
+      failurePhase: 'validation',
     });
     return failedRun;
   }
@@ -111,6 +129,14 @@ export async function runTests(
       message: `Run setup failed before execution: ${message}`,
       bufferedLogEntries,
       diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
+      environment: checked.environment,
+      specs: checked.specs,
+      effectiveGoals,
+      workspaceRoot: checked.workspace.rootDir,
+      cliContext: buildCliContext(options),
+      modelContext: buildModelContext(options.provider, options.modelName),
+      appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+      failurePhase: 'setup',
     });
     return failedRun;
   }
@@ -128,6 +154,15 @@ export async function runTests(
   Logger.addSink(logSink);
 
   try {
+    await reportWriter.writeRunInputs({
+      workspaceRoot: checked.workspace.rootDir,
+      environment: checked.environment,
+      specs: checked.specs,
+      effectiveGoals,
+      cli: buildCliContext(options),
+      model: buildModelContext(options.provider, options.modelName),
+      app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+    });
     reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
 
     for (const spec of checked.specs) {
@@ -135,7 +170,8 @@ export async function runTests(
       const specStartedAt = new Date().toISOString();
 
       try {
-        const goal = compileSpecToGoal(spec, checked.environment.bindings);
+        const goal = effectiveGoals.get(spec.specId) ??
+          compileSpecToGoal(spec, checked.environment.bindings);
         const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
           goal,
           apiKey: options.apiKey,
@@ -184,11 +220,14 @@ export async function runTests(
       completedAt: new Date().toISOString(),
       specs: specResults,
       successOverride: success,
+      failurePhase: encounteredFailure ? 'execution' : undefined,
     });
+    await rebuildRunIndex(workspace.artifactsDir);
 
     return {
       success,
       runDir,
+      runIndexPath: path.join(workspace.artifactsDir, 'index.html'),
       specResults,
     };
   } finally {
@@ -267,6 +306,14 @@ async function writeRunFailureArtifacts(params: {
   message: string;
   bufferedLogEntries: LogEntry[];
   diagnostics?: DeviceInventoryDiagnostic[];
+  environment?: LoadedEnvironmentConfig;
+  specs?: Awaited<ReturnType<typeof runCheck>>['specs'];
+  effectiveGoals?: Map<string, string>;
+  workspaceRoot?: string;
+  cliContext: ReturnType<typeof buildCliContext>;
+  modelContext: ReturnType<typeof buildModelContext>;
+  appContext: ReturnType<typeof buildAppContext>;
+  failurePhase: 'validation' | 'setup' | 'execution';
 }): Promise<TestRunnerResult> {
   const { reportWriter, runDir } = await createReportWriter({
     workspace: params.workspace,
@@ -276,6 +323,22 @@ async function writeRunFailureArtifacts(params: {
     bindings: params.bindings,
   });
   flushBufferedLogEntries(params.bufferedLogEntries, reportWriter.createLoggerSink());
+  if (
+    params.environment &&
+    params.specs &&
+    params.effectiveGoals &&
+    params.workspaceRoot
+  ) {
+    await reportWriter.writeRunInputs({
+      workspaceRoot: params.workspaceRoot,
+      environment: params.environment,
+      specs: params.specs,
+      effectiveGoals: params.effectiveGoals,
+      cli: params.cliContext,
+      model: params.modelContext,
+      app: params.appContext,
+    });
+  }
   reportWriter.appendLogLine(params.message);
   if (params.diagnostics && params.diagnostics.length > 0) {
     reportWriter.appendRawBlock(formatDiagnosticsForOutput(params.diagnostics));
@@ -285,10 +348,17 @@ async function writeRunFailureArtifacts(params: {
     completedAt: new Date().toISOString(),
     specs: [],
     successOverride: false,
+    failurePhase: params.failurePhase,
+    diagnosticsSummary:
+      params.diagnostics && params.diagnostics.length > 0
+        ? params.diagnostics.map((diagnostic) => diagnostic.summary).join(' | ')
+        : params.message,
   });
+  await rebuildRunIndex(params.workspace.artifactsDir);
   return {
     success: false,
     runDir,
+    runIndexPath: path.join(params.workspace.artifactsDir, 'index.html'),
     specResults: [],
   };
 }
@@ -330,4 +400,61 @@ function flushBufferedLogEntries(
     sink(entry);
   }
   entries.length = 0;
+}
+
+function buildCliContext(
+  options: TestRunnerOptions,
+): {
+  command: string;
+  selectors: string[];
+  requestedPlatform?: string;
+  appOverridePath?: string;
+  debug: boolean;
+  maxIterations?: number;
+} {
+  return {
+    command: 'finalrun test',
+    selectors: options.selectors ?? [],
+    requestedPlatform: options.platform,
+    appOverridePath: options.appPath,
+    debug: options.debug === true,
+    maxIterations: options.maxIterations,
+  };
+}
+
+function buildModelContext(
+  provider: string | undefined,
+  modelName: string | undefined,
+): {
+  provider: string;
+  modelName: string;
+  label: string;
+} {
+  const resolvedProvider = provider ?? 'unknown';
+  const resolvedModelName = modelName ?? 'unknown';
+  return {
+    provider: resolvedProvider,
+    modelName: resolvedModelName,
+    label: `${resolvedProvider}/${resolvedModelName}`,
+  };
+}
+
+function buildAppContext(
+  appOverridePath?: string,
+): {
+  source: 'repo' | 'override';
+  label: string;
+  overridePath?: string;
+} {
+  if (!appOverridePath) {
+    return {
+      source: 'repo',
+      label: 'repo app',
+    };
+  }
+  return {
+    source: 'override',
+    label: path.basename(appOverridePath),
+    overridePath: appOverridePath,
+  };
 }

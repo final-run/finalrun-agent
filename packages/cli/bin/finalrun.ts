@@ -2,16 +2,19 @@
 // Port of mobile_cli/bin/mobile_cli.dart
 // CLI entry point — parses arguments and runs the goal.
 
+import * as path from 'node:path';
 import { Command } from 'commander';
 import { Logger, LogLevel } from '@finalrun/common';
 import { CliEnv, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
 import { runCheck } from '../src/checkRunner.js';
+import { serveReportArtifacts } from '../src/reportServer.js';
 import {
   normalizeSpecSelectors,
   TEST_SELECTION_REQUIRED_ERROR,
 } from '../src/testSelection.js';
 import { runTests } from '../src/testRunner.js';
+import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import {
   ensureWorkspaceDirectories,
   resolveEnvironmentFile,
@@ -51,6 +54,26 @@ program
         ? 'using no env bindings.'
         : `using env ${result.environment.envName}.`;
       console.log(`Validated ${result.specs.length} spec(s) in ${result.workspace.testsDir} ${envSummary}`);
+    });
+  });
+
+program
+  .command('runs')
+  .description('List local FinalRun reports from .finalrun/artifacts')
+  .option('--json', 'Print the runs index as JSON', false)
+  .action(async (options: RunsCommandOptions) => {
+    await runCommand(async () => {
+      const workspace = await resolveWorkspace();
+      await ensureWorkspaceDirectories(workspace);
+      const index = await loadRunIndex(workspace.artifactsDir);
+      if (options.json) {
+        console.log(JSON.stringify(index, null, 2));
+        return;
+      }
+      console.log(formatRunIndexForConsole(index));
+      if (index.runs.length > 0) {
+        console.log(`\nOpen ${path.join(workspace.artifactsDir, 'index.html')}`);
+      }
     });
   });
 
@@ -108,7 +131,40 @@ program
       });
 
       console.log(`Artifacts written to ${result.runDir}`);
+      console.log(`Run index available at ${result.runIndexPath}`);
       process.exit(result.success ? 0 : 1);
+    });
+  });
+
+const reportCommand = program
+  .command('report')
+  .description('Report helpers for local FinalRun artifacts');
+
+reportCommand
+  .command('serve')
+  .description('Serve .finalrun/artifacts over a local static HTTP server')
+  .option('--port <n>', 'Port to bind to', '4173')
+  .action(async (options: ReportServeCommandOptions) => {
+    await runCommand(async () => {
+      const workspace = await resolveWorkspace();
+      await ensureWorkspaceDirectories(workspace);
+      await loadRunIndex(workspace.artifactsDir);
+      const server = await serveReportArtifacts({
+        artifactsDir: workspace.artifactsDir,
+        port: parseInt(options.port, 10) || 4173,
+      });
+      console.log(`Serving FinalRun reports at ${server.url}`);
+      const handleSignal = async () => {
+        await server.close();
+        process.exit(0);
+      };
+      process.once('SIGINT', () => {
+        void handleSignal();
+      });
+      process.once('SIGTERM', () => {
+        void handleSignal();
+      });
+      await new Promise(() => {});
     });
   });
 
@@ -125,6 +181,14 @@ interface TestCommandOptions extends CheckCommandOptions {
   model: string;
   debug?: boolean;
   maxIterations: string;
+}
+
+interface RunsCommandOptions {
+  json?: boolean;
+}
+
+interface ReportServeCommandOptions {
+  port: string;
 }
 
 async function runCommand(run: () => Promise<void>): Promise<void> {

@@ -212,8 +212,38 @@ node packages/cli/dist/bin/finalrun.js test smoke.yaml --api-key=<YOUR_API_KEY> 
 Each run writes a timestamped directory under `.finalrun/artifacts/`:
 
 ```text
+.finalrun/artifacts/
+  index.html
+  runs.json
+  <run-id>/
+    run.json
+    summary.json
+    runner.log
+    input/
+      run-context.json
+      env.snapshot.yaml
+      env.json
+      specs/
+        <spec-id>.yaml
+        <spec-id>.json
+    tests/
+      <spec-id>/
+        result.json
+        recording.mp4
+        steps/
+          001.json
+        screenshots/
+          001.jpg
+```
+
+The root `index.html` is a run-history page backed by `runs.json`.
+
+Each run still also includes the raw drill-down artifacts:
+
+```text
 .finalrun/artifacts/<run-id>/
   index.html
+  run.json
   summary.json
   runner.log
   tests/
@@ -225,7 +255,15 @@ Each run writes a timestamped directory under `.finalrun/artifacts/`:
         001.jpg
 ```
 
-The static HTML report uses a two-pane timeline/detail layout with an analysis banner, per-step reasoning, screenshots, trace data, and raw artifact links.
+The static HTML report uses a two-pane timeline/detail layout focused on per-step reasoning, screenshots, trace data, and raw artifact links. Authored YAML snapshots and other run inputs stay available through the artifact bundle instead of large inline report cards.
+
+Useful report commands:
+
+```sh
+npm run dev:cli -- runs
+npm run dev:cli -- runs --json
+npm run dev:cli -- report serve --port 4173
+```
 
 ## Debug Loop
 
