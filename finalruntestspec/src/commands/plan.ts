@@ -40,13 +40,31 @@ const planDraftSchema = z.object({
   }).strict()).min(1),
 }).strict();
 
-interface PlanCommandOptions {
+/**
+ * Options for the plan command.
+ */
+export interface PlanCommandOptions {
+  /** The current working directory. Defaults to process.cwd(). */
   cwd?: string;
+  /** The natural language request for what to test. */
   request?: string;
+  /** Comma-separated output types: 'tests' or 'testsuite'. */
   output?: string;
+  /** Additional files to include as planning context. */
   contextFile?: string[];
 }
 
+/**
+ * Runs the planning command to create a new testing campaign.
+ * 
+ * This command performs workspace discovery, identifies relevant sources and existing coverage,
+ * and generates a structured `test-plan.md` artifact with proposed test scenarios.
+ * 
+ * @param featureName - The name of the feature or campaign to plan.
+ * @param options - Configuration options for the command.
+ * @returns The path to the generated test plan.
+ * @throws Error if the campaign already exists.
+ */
 export async function runPlanCommand(
   featureName: string,
   options: PlanCommandOptions = {},
@@ -55,6 +73,7 @@ export async function runPlanCommand(
 
   const cwd = options.cwd ?? process.cwd();
   const { changeDir, planPath } = resolveChangePaths(cwd, featureName);
+  
   if (await pathExists(changeDir)) {
     throw new Error(`Testing campaign '${featureName}' already exists.`);
   }
@@ -62,7 +81,9 @@ export async function runPlanCommand(
   const request = options.request?.trim().length
     ? options.request.trim()
     : `Create or update test coverage for ${featureName}.`;
+  
   const requestedOutputs = normalizeRequestedOutputs(options.output);
+  
   const discovery = await buildPlanningDiscoveryContext({
     cwd,
     featureName,
@@ -71,16 +92,102 @@ export async function runPlanCommand(
     contextFiles: options.contextFile,
   });
 
-  // Static placeholders instead of AI call
-  const draft = {
+  const scenarios = sanitizeScenarios({
+    cwd,
+    featureName,
+    requestedOutputs,
+    existingCoverage: discovery.existingCoverage,
+    draftScenarios: [], // Planning now starts with an empty scenario list for the agent to fill
+  });
+
+  const impact = buildImpactFromScenarios(scenarios);
+  const metadata = testPlanFrontmatterSchema.parse({
+    featureName,
+    request,
+    requestedOutputs,
+    approval: {
+      status: 'draft',
+      approvedAt: null,
+    },
+    sources: discovery.sources.map(({ type, path: sourcePath, relevance }) => ({
+      type,
+      path: sourcePath,
+      relevance,
+    })),
+    existingCoverage: discovery.existingCoverage,
+    impact,
+    scenarios,
+  });
+
+  const document = renderTestPlanDocument(metadata, {
+    title: `Test Plan: ${featureName}`,
     why: '<!-- Describe WHY this test plan is needed and what it accomplishes -->',
     whatChanges: ['<!-- List the high-level functional changes that require testing -->'],
-    existingCoverageSummary: ['<!-- Summarize the relevant existing test cases or coverage gaps -->'],
-    scenarios: [] as any[],
-  };
+    capabilities: buildCapabilities(requestedOutputs),
+    impactSummary: buildImpactSummary(impact),
+    requestSummary: request,
+    existingCoverageSummary: buildExistingCoverageSummary(discovery.existingCoverage),
+    requestedOutputs,
+    proposedScenarios: scenarios,
+    sources: metadata.sources,
+    approvalStatus: 'draft',
+    approvedAt: null,
+  });
 
-  const instructionsPath = path.join(changeDir, 'plan-instructions.md');
-  const instructionsContent = [
+  const instructionsContent = buildInstructionsFileContent(featureName, request, requestedOutputs, discovery);
+
+  await ensureDirectory(changeDir);
+  await fs.writeFile(planPath, document);
+  await fs.writeFile(path.join(changeDir, 'plan-instructions.md'), instructionsContent);
+
+  console.log(chalk.green(`✓ Created test plan template and instructions at frtestspec/changes/${featureName}/`));
+  console.log(chalk.yellow('\n📝 Next Steps:'));
+  console.log(`1. Your AI assistant should read the instructions in frtestspec/changes/${featureName}/plan-instructions.md.`);
+  console.log(`2. Populate the \`scenarios\` list inside the frontmatter of \`test-plan.md\`.`);
+  console.log(`3. Mark the plan approved in the frontmatter, then run \`frtestspec apply ${featureName}\`.`);
+
+  return { planPath };
+}
+
+/**
+ * Registers the plan command with the main program.
+ * 
+ * @param program - The Commander program instance.
+ */
+export function registerPlanCommand(program: Command): void {
+  program
+    .command('plan <feature-name> [request...]')
+    .description('Generate a planning-only test campaign and draft a structured test plan')
+    .option('-o, --output <types>', 'Comma-separated outputs to plan: tests, testsuite', 'tests')
+    .option('--context-file <paths...>', 'Additional files to inspect while building the test plan')
+    .action(async (
+      featureName: string,
+      requestTokens: string[],
+      command: { output?: string; contextFile?: string[] },
+    ) => {
+      try {
+        await runPlanCommand(featureName, {
+          request: requestTokens.join(' ').trim(),
+          output: command.output,
+          contextFile: command.contextFile,
+        });
+      } catch (error) {
+        console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
+    });
+}
+
+/**
+ * Builds the content for the plan-instructions.md file.
+ */
+function buildInstructionsFileContent(
+  featureName: string,
+  request: string,
+  requestedOutputs: OutputType[],
+  discovery: Awaited<ReturnType<typeof buildPlanningDiscoveryContext>>
+): string {
+  return [
     `# Instructions: Plan Testing Campaign for '${featureName}'`,
     '',
     '## Objective',
@@ -105,87 +212,14 @@ export async function runPlanCommand(
     '## Next Steps',
     `1. Read the discovered workspace context above.`,
     `2. Open and fill out the scaffolded \`test-plan.md\` in this directory.`,
-    `3. Populate the \`scenarios\` array in the YAML frontmatter with concrete, user-facing scenarios following the guidelines.`,
-    `4. Fill in the Markdown body sections (Why, What Changes, etc.).`,
+    `3. Populate the \`scenarios\` array in the YAML frontmatter with concrete, user-facing scenarios.`,
+    `4. Scenario reason MUST include a brief justification for the idempotency strategy.`,
   ].join('\n');
-
-  const scenarios = sanitizeScenarios({
-    cwd,
-    featureName,
-    requestedOutputs,
-    existingCoverage: discovery.existingCoverage,
-    draftScenarios: draft.scenarios,
-  });
-
-  const impact = buildImpactFromScenarios(scenarios);
-  const metadata = testPlanFrontmatterSchema.parse({
-    featureName,
-    request,
-    requestedOutputs,
-    approval: {
-      status: 'draft',
-      approvedAt: null,
-    },
-    sources: discovery.sources.map(({ type, path: sourcePath, relevance }) => ({
-      type,
-      path: sourcePath,
-      relevance,
-    })),
-    existingCoverage: discovery.existingCoverage,
-    impact,
-    scenarios,
-  });
-
-  const document = renderTestPlanDocument(metadata, {
-    title: `Test Plan: ${featureName}`,
-    why: draft.why,
-    whatChanges: uniqueStrings(draft.whatChanges),
-    capabilities: buildCapabilities(requestedOutputs),
-    impactSummary: buildImpactSummary(impact),
-    requestSummary: request,
-    existingCoverageSummary: draft.existingCoverageSummary.length > 0
-      ? draft.existingCoverageSummary
-      : buildExistingCoverageSummary(discovery.existingCoverage),
-    requestedOutputs,
-    proposedScenarios: scenarios,
-    sources: metadata.sources,
-    approvalStatus: 'draft',
-    approvedAt: null,
-  });
-
-  await ensureDirectory(changeDir);
-  await fs.writeFile(planPath, document);
-  await fs.writeFile(instructionsPath, instructionsContent);
-
-  console.log(chalk.green(`✓ Created test plan template and instructions at frtestspec/changes/${featureName}/`));
-  console.log(chalk.yellow('\n📝 Next Steps for the Agent:'));
-  console.log(`1. Read the instructions in frtestspec/changes/${featureName}/plan-instructions.md.`);
-  console.log(`2. Populate the \`scenarios\` list inside the frontmatter of \`test-plan.md\`.`);
-  console.log(`3. Fill other sections as necessary.`);
-  console.log(`4. Mark the plan approved in the frontmatter once it's complete, then run \`frtestspec apply ${featureName}\`.`);
-
-  return { planPath };
 }
 
-export function registerPlanCommand(program: Command): void {
-  program
-    .command('plan <feature-name> [request...]')
-    .description('Generate a planning-only test campaign and draft a structured test plan')
-    .option('-o, --output <types>', 'Comma-separated outputs to plan: tests, testsuite', 'tests')
-    .option('--context-file <paths...>', 'Additional files to inspect while building the test plan')
-    .action(async (
-      featureName: string,
-      requestTokens: string[],
-      command: { output?: string; contextFile?: string[] },
-    ) => {
-      await runPlanCommand(featureName, {
-        request: requestTokens.join(' ').trim(),
-        output: command.output,
-        contextFile: command.contextFile,
-      });
-    });
-}
-
+/**
+ * Builds the system instructions for the AI agent performing the plan phase.
+ */
 function buildPlanSystemInstruction(): string {
   return `
 You are designing a FinalRun test plan that MUST be approved before any runnable artifacts are generated.
@@ -210,16 +244,17 @@ Return JSON only with this shape:
 Rules:
 - Use the discovered workspace coverage to decide whether to update existing files or create new ones.
 - Prefer updating existing files only when the existing coverage clearly matches the request.
-- New test files MUST live under .finalrun/tests/<feature-folder>/ when the feature grouping is clear and MUST use '.yml' or '.yaml' extension.
+- New test files MUST live under .finalrun/tests/<feature-folder>/ and MUST use '.yml' or '.yaml' extension.
 - Testsuite files MUST live under .finalrun/suites/.
-- Include proposal-style thinking: Why, What Changes, existing coverage, and explicit impact.
 - Scenario titles must be user-facing and concrete.
-- If the feature folder is uncertain, call that out explicitly in the scenario reason.
-- Scenario reason MUST include a brief justification for the idempotency strategy (e.g., how the setup flow will clean up data from prior runs to guarantee a clean start).
+- Scenario reason MUST include a brief justification for the idempotency strategy (e.g., how the setup flow will clean up data from prior runs).
 - Do not invent unsupported output types.
 `.trim();
 }
 
+/**
+ * Builds the user prompt for the AI agent performing the plan phase.
+ */
 function buildPlanUserPrompt(input: {
   featureName: string;
   request: string;
@@ -243,11 +278,15 @@ ${JSON.stringify(input.discovery.existingCoverage, null, 2)}
 
 Discovered sources:
 ${JSON.stringify(sourcePayload, null, 2)}
-
-Create a proposal-style test plan with explicit file impact decisions.
 `;
 }
 
+/**
+ * Sanitizes and normalizes the proposed test scenarios.
+ * 
+ * Ensures that all scenarios have valid output types, unique paths, 
+ * and correctly identify whether they are updating existing files or creating new ones.
+ */
 function sanitizeScenarios(input: {
   cwd: string;
   featureName: string;
@@ -269,6 +308,7 @@ function sanitizeScenarios(input: {
     const existingPaths = rawScenario.outputType === 'tests'
       ? input.existingCoverage.tests
       : input.existingCoverage.testsuite;
+    
     const defaultTargetDecision = inferDefaultTargetPath({
       featureName: input.featureName,
       scenarioTitle: rawScenario.title,
@@ -323,6 +363,7 @@ function sanitizeScenarios(input: {
     scenarios.push(scenario);
   }
 
+  // Add mandatory fallback scenarios if no explicit scenarios matched the requested outputs
   for (const requestedOutput of input.requestedOutputs) {
     if (scenarios.some((scenario) => scenario.outputType === requestedOutput)) {
       continue;
@@ -331,6 +372,7 @@ function sanitizeScenarios(input: {
     const existingPaths = requestedOutput === 'tests'
       ? input.existingCoverage.tests
       : input.existingCoverage.testsuite;
+    
     const fallbackTarget = existingPaths.length === 1
       ? existingPaths[0]
       : createDefaultTargetPath(
@@ -341,6 +383,7 @@ function sanitizeScenarios(input: {
           existingTestPaths: requestedOutput === 'tests' ? input.existingCoverage.tests : [],
         },
       );
+    
     const fallbackDecision = requestedOutput === 'tests'
       ? inferDefaultTargetPath({
         featureName: input.featureName,
@@ -371,6 +414,9 @@ function sanitizeScenarios(input: {
   return scenarios;
 }
 
+/**
+ * Matches a proposed target path against existing coverage.
+ */
 function matchExistingPath(targetPath: string, existingPaths: readonly string[]): string | null {
   if (existingPaths.includes(targetPath)) {
     return targetPath;
@@ -391,6 +437,9 @@ function matchExistingPath(targetPath: string, existingPaths: readonly string[])
   return null;
 }
 
+/**
+ * Ensures a generated path is unique within the plan.
+ */
 function ensureUniquePath(targetPath: string, usedPaths: ReadonlySet<string>): string {
   if (!usedPaths.has(targetPath)) {
     return targetPath;
@@ -407,6 +456,9 @@ function ensureUniquePath(targetPath: string, usedPaths: ReadonlySet<string>): s
   return nextPath;
 }
 
+/**
+ * Builds a summary of intended file impact from the scenario list.
+ */
 function buildImpactSummary(impact: ReturnType<typeof buildImpactFromScenarios>): string[] {
   const lines: string[] = [];
   if (impact.update.tests.length > 0) {
@@ -427,6 +479,9 @@ function buildImpactSummary(impact: ReturnType<typeof buildImpactFromScenarios>)
     : ['No impacted files have been declared yet.'];
 }
 
+/**
+ * Builds a summary of discovered existing coverage.
+ */
 function buildExistingCoverageSummary(existingCoverage: {
   tests: string[];
   testsuite: string[];
@@ -442,6 +497,9 @@ function buildExistingCoverageSummary(existingCoverage: {
   return lines;
 }
 
+/**
+ * Appends a secondary note to a scenario reason if provided.
+ */
 function appendPlanningNote(baseReason: string, note: string | null): string {
   if (!note || baseReason.includes(note)) {
     return baseReason;

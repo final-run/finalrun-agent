@@ -4,13 +4,28 @@ import * as path from 'node:path';
 import chalk from 'chalk';
 import yaml from 'yaml';
 import { loadTestPlan } from '../lib/test-plan.js';
-import { pathExists, resolveChangePaths } from '../lib/workspace.js';
+import { pathExists, resolveChangePaths, uniqueStrings } from '../lib/workspace.js';
 import { testScenarioSchema, testsuiteSchema } from '../schemas/grammar.js';
 
+/**
+ * Options for the validate command.
+ */
 export interface ValidateCommandOptions {
+  /** The current working directory. Defaults to process.cwd(). */
   cwd?: string;
 }
 
+/**
+ * Runs the validation command for a specific testing campaign.
+ * 
+ * This command checks that all artifacts declared in the approved test plan 
+ * exist on disk and follow the strict FinalRun YAML grammar.
+ * 
+ * @param featureName - The name of the testing campaign/feature to validate.
+ * @param options - Configuration options for the command.
+ * @returns An object containing the list of validated files.
+ * @throws Error if there are validation failures or the plan is missing.
+ */
 export async function runValidateCommand(
   featureName: string,
   options: ValidateCommandOptions = {},
@@ -19,12 +34,14 @@ export async function runValidateCommand(
 
   const cwd = options.cwd ?? process.cwd();
   const { planPath } = resolveChangePaths(cwd, featureName);
+  
   if (!(await pathExists(planPath))) {
     throw new Error(`No test plan found at ${planPath}`);
   }
 
   const plan = await loadTestPlan(planPath);
-  const targetPaths = Array.from(new Set(plan.metadata.scenarios.map((scenario) => scenario.targetPath)));
+  const targetPaths = uniqueStrings(plan.metadata.scenarios.map((scenario) => scenario.targetPath));
+  
   if (targetPaths.length === 0) {
     throw new Error(`No generated artifacts are declared in ${planPath}`);
   }
@@ -42,6 +59,8 @@ export async function runValidateCommand(
     const content = await fs.readFile(absoluteTargetPath, 'utf8');
     try {
       const parsed = yaml.parse(content);
+      
+      // Route validation based on directory placement
       if (relativeTargetPath.startsWith('.finalrun/tests/')) {
         const result = testScenarioSchema.safeParse(parsed);
         if (!result.success) {
@@ -59,6 +78,7 @@ export async function runValidateCommand(
           continue;
         }
 
+        // Deep validation for suite references
         for (const referencedTestPath of result.data.tests) {
           if (!referencedTestPath.startsWith('.finalrun/tests/')) {
             validationErrors.push(
@@ -98,11 +118,21 @@ export async function runValidateCommand(
   return { validatedFiles };
 }
 
+/**
+ * Registers the validate command with the main program.
+ * 
+ * @param program - The Commander program instance.
+ */
 export function registerValidateCommand(program: Command): void {
   program
     .command('validate <feature-name>')
     .description('Validate FinalRun test artifacts from .finalrun/tests and .finalrun/suites after apply or manual edits')
     .action(async (featureName: string) => {
-      await runValidateCommand(featureName);
+      try {
+        await runValidateCommand(featureName);
+      } catch (error) {
+        console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
     });
 }

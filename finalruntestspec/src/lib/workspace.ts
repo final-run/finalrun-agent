@@ -68,91 +68,124 @@ export function resolveChangePaths(
   };
 }
 
-export async function pathExists(targetPath: string): Promise<boolean> {
+/**
+ * Checks if a path exists on the filesystem.
+ */
+export async function pathExists(filePath: string): Promise<boolean> {
   try {
-    await fs.access(targetPath);
+    await fs.access(filePath);
     return true;
   } catch {
     return false;
   }
 }
 
-export async function ensureDirectory(targetPath: string): Promise<void> {
-  await fs.mkdir(targetPath, { recursive: true });
+/**
+ * Ensures that a directory exists.
+ * Creates the directory and its parents recursively if necessary.
+ */
+export async function ensureDirectory(dirPath: string): Promise<void> {
+  await fs.mkdir(dirPath, { recursive: true });
 }
 
-export async function ensureParentDirectory(targetPath: string): Promise<void> {
-  await ensureDirectory(path.dirname(targetPath));
+/**
+ * Ensures that the parent directory of a given file path exists.
+ * Creates directories recursively if necessary.
+ */
+export async function ensureParentDirectory(filePath: string): Promise<void> {
+  await ensureDirectory(path.dirname(filePath));
 }
 
+/**
+ * Recursively collects files in a directory that match specific criteria.
+ *
+ * @param dirPath - The directory to scan.
+ * @param options - Filtering and limit options.
+ * @returns A list of absolute file paths.
+ */
 export async function collectFiles(
-  rootDir: string,
+  dirPath: string,
   options: CollectFilesOptions = {},
 ): Promise<string[]> {
-  if (!(await pathExists(rootDir))) {
-    return [];
+  const results: string[] = [];
+  if (!(await pathExists(dirPath))) {
+    return results;
   }
 
   const ignoredDirs = options.ignoredDirs ?? DEFAULT_IGNORED_DIRS;
   const allowedExtensions = options.allowedExtensions
     ? new Set(options.allowedExtensions.map((value) => value.toLowerCase()))
     : null;
-  const filePaths: string[] = [];
 
   async function walk(currentDir: string): Promise<void> {
     const entries = await fs.readdir(currentDir, { withFileTypes: true });
     for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+
       if (entry.isDirectory()) {
         if (ignoredDirs.has(entry.name)) {
           continue;
         }
-        await walk(path.join(currentDir, entry.name));
-        continue;
-      }
-
-      if (!entry.isFile()) {
-        continue;
-      }
-
-      const fullPath = path.join(currentDir, entry.name);
-      const extension = path.extname(entry.name).toLowerCase();
-      if (allowedExtensions && !allowedExtensions.has(extension)) {
-        continue;
-      }
-
-      if (options.maxFileSizeBytes) {
-        const stats = await fs.stat(fullPath);
-        if (stats.size > options.maxFileSizeBytes) {
-          continue;
+        await walk(fullPath);
+      } else if (entry.isFile()) {
+        if (allowedExtensions) {
+          const extension = path.extname(entry.name).toLowerCase();
+          if (!allowedExtensions.has(extension)) {
+            continue;
+          }
         }
-      }
 
-      filePaths.push(fullPath);
+        if (options.maxFileSizeBytes) {
+          const stats = await fs.stat(fullPath);
+          if (stats.size > options.maxFileSizeBytes) {
+            continue;
+          }
+        }
+
+        results.push(fullPath);
+      }
     }
   }
 
-  await walk(rootDir);
-  return filePaths.sort();
+  await walk(dirPath);
+  return results.sort();
 }
 
-export function toPosixPath(value: string): string {
-  return value.split(path.sep).join('/');
+/**
+ * Normalizes a path to use Posix-style forward slashes.
+ */
+export function toPosixPath(filePath: string): string {
+  return filePath.replace(/\\/g, '/');
 }
 
-export function toWorkspaceRelativePath(cwd: string, targetPath: string): string {
-  const absoluteTarget = path.resolve(targetPath);
-  const relativePath = path.relative(path.resolve(cwd), absoluteTarget);
-  if (relativePath === '') {
+/**
+ * Converts an absolute path into a workspace-relative path.
+ *
+ * @param cwd - The workspace root directory.
+ * @param absolutePath - The path to convert.
+ * @returns A relative path using forward slashes.
+ */
+export function toWorkspaceRelativePath(cwd: string, absolutePath: string): string {
+  const relative = path.relative(path.resolve(cwd), path.resolve(absolutePath));
+  if (relative === '') {
     return '.';
   }
 
-  if (relativePath.startsWith('..')) {
-    return toPosixPath(absoluteTarget);
+  // If the path is outside the cwd, return the absolute posix path
+  if (relative.startsWith('..')) {
+    return toPosixPath(path.resolve(absolutePath));
   }
 
-  return toPosixPath(relativePath);
+  return toPosixPath(relative);
 }
 
+/**
+ * Resolves a plan path, making it absolute relative to the CWD if it's not already absolute.
+ *
+ * @param cwd - The current working directory.
+ * @param planPath - The plan path to resolve.
+ * @returns An absolute path to the plan.
+ */
 export function resolvePlanPath(cwd: string, planPath: string): string {
   if (path.isAbsolute(planPath)) {
     return path.resolve(planPath);
@@ -177,6 +210,9 @@ const TOOL_SKILLS_DIRS: Record<string, string> = {
   codex: '.codex/skills',
   antigravity: '.gemini/antigravity/skills',
   opencode: '.opencode/skills',
+  claudecode: '.claude/skills',
+  cursor: '.cursor/skills',
+  copilot: '.github/copilot/skills',
 };
 
 export function resolveSkillsDir(cwd: string, tool: string, scope: 'local' | 'global' = 'local'): string {

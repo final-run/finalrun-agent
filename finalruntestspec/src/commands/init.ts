@@ -13,13 +13,29 @@ import {
 import { writeManagedSkills } from '../lib/skills.js';
 import { pathExists, resolveWorkspacePaths } from '../lib/workspace.js';
 
+/**
+ * Options for the init command.
+ */
 export interface InitCommandOptions {
+  /** The current working directory. Defaults to process.cwd(). */
   cwd?: string;
+  /** Specific tool(s) to initialize. Can be 'all' or comma-separated names. */
   tool?: string | string[];
+  /** Installation scope: 'local' (repo) or 'global' (home dir). */
   scope?: string;
+  /** Custom backend command to embed in the generated skills. */
   command?: string;
 }
 
+/**
+ * Runs the initialization command for the workspace.
+ * 
+ * This command sets up the FinalRun project configuration and installs 
+ * managed skill files for the selected AI tools.
+ * 
+ * @param options - Configuration options for the command.
+ * @returns An object containing the written config path and skill files.
+ */
 export async function runInitCommand(
   options: InitCommandOptions = {},
 ): Promise<{ configPath: string; skillFiles: string[] }> {
@@ -54,6 +70,13 @@ export async function runInitCommand(
   return { configPath, skillFiles };
 }
 
+/**
+ * Resolves the installation scope, either from options, existing config, or interactive prompt.
+ * 
+ * @param options - Provided command options.
+ * @param existingScope - Current scope from config, if any.
+ * @returns The resolved scope.
+ */
 async function resolveScope(
   options: InitCommandOptions,
   existingScope?: Scope,
@@ -80,6 +103,13 @@ async function resolveScope(
   return 'local';
 }
 
+/**
+ * Resolves the list of tools to initialize, either from options, existing config, or interactive prompt.
+ * 
+ * @param options - Provided command options.
+ * @param existingTools - Current list of tools from config, if any.
+ * @returns The resolved list of supported tools.
+ */
 async function resolveTools(
   options: InitCommandOptions,
   existingTools?: SupportedTool[],
@@ -122,18 +152,28 @@ async function resolveTools(
   return [...ALL_SUPPORTED_TOOLS];
 }
 
+/**
+ * Registers the init command with the main program.
+ * 
+ * @param program - The Commander program instance.
+ */
 export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('Initialize repo-local frtestspec skills for supported AI tools')
-    .option('--tool <tools>', 'Comma-separated tools: codex, antigravity, opencode, or all')
+    .option('--tool <tools>', 'Comma-separated tools: codex, antigravity, opencode, claudecode, cursor, copilot, or all')
     .option('--scope <scope>', 'Install scope: local or global')
     .option('--command <command>', 'Backend frtestspec invocation to embed in generated skills')
     .action(async (command: { tool?: string; scope?: string; command?: string }) => {
-      await runInitCommand({
-        tool: command.tool,
-        scope: command.scope,
-        command: command.command,
-      });
+      try {
+        await runInitCommand({
+          tool: command.tool,
+          scope: command.scope,
+          command: command.command,
+        });
+      } catch (error) {
+        console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
     });
 }

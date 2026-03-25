@@ -15,11 +15,27 @@ import {
 
 const generatedFilesSchema = z.record(z.string(), z.string());
 
+/**
+ * Options for the apply command.
+ */
 export interface ApplyCommandOptions {
+  /** The current working directory. Defaults to process.cwd(). */
   cwd?: string;
+  /** Whether to show a spinner during execution. */
   useSpinner?: boolean;
 }
 
+/**
+ * Runs the apply command for a specific testing campaign.
+ * 
+ * This command converts an approved test plan into actionable instructions 
+ * for an AI agent to generate the actual FinalRun YAML files.
+ * 
+ * @param featureName - The name of the testing campaign/feature.
+ * @param options - Configuration options for the command.
+ * @returns An object containing the list of files that should be generated.
+ * @throws Error if the plan is missing or not approved.
+ */
 export async function runApplyCommand(
   featureName: string,
   options: ApplyCommandOptions = {},
@@ -75,22 +91,35 @@ export async function runApplyCommand(
   await fs.writeFile(instructionsPath, instructionsContent);
 
   console.log(chalk.green(`✓ Created apply instructions at frtestspec/changes/${featureName}/apply-instructions.md`));
-  console.log(chalk.yellow('\n📝 Next Steps for the Agent:'));
-  console.log(`1. Read the instructions file and create the actual FinalRun YAML files.`);
+  console.log(chalk.yellow('\n📝 Next Steps:'));
+  console.log(`1. Your AI assistant should now read the instructions file and create the actual FinalRun YAML files.`);
   console.log(`2. Verify the structure with \`frtestspec validate ${featureName}\`.`);
 
-  return { files: [] }; // No files written directly by this script
+  return { files: [] };
 }
 
+/**
+ * Registers the apply command with the main program.
+ * 
+ * @param program - The Commander program instance.
+ */
 export function registerApplyCommand(program: Command): void {
   program
     .command('apply <feature-name>')
     .description('Apply an approved FinalRun test plan into .finalrun/tests and .finalrun/suites, then validate it')
     .action(async (featureName: string) => {
-      await runApplyCommand(featureName);
+      try {
+        await runApplyCommand(featureName);
+      } catch (error) {
+        console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
     });
 }
 
+/**
+ * Builds the system instructions for the AI agent performing the apply phase.
+ */
 function buildApplySystemInstruction(): string {
   return `
 You are an expert QA Automation Engineer. Generate FinalRun YAML artifacts with extreme precision.
@@ -143,6 +172,9 @@ Additional rules:
 `.trim();
 }
 
+/**
+ * Builds the user prompt for the AI agent performing the apply phase.
+ */
 function buildApplyUserPrompt(input: {
   featureName: string;
   targetPaths: string[];
@@ -167,6 +199,9 @@ ${JSON.stringify(input.existingFileContents, null, 2)}
 `;
 }
 
+/**
+ * Loads the contents of existing files that are marked for update in the plan.
+ */
 async function loadExistingFileContents(
   cwd: string,
   scenarios: Awaited<ReturnType<typeof loadTestPlan>>['metadata']['scenarios'],
@@ -191,6 +226,11 @@ async function loadExistingFileContents(
   return files;
 }
 
+/**
+ * Validates that the generator returned exactly the expected target paths.
+ * 
+ * @internal
+ */
 function validateGeneratedTargets(
   expectedPaths: readonly string[],
   actualPaths: readonly string[],

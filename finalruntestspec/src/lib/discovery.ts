@@ -9,8 +9,19 @@ import {
   toPosixPath,
 } from './workspace.js';
 
+/**
+ * Extensions considered for general code scanning. 
+ */
 const CODE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.yaml', '.yml'];
+
+/**
+ * Extensions considered for workspace test and suite scanning.
+ */
 const YAML_EXTENSIONS = ['.yaml', '.yml'];
+
+/**
+ * Words filtered out from search term extraction to improve relevance.
+ */
 const STOPWORDS = new Set([
   'a',
   'an',
@@ -32,32 +43,63 @@ const STOPWORDS = new Set([
   'with',
 ]);
 
+/**
+ * A discovered source including a snippet of relevant content.
+ */
 export interface DiscoverySource extends PlanSource {
+  /** A short snippet of the file content containing matching terms. */
   excerpt: string;
 }
 
+/**
+ * Contextual information discovered during the planning phase.
+ */
 export interface PlanningDiscoveryContext {
+  /** Relative paths to relevant existing tests and suites. */
   existingCoverage: {
     tests: string[];
     testsuite: string[];
   };
+  /** All sources (test, spec, code) found that match the planning request. */
   sources: DiscoverySource[];
 }
 
+/**
+ * Options for building the planning discovery context.
+ */
 export interface BuildPlanningDiscoveryOptions {
+  /** The current working directory. */
   cwd: string;
+  /** Name of the feature being planned. */
   featureName: string;
+  /** The natural language request from the user. */
   request: string;
+  /** The types of artifacts requested (e.g., 'tests', 'testsuite'). */
   requestedOutputs: readonly OutputType[];
+  /** Optional list of specific files to include as context. */
   contextFiles?: readonly string[];
 }
 
+/**
+ * Performs workspace-wide discovery to build a context for planning.
+ * 
+ * This scans the `.finalrun` workspace for existing coverage, searches 
+ * `openspec` for requirements, and optionally scans the general codebase 
+ * for implementation details that match the request.
+ * 
+ * @param options - Configuration for the discovery process.
+ * @returns The gathered planning context.
+ */
 export async function buildPlanningDiscoveryContext(
   options: BuildPlanningDiscoveryOptions,
 ): Promise<PlanningDiscoveryContext> {
   const workspace = resolveWorkspacePaths(options.cwd);
   const terms = extractSearchTerms(options.featureName, options.request);
+  
+  // 1. Load explicitly provided files
   const providedSources = await loadProvidedSources(options.cwd, options.contextFiles ?? [], terms);
+  
+  // 2. Scan workspace for existing coverage
   const workspaceTestSources = await scanWorkspaceDirectory(
     options.cwd,
     workspace.testsDir,
@@ -71,7 +113,10 @@ export async function buildPlanningDiscoveryContext(
     terms,
   );
 
+  // 3. Scan OpenSpec files for requirements
   const specSources = await scanSpecSources(options.cwd, terms);
+  
+  // 4. Optionally scan codebase if no specs exist or if context was explicitly provided
   const shouldScanCode = providedSources.length > 0 || specSources.length === 0;
   const codeSources = shouldScanCode
     ? await scanCodeSources(options.cwd, terms)
@@ -94,6 +139,9 @@ export async function buildPlanningDiscoveryContext(
   };
 }
 
+/**
+ * Heuristically extracts searchable terms from a feature name and request string.
+ */
 function extractSearchTerms(featureName: string, request: string): string[] {
   const rawText = `${featureName} ${request}`.toLowerCase();
   const terms = rawText
@@ -103,6 +151,9 @@ function extractSearchTerms(featureName: string, request: string): string[] {
   return Array.from(new Set(terms));
 }
 
+/**
+ * Loads and builds excerpts for files explicitly provided by the user.
+ */
 async function loadProvidedSources(
   cwd: string,
   contextFiles: readonly string[],
@@ -128,6 +179,9 @@ async function loadProvidedSources(
   return sources;
 }
 
+/**
+ * Scans a specific workspace directory (tests or suites) for files matching the search terms.
+ */
 async function scanWorkspaceDirectory(
   cwd: string,
   directoryPath: string,
@@ -143,12 +197,16 @@ async function scanWorkspaceDirectory(
   for (const filePath of files) {
     const relativePath = toWorkspaceRelativePath(cwd, filePath);
     const nameMatches = findMatchingTerms(relativePath.toLowerCase(), terms);
+    
+    // For workspace files, we require at least a name match to consider it relevant
     if (nameMatches.length === 0) {
       continue;
     }
 
     const content = await fs.readFile(filePath, 'utf8');
     const contentMatches = findMatchingTerms(content.toLowerCase(), terms);
+    
+    // We also confirm it by checking content for matching terms
     if (contentMatches.length === 0) {
       continue;
     }
@@ -164,6 +222,9 @@ async function scanWorkspaceDirectory(
   return rankSources(sources);
 }
 
+/**
+ * Searches for relevant Markdown specifications in the `openspec/` directory.
+ */
 async function scanSpecSources(
   cwd: string,
   terms: readonly string[],
@@ -174,10 +235,14 @@ async function scanSpecSources(
     ignoredDirs: new Set(['archive', 'node_modules', 'dist']),
   });
 
+  // Only consider files within an 'specs' subdirectory of openspec
   const relevantFiles = specFiles.filter((filePath) => toPosixPath(filePath).includes('/specs/'));
   return scanTextFiles(cwd, relevantFiles, 'spec', terms, 6);
 }
 
+/**
+ * Searches the general codebase for implementation files matching the search terms.
+ */
 async function scanCodeSources(
   cwd: string,
   terms: readonly string[],
@@ -202,6 +267,9 @@ async function scanCodeSources(
   return scanTextFiles(cwd, codeFiles, 'code', terms, 8);
 }
 
+/**
+ * Performs a text-based keyword search across a list of files.
+ */
 async function scanTextFiles(
   cwd: string,
   filePaths: readonly string[],
@@ -216,6 +284,7 @@ async function scanTextFiles(
     const relativePath = toWorkspaceRelativePath(cwd, filePath);
     const nameMatches = findMatchingTerms(relativePath.toLowerCase(), terms);
     const contentMatches = findMatchingTerms(content.toLowerCase(), terms);
+    
     if (nameMatches.length === 0 && contentMatches.length === 0) {
       continue;
     }
@@ -239,6 +308,9 @@ async function scanTextFiles(
   return rankSources(sources).slice(0, limit);
 }
 
+/**
+ * Ranks sources based on the density of matches (relevance string length + excerpt length).
+ */
 function rankSources(sources: readonly DiscoverySource[]): DiscoverySource[] {
   return [...sources].sort((left, right) => {
     const leftScore = left.relevance.length + left.excerpt.length;
@@ -247,10 +319,16 @@ function rankSources(sources: readonly DiscoverySource[]): DiscoverySource[] {
   });
 }
 
+/**
+ * Returns the subset of terms that are present in the given content.
+ */
 function findMatchingTerms(content: string, terms: readonly string[]): string[] {
   return terms.filter((term) => content.includes(term));
 }
 
+/**
+ * Extracts a multi-line snippet from content that contains at least one matching term.
+ */
 function buildExcerpt(content: string, terms: readonly string[]): string {
   const trimmed = content.trim();
   if (trimmed.length === 0) {
@@ -262,6 +340,7 @@ function buildExcerpt(content: string, terms: readonly string[]): string {
     terms.some((term) => line.toLowerCase().includes(term)),
   );
 
+  // Fallback to top of file if no line match
   const selectedLines = matchingLines.length > 0 ? matchingLines.slice(0, 6) : lines.slice(0, 6);
   return selectedLines.join('\n').slice(0, 800);
 }

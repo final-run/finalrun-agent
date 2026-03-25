@@ -169,7 +169,7 @@ test('init creates Codex skills and stores the configured backend command', asyn
     command: backendCommand,
   });
 
-  assert.equal(result.skillFiles.length, 2);
+  assert.equal(result.skillFiles.length, 3);
 
   const config = await loadProjectConfig(repoRoot);
   assert.deepEqual(config, {
@@ -203,7 +203,7 @@ test('init creates Antigravity skills under .gemini/antigravity/skills/', async 
     command: backendCommand,
   });
 
-  assert.equal(result.skillFiles.length, 2);
+  assert.equal(result.skillFiles.length, 3);
 
   const config = await loadProjectConfig(repoRoot);
   assert.deepEqual(config, {
@@ -236,7 +236,7 @@ test('init creates OpenCode skills under .opencode/skills/', async () => {
     command: backendCommand,
   });
 
-  assert.equal(result.skillFiles.length, 2);
+  assert.equal(result.skillFiles.length, 3);
 
   const config = await loadProjectConfig(repoRoot);
   assert.deepEqual(config, {
@@ -268,15 +268,54 @@ test('init with "all" installs skills for every supported tool', async () => {
     command: 'frtestspec',
   });
 
-  // 2 skills x 3 tools = 6 files
-  assert.equal(result.skillFiles.length, 6);
+  // 2 skills x 6 tools = 12 files
+  assert.equal(result.skillFiles.length, 18);
 
   const config = await loadProjectConfig(repoRoot);
-  assert.deepEqual(config.tools, ['codex', 'antigravity', 'opencode']);
+  assert.deepEqual(config.tools, ['codex', 'antigravity', 'opencode', 'claudecode', 'cursor', 'copilot']);
 
   assert.ok(await exists(path.join(repoRoot, '.codex', 'skills', 'frtestspec-plan', 'SKILL.md')));
   assert.ok(await exists(path.join(repoRoot, '.gemini', 'antigravity', 'skills', 'frtestspec-plan', 'SKILL.md')));
   assert.ok(await exists(path.join(repoRoot, '.opencode', 'skills', 'frtestspec-plan', 'SKILL.md')));
+});
+
+test('init creates Claude Code skills under .claude/skills/', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'frtestspec-init-claudecode-'));
+  const result = await runInitCommand({
+    cwd: repoRoot,
+    tool: 'claudecode',
+    scope: 'local',
+  });
+  assert.equal(result.skillFiles.length, 3);
+  const config = await loadProjectConfig(repoRoot);
+  assert.ok(config.tools.includes('claudecode'));
+  assert.ok(await exists(path.join(repoRoot, '.claude', 'skills', 'frtestspec-plan', 'SKILL.md')));
+});
+
+test('init creates Cursor skills under .cursor/skills/', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'frtestspec-init-cursor-'));
+  const result = await runInitCommand({
+    cwd: repoRoot,
+    tool: 'cursor',
+    scope: 'local',
+  });
+  assert.equal(result.skillFiles.length, 3);
+  const config = await loadProjectConfig(repoRoot);
+  assert.ok(config.tools.includes('cursor'));
+  assert.ok(await exists(path.join(repoRoot, '.cursor', 'skills', 'frtestspec-plan', 'SKILL.md')));
+});
+
+test('init creates Copilot skills under .github/copilot/skills/', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'frtestspec-init-copilot-'));
+  const result = await runInitCommand({
+    cwd: repoRoot,
+    tool: 'copilot',
+    scope: 'local',
+  });
+  assert.equal(result.skillFiles.length, 3);
+  const config = await loadProjectConfig(repoRoot);
+  assert.ok(config.tools.includes('copilot'));
+  assert.ok(await exists(path.join(repoRoot, '.github', 'copilot', 'skills', 'frtestspec-plan', 'SKILL.md')));
 });
 
 test('update refreshes managed skills and requires project config', async () => {
