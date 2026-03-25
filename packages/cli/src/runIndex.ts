@@ -1,7 +1,6 @@
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import type { RunIndexEntryRecord, RunIndexRecord, RunManifestRecord } from '@finalrun/common';
-import { renderRunIndexHtml } from './reportIndexTemplate.js';
 
 export async function rebuildRunIndex(
   artifactsDir: string,
@@ -50,7 +49,6 @@ export async function rebuildRunIndex(
         ? path.posix.join(runId, manifest.run.firstFailure.screenshotPath)
         : undefined,
       paths: {
-        html: path.posix.join(runId, manifest.paths.html),
         runJson: path.posix.join(runId, manifest.paths.runJson),
         log: path.posix.join(runId, manifest.paths.log),
       },
@@ -67,11 +65,6 @@ export async function rebuildRunIndex(
   await fsp.writeFile(
     path.join(artifactsDir, 'runs.json'),
     JSON.stringify(index, null, 2),
-    'utf-8',
-  );
-  await fsp.writeFile(
-    path.join(artifactsDir, 'index.html'),
-    renderRunIndexHtml(index),
     'utf-8',
   );
   return index;

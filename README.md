@@ -8,6 +8,7 @@ TypeScript monorepo for the FinalRun local CLI. It detects devices, starts the m
 - `packages/device-node`: device detection, app install flows, gRPC driver setup, and platform-specific device management.
 - `packages/goal-executor`: AI-driven planning and action execution.
 - `packages/cli`: terminal entrypoint and local developer workflow.
+- `packages/report-web`: local report server and dynamic report UI.
 - `resources/`: local driver artifacts used at runtime.
   - `resources/android/app-debug.apk`
   - `resources/android/app-debug-androidTest.apk`
@@ -47,6 +48,8 @@ This compiles each package into its own `packages/*/dist` directory. After a suc
 node packages/cli/dist/bin/finalrun.js --help
 ```
 
+The report app is built separately into `packages/report-web/.next`.
+
 ## Clean
 
 Remove compiled output:
@@ -55,7 +58,7 @@ Remove compiled output:
 npm run clean
 ```
 
-`clean` removes `packages/*/dist` only. It does not remove TypeScript incremental build metadata.
+`clean` removes `packages/*/dist` and `packages/report-web/.next`. It does not remove TypeScript incremental build metadata.
 
 If `npm run build` reports success but a package is still missing `dist/index.js` or `packages/cli/dist/bin/finalrun.js`, force a rebuild instead of assuming the code is broken:
 
@@ -243,7 +246,7 @@ Each run writes a timestamped directory under `.finalrun/artifacts/`:
 
 ```text
 .finalrun/artifacts/
-  index.html
+  .server.json          # created after starting the local report server
   runs.json
   <run-id>/
     run.json
@@ -268,35 +271,31 @@ Each run writes a timestamped directory under `.finalrun/artifacts/`:
           001.jpg
 ```
 
-The root `index.html` is a run-history page backed by `runs.json`.
 Suite runs record compact suite metadata in both `run.json` and `runs.json`, and persist the authored suite manifest under `input/suite.snapshot.yaml` and `input/suite.json`.
 
-Each run still also includes the raw drill-down artifacts:
+Browsing now happens through the local report server. FinalRun no longer writes generated `index.html` files into `.finalrun/artifacts/`.
 
-```text
-.finalrun/artifacts/<run-id>/
-  index.html
-  run.json
-  summary.json
-  runner.log
-  tests/
-    <spec-id>/
-      result.json
-      steps/
-        001.json
-      screenshots/
-        001.jpg
-```
+The local report UI reads:
 
-The static HTML report uses a two-pane timeline/detail layout focused on per-step reasoning, screenshots, trace data, and raw artifact links. Authored YAML snapshots and other run inputs stay available through the artifact bundle instead of large inline report cards.
+- `.finalrun/artifacts/runs.json` for the workspace run-history page
+- `.finalrun/artifacts/<run-id>/run.json` for the per-run detail page
+- raw files under `.finalrun/artifacts/<run-id>/tests/` and `.finalrun/artifacts/<run-id>/input/` for screenshots, recordings, logs, and snapshots
+
+When the report server is running, FinalRun writes `.finalrun/artifacts/.server.json` so later CLI commands can reconnect to the same workspace-local server instead of starting a duplicate process.
 
 Useful report commands:
 
 ```sh
 npm run dev:cli -- runs
 npm run dev:cli -- runs --json
+npm run dev:cli -- start-server
+npm run dev:cli -- start-server --dev --port 4173
 npm run dev:cli -- report serve --port 4173
 ```
+
+- `start-server` is the primary command. It starts or reuses the local report server, prints the URL, and opens the browser.
+- `report serve` remains available as a compatibility alias.
+- after `finalrun test ...`, if a workspace report server is already running, the CLI prints and opens the exact run route automatically.
 
 ## Debug Loop
 

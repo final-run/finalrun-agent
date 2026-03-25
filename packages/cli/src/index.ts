@@ -9,4 +9,11 @@ export { TerminalRenderer } from './terminalRenderer.js';
 export { runCheck } from './checkRunner.js';
 export { runTests } from './testRunner.js';
 export { loadRunIndex, rebuildRunIndex, formatRunIndexForConsole } from './runIndex.js';
-export { serveReportArtifacts } from './reportServer.js';
+export {
+  buildRunReportUrl,
+  buildWorkspaceReportUrl,
+  openReportUrl,
+  readWorkspaceReportServerState,
+  resolveHealthyWorkspaceReportServer,
+  startOrReuseWorkspaceReportServer,
+} from './reportServerManager.js';

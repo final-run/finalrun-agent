@@ -215,6 +215,30 @@ test('finalrun test rejects mixing --suite with selectors before API key validat
   }
 });
 
+test('finalrun start-server reports a workspace error outside a FinalRun repo', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-workspace-'));
+
+  try {
+    const result = runCli(['start-server'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Could not find a \.finalrun workspace/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun report serve remains available as a compatibility alias', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-report-workspace-'));
+
+  try {
+    const result = runCli(['report', 'serve'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Could not find a \.finalrun workspace/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('finalrun runs --json prints the saved runs index', async () => {
   const rootDir = createTempWorkspace();
   const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
@@ -242,7 +266,6 @@ test('finalrun runs --json prints the saved runs index', async () => {
             failedCount: 1,
             stepCount: 1,
             paths: {
-              html: '2026-03-23T18-00-00.000Z-dev-android/index.html',
               runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
               log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
             },
@@ -265,7 +288,7 @@ test('finalrun runs --json prints the saved runs index', async () => {
   }
 });
 
-test('finalrun runs prints a console summary and root report path', async () => {
+test('finalrun runs prints a console summary and suggests starting the local report UI', async () => {
   const rootDir = createTempWorkspace();
   const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
   await fsp.mkdir(artifactsDir, { recursive: true });
@@ -292,7 +315,6 @@ test('finalrun runs prints a console summary and root report path', async () => 
             failedCount: 0,
             stepCount: 4,
             paths: {
-              html: '2026-03-23T18-00-00.000Z-dev-android/index.html',
               runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
               log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
             },
@@ -309,7 +331,7 @@ test('finalrun runs prints a console summary and root report path', async () => 
     const result = runCli(['runs'], rootDir);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /PASS/);
-    assert.match(result.stdout, /Open .*\.finalrun\/artifacts\/index\.html/);
+    assert.match(result.stdout, /finalrun start-server/);
     assert.equal(result.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

@@ -93,6 +93,16 @@ export interface RunTargetRecord {
   suitePath?: string;
 }
 
+export interface ReportServerStateRecord {
+  pid: number;
+  port: number;
+  url: string;
+  workspaceRoot: string;
+  artifactsDir: string;
+  mode: 'production' | 'development';
+  startedAt: string;
+}
+
 export interface RunSummaryRecord {
   runId: string;
   envName: string;
@@ -117,7 +127,6 @@ export interface RunSummaryRecord {
     resultFile: string;
   }>;
   runJsonFile?: string;
-  indexFile?: string;
 }
 
 export type FailurePhase = 'validation' | 'setup' | 'execution' | 'finalization';
@@ -252,7 +261,6 @@ export interface RunManifestRecord {
   };
   specs: RunManifestSpecRecord[];
   paths: {
-    html: string;
     runJson: string;
     summaryJson: string;
     log: string;
@@ -280,7 +288,6 @@ export interface RunIndexEntryRecord {
   firstFailure?: RunManifestFirstFailureRecord;
   previewScreenshotPath?: string;
   paths: {
-    html: string;
     runJson: string;
     log: string;
   };

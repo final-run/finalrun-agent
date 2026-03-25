@@ -8,7 +8,13 @@ import { Logger, LogLevel } from '@finalrun/common';
 import { CliEnv, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
-import { serveReportArtifacts } from '../src/reportServer.js';
+import {
+  buildRunReportUrl,
+  buildWorkspaceReportUrl,
+  openReportUrl,
+  resolveHealthyWorkspaceReportServer,
+  startOrReuseWorkspaceReportServer,
+} from '../src/reportServerManager.js';
 import {
   normalizeSpecSelectors,
   TEST_SELECTION_REQUIRED_ERROR,
@@ -78,7 +84,12 @@ program
       }
       console.log(formatRunIndexForConsole(index));
       if (index.runs.length > 0) {
-        console.log(`\nOpen ${path.join(workspace.artifactsDir, 'index.html')}`);
+        const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
+        if (activeServer) {
+          console.log(`\nReport server: ${buildWorkspaceReportUrl(activeServer.url)}`);
+        } else {
+          console.log('\nRun `finalrun start-server` to browse reports in the local web UI.');
+        }
       }
     });
   });
@@ -142,8 +153,31 @@ program
       });
 
       console.log(`Artifacts written to ${result.runDir}`);
-      console.log(`Run index available at ${result.runIndexPath}`);
+      console.log(`Runs index available at ${result.runIndexPath}`);
+      const workspace = await resolveWorkspace();
+      const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
+      if (activeServer) {
+        const runUrl = buildRunReportUrl(activeServer.url, result.runId);
+        console.log(`Run report available at ${runUrl}`);
+        await openUrlBestEffort(runUrl);
+      } else {
+        console.log('Start the local report UI with `finalrun start-server`.');
+      }
       process.exit(result.success ? 0 : 1);
+    });
+  });
+
+program
+  .command('start-server')
+  .description('Start or reuse the local FinalRun report server for this workspace')
+  .option('--port <n>', 'Preferred port to bind to', '4173')
+  .option('--dev', 'Run the report server in Next.js development mode', false)
+  .action(async (options: StartServerCommandOptions) => {
+    await runCommand(async () => {
+      await startWorkspaceReportServer({
+        preferredPort: parseInt(options.port, 10) || 4173,
+        dev: options.dev === true,
+      });
     });
   });
 
@@ -153,29 +187,15 @@ const reportCommand = program
 
 reportCommand
   .command('serve')
-  .description('Serve .finalrun/artifacts over a local static HTTP server')
+  .description('Compatibility alias for `finalrun start-server`')
   .option('--port <n>', 'Port to bind to', '4173')
+  .option('--dev', 'Run the report server in Next.js development mode', false)
   .action(async (options: ReportServeCommandOptions) => {
     await runCommand(async () => {
-      const workspace = await resolveWorkspace();
-      await ensureWorkspaceDirectories(workspace);
-      await loadRunIndex(workspace.artifactsDir);
-      const server = await serveReportArtifacts({
-        artifactsDir: workspace.artifactsDir,
-        port: parseInt(options.port, 10) || 4173,
+      await startWorkspaceReportServer({
+        preferredPort: parseInt(options.port, 10) || 4173,
+        dev: options.dev === true,
       });
-      console.log(`Serving FinalRun reports at ${server.url}`);
-      const handleSignal = async () => {
-        await server.close();
-        process.exit(0);
-      };
-      process.once('SIGINT', () => {
-        void handleSignal();
-      });
-      process.once('SIGTERM', () => {
-        void handleSignal();
-      });
-      await new Promise(() => {});
     });
   });
 
@@ -201,6 +221,12 @@ interface RunsCommandOptions {
 
 interface ReportServeCommandOptions {
   port: string;
+  dev?: boolean;
+}
+
+interface StartServerCommandOptions {
+  port: string;
+  dev?: boolean;
 }
 
 async function runCommand(run: () => Promise<void>): Promise<void> {
@@ -217,4 +243,32 @@ async function resolveCliEnvironment(requestedEnvName?: string) {
   const workspace = await resolveWorkspace();
   await ensureWorkspaceDirectories(workspace);
   return resolveEnvironmentFile(workspace.envDir, requestedEnvName);
+}
+
+async function startWorkspaceReportServer(params: {
+  preferredPort: number;
+  dev: boolean;
+}): Promise<void> {
+  const workspace = await resolveWorkspace();
+  await ensureWorkspaceDirectories(workspace);
+  await loadRunIndex(workspace.artifactsDir);
+  const server = await startOrReuseWorkspaceReportServer({
+    workspace,
+    requestedPort: params.preferredPort,
+    dev: params.dev,
+  });
+  const workspaceUrl = buildWorkspaceReportUrl(server.url);
+  console.log(
+    `${server.reused ? 'Reusing' : 'Started'} FinalRun report server at ${workspaceUrl}`,
+  );
+  await openUrlBestEffort(workspaceUrl);
+}
+
+async function openUrlBestEffort(url: string): Promise<void> {
+  try {
+    await openReportUrl(url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Could not open the browser automatically: ${message}`);
+  }
 }
