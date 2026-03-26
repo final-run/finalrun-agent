@@ -30,6 +30,7 @@ export interface AndroidCommandResult {
 }
 
 export const ANDROID_DRIVER_APP_PACKAGE_NAME = 'app.finalrun.android';
+export const ANDROID_DRIVER_TEST_PACKAGE_NAME = 'app.finalrun.android.test';
 
 const ANDROID_KEY_CODES: Record<string, string> = {
   enter: 'KEYCODE_ENTER',
@@ -311,11 +312,13 @@ export class AdbClient {
     adbPath: string,
     deviceSerial: string,
     packageName: string,
+    options?: { suppressErrorLog?: boolean },
   ): Promise<AndroidCommandResult> {
     return await this._runAdb(
       adbPath,
       ['-s', deviceSerial, 'shell', 'am', 'force-stop', packageName],
       `Failed to force-stop ${packageName} on ${deviceSerial}`,
+      { suppressErrorLog: options?.suppressErrorLog },
     );
   }
 

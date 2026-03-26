@@ -31,6 +31,8 @@ export class IOSSimulatorSetup {
     port: number,
     options?: {
       getStartupFailureMessage?: () => string | null;
+      getWaitStatusMessage?: () => string | null;
+      getTimeoutMessage?: () => string | null;
     },
   ) => Promise<boolean>;
   private _captureReadinessTimeoutMs: number;
@@ -46,6 +48,8 @@ export class IOSSimulatorSetup {
       port: number,
       options?: {
         getStartupFailureMessage?: () => string | null;
+        getWaitStatusMessage?: () => string | null;
+        getTimeoutMessage?: () => string | null;
       },
     ) => Promise<boolean>;
     captureReadinessTimeoutMs: number;
@@ -66,72 +70,90 @@ export class IOSSimulatorSetup {
     deviceInfo: DeviceInfo,
     grpcClient: GrpcDriverClient,
   ): Promise<{ deviceId: string }> {
-    await this._filePathUtil.ensureIOSAppsAvailable();
-
     const deviceId = deviceInfo.id;
     if (!deviceId) {
       throw new Error('iOS simulator ID is required for driver setup.');
     }
 
-    const driverPath = await this._filePathUtil.getIOSDriverAppPath();
-    if (!driverPath) {
-      throw new Error('iOS driver app not found.');
-    }
+    let driverStarted = false;
 
-    Logger.i(`Installing iOS driver app on ${deviceId}...`);
-    const installed = await this._simctlClient.installApp(deviceId, driverPath);
-    if (!installed) {
-      throw new Error(`Failed to install iOS driver app: ${driverPath}`);
-    }
+    try {
+      await this._filePathUtil.ensureIOSAppsAvailable();
 
-    await this._killStaleHostProcessesOnPortFn(DEFAULT_GRPC_PORT_START);
+      const driverPath = await this._filePathUtil.getIOSDriverAppPath();
+      if (!driverPath) {
+        throw new Error('iOS driver app not found.');
+      }
 
-    Logger.i(`Terminating existing iOS driver app on ${deviceId}...`);
-    await this._simctlClient.terminateApp(deviceId, IOS_DRIVER_RUNNER_BUNDLE_ID);
+      Logger.i(`Installing iOS driver app on ${deviceId}...`);
+      const installed = await this._simctlClient.installApp(deviceId, driverPath);
+      if (!installed) {
+        throw new Error(`Failed to install iOS driver app: ${driverPath}`);
+      }
 
-    Logger.i('Starting iOS driver app...');
-    const driverProcess = this._simctlClient.startDriver(
-      deviceId,
-      DEFAULT_GRPC_PORT_START,
-    );
-    const startupState = this._trackIOSDriverProcess(deviceId, driverProcess);
+      await this._killStaleHostProcessesOnPortFn(DEFAULT_GRPC_PORT_START);
 
-    Logger.i(
-      `Connecting gRPC to iOS simulator at 127.0.0.1:${DEFAULT_GRPC_PORT_START}...`,
-    );
-    const connected = await this._connectWithPolling(
-      grpcClient,
-      '127.0.0.1',
-      DEFAULT_GRPC_PORT_START,
-      {
-        getStartupFailureMessage: () => startupState.failureMessage,
-      },
-    );
-    if (!connected) {
-      throw new Error('Failed to connect to iOS simulator via gRPC after 120s - driver did not start');
-    }
+      Logger.i(`Terminating existing iOS driver app on ${deviceId}...`);
+      await this._simctlClient.terminateApp(deviceId, IOS_DRIVER_RUNNER_BUNDLE_ID);
 
-    const captureReady = await waitForDriverCaptureReadiness(grpcClient, {
-      timeoutMs: this._captureReadinessTimeoutMs,
-      delayMs: this._captureReadinessDelayMs,
-    });
-    if (!captureReady.ready) {
+      Logger.i('Starting iOS driver app...');
+      const driverProcess = this._simctlClient.startDriver(
+        deviceId,
+        DEFAULT_GRPC_PORT_START,
+      );
+      driverStarted = true;
+      const startupState = this._trackIOSDriverProcess(deviceId, driverProcess);
+
+      Logger.i(
+        `Waiting for iOS driver gRPC at 127.0.0.1:${DEFAULT_GRPC_PORT_START}...`,
+      );
+      const connected = await this._connectWithPolling(
+        grpcClient,
+        '127.0.0.1',
+        DEFAULT_GRPC_PORT_START,
+        {
+          getStartupFailureMessage: () => startupState.failureMessage,
+          getWaitStatusMessage: () => this._formatWaitStatus(startupState),
+        },
+      );
+      if (!connected) {
+        throw new Error('Failed to connect to iOS simulator via gRPC after 120s - driver did not start');
+      }
+
+      const captureReady = await waitForDriverCaptureReadiness(grpcClient, {
+        timeoutMs: this._captureReadinessTimeoutMs,
+        delayMs: this._captureReadinessDelayMs,
+      });
+      if (!captureReady.ready) {
+        if (startupState.failureMessage) {
+          throw new Error(startupState.failureMessage);
+        }
+        throw new Error(
+          `iOS driver started and gRPC connected, but screenshot capture never became ready after ${this._captureReadinessTimeoutMs / 1000}s: ${captureReady.message ?? 'unknown capture readiness error'}`,
+        );
+      }
       if (startupState.failureMessage) {
         throw new Error(startupState.failureMessage);
       }
-      throw new Error(
-        `iOS driver started and gRPC connected, but screenshot capture never became ready after ${this._captureReadinessTimeoutMs / 1000}s: ${captureReady.message ?? 'unknown capture readiness error'}`,
-      );
-    }
-    if (startupState.failureMessage) {
-      throw new Error(startupState.failureMessage);
-    }
 
-    await this._updateIOSAppIds(deviceId, grpcClient, { throwOnFailure: true });
+      await this._updateIOSAppIds(deviceId, grpcClient, { throwOnFailure: true });
 
-    startupState.setupComplete = true;
-    Logger.i('iOS gRPC connection established successfully');
-    return { deviceId };
+      startupState.setupComplete = true;
+      Logger.i('iOS gRPC connection established successfully');
+      return { deviceId };
+    } catch (error) {
+      if (driverStarted) {
+        try {
+          await this._simctlClient.terminateApp(deviceId, IOS_DRIVER_RUNNER_BUNDLE_ID);
+        } catch (cleanupError) {
+          Logger.w(
+            `Failed to terminate iOS driver app during rollback for ${deviceId}:`,
+            cleanupError,
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   private _trackIOSDriverProcess(
@@ -235,5 +257,15 @@ export class IOSSimulatorSetup {
       throw new Error(message);
     }
     Logger.w(message);
+  }
+
+  private _formatWaitStatus(state: DriverStartupState): string {
+    const processState = state.failureMessage
+      ? 'process reported a startup failure'
+      : 'process running';
+    const lastLog = state.recentLogs.at(-1);
+    return lastLog
+      ? `${processState}; last log: ${lastLog}`
+      : `${processState}; no driver output yet`;
   }
 }

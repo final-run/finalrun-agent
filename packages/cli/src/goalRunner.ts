@@ -20,6 +20,7 @@ import type { GoalResult } from '@finalrun/goal-executor';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
   type DeviceSelectionIO,
+  printInventorySummary,
   printDiagnosticsFailure,
   promptForDeviceSelection,
 } from './deviceInventoryPresenter.js';
@@ -139,6 +140,17 @@ export async function prepareGoalSession(
     let inventory = await deviceNode.detectInventory(adbPath);
     let scopedEntries = filterInventoryEntries(inventory.entries, config.platform);
     let scopedDiagnostics = filterInventoryDiagnostics(inventory.diagnostics, config.platform);
+    const selectableEntries = getSelectableEntries(scopedEntries);
+    if (selectableEntries.length === 1) {
+      Logger.i(buildAutoSelectionSummary(scopedEntries, selectableEntries[0]!));
+    } else if (selectableEntries.length === 0) {
+      printInventorySummary({
+        heading: 'Detected local targets',
+        entries: scopedEntries,
+        selectableEntries,
+        output: selectionIO.output,
+      });
+    }
 
     let selectedEntry = await chooseInventoryEntry({
       entries: scopedEntries,
@@ -194,6 +206,7 @@ export async function prepareGoalSession(
 
     Logger.i('Setting up device...');
     const device = await deviceNode.setUpDevice(deviceInfo);
+    Logger.i('Driver connected.');
 
     if (config.appOverridePath) {
       Logger.i(`Installing app override: ${config.appOverridePath}`);
@@ -207,7 +220,9 @@ export async function prepareGoalSession(
           config.appOverridePath,
         );
         if (!installed) {
-          throw new Error(`Failed to install Android app override: ${config.appOverridePath}`);
+          throw new Error(
+            `Failed to install Android app override after driver connection: ${config.appOverridePath}`,
+          );
         }
       } else {
         if (!deviceInfo.id) {
@@ -218,7 +233,9 @@ export async function prepareGoalSession(
           config.appOverridePath,
         );
         if (!installed) {
-          throw new Error(`Failed to install iOS app override: ${config.appOverridePath}`);
+          throw new Error(
+            `Failed to install iOS app override after driver connection: ${config.appOverridePath}`,
+          );
         }
       }
     }
@@ -457,26 +474,27 @@ async function chooseInventoryEntry(params: {
   requestedPlatform?: string,
   selectionIO: DeviceSelectionIO;
 }): Promise<DeviceInventoryEntry> {
-  const runnableEntries = params.entries.filter((entry) => entry.runnable);
-  if (runnableEntries.length === 1) {
-    return runnableEntries[0]!;
+  const selectableEntries = getSelectableEntries(params.entries);
+  if (selectableEntries.length === 1) {
+    return selectableEntries[0]!;
   }
+
+  const runnableEntries = params.entries.filter((entry) => entry.runnable);
   if (runnableEntries.length > 1) {
     return await promptForDeviceSelection({
       heading: 'Select a device',
-      entries: runnableEntries,
+      entries: params.entries,
+      selectableEntries: runnableEntries,
       io: params.selectionIO,
     });
   }
 
   const startableEntries = params.entries.filter((entry) => entry.startable);
-  if (startableEntries.length === 1) {
-    return startableEntries[0]!;
-  }
   if (startableEntries.length > 1) {
     return await promptForDeviceSelection({
       heading: 'Select a device to start',
-      entries: startableEntries,
+      entries: params.entries,
+      selectableEntries: startableEntries,
       io: params.selectionIO,
     });
   }
@@ -487,24 +505,21 @@ async function chooseInventoryEntry(params: {
       diagnostics: params.diagnostics,
       output: params.selectionIO.output,
     });
-  } else {
-    const unavailableEntries = params.entries.filter(
-      (entry) => !entry.runnable && !entry.startable,
-    );
-    if (unavailableEntries.length > 0) {
-      params.selectionIO.output.write('\nDetected targets are not ready to run:\n');
-      unavailableEntries.forEach((entry, index) => {
-        params.selectionIO.output.write(
-          `  ${index + 1}. ${entry.displayName} (${entry.state})\n`,
-        );
-      });
-    }
   }
 
   throw new DevicePreparationError(
     buildNoUsableTargetMessage(params.requestedPlatform),
     params.diagnostics,
   );
+}
+
+function getSelectableEntries(entries: DeviceInventoryEntry[]): DeviceInventoryEntry[] {
+  const runnableEntries = entries.filter((entry) => entry.runnable);
+  if (runnableEntries.length > 0) {
+    return runnableEntries;
+  }
+
+  return entries.filter((entry) => entry.startable);
 }
 
 function filterInventoryEntries(
@@ -551,4 +566,25 @@ function buildNoUsableTargetMessage(requestedPlatform?: string): string {
     return `No runnable ${requestedPlatform.toLowerCase()} devices or startable targets were found.`;
   }
   return 'No runnable devices or startable targets were found.';
+}
+
+function buildAutoSelectionSummary(
+  entries: DeviceInventoryEntry[],
+  selectedEntry: DeviceInventoryEntry,
+): string {
+  const totalTargets = entries.length;
+  const androidCount = entries.filter((entry) => entry.platform === PLATFORM_ANDROID).length;
+  const iosCount = entries.filter((entry) => entry.platform === 'ios').length;
+  const platformCounts = [
+    androidCount > 0 ? `${androidCount} Android` : null,
+    iosCount > 0 ? `${iosCount} iOS` : null,
+  ].filter((value): value is string => value !== null);
+  const platformSummary =
+    platformCounts.length > 0 ? ` (${platformCounts.join(', ')})` : '';
+  const targetKind = selectedEntry.runnable ? 'ready target' : 'startable target';
+
+  return (
+    `Detected ${totalTargets} target${totalTargets === 1 ? '' : 's'}${platformSummary}; ` +
+    `1 ${targetKind}: ${selectedEntry.displayName}`
+  );
 }

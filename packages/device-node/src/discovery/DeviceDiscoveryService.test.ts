@@ -73,6 +73,42 @@ test('DeviceDiscoveryService detects runnable, offline, and unauthorized Android
   assert.equal(unauthorizedAndroid?.displayName, 'Pixel 7 - R52N30');
 });
 
+test('DeviceDiscoveryService keeps unexpected Android adb states as unavailable targets', async () => {
+  const discoveryService = new DeviceDiscoveryService({
+    execFileFn: async (file, args) => {
+      if (file === '/platform-tools/adb' && args[0] === 'devices') {
+        return {
+          stdout: [
+            'List of devices attached',
+            'R9CN30 no permissions (user in plugdev group; are your udev rules wrong?) usb:1-1 model:Pixel_7',
+            '',
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      if (file === 'which' && args[0] === 'emulator') {
+        return { stdout: '/usr/bin/emulator\n', stderr: '' };
+      }
+      if (file === '/usr/bin/emulator' && args[0] === '-list-avds') {
+        return { stdout: '', stderr: '' };
+      }
+
+      throw new Error(`Unexpected command: ${file} ${args.join(' ')}`);
+    },
+  });
+
+  const inventory = await discoveryService.detectInventory('/platform-tools/adb');
+  const unavailableAndroid = inventory.entries.find((entry) => entry.state === 'unavailable');
+
+  assert.equal(unavailableAndroid?.displayName, 'Pixel 7 - R9CN30');
+  assert.equal(
+    unavailableAndroid?.stateDetail,
+    'no permissions (user in plugdev group; are your udev rules wrong?)',
+  );
+  assert.equal(unavailableAndroid?.runnable, false);
+  assert.equal(unavailableAndroid?.startable, false);
+});
+
 test('DeviceDiscoveryService discovers installed Android AVDs and skips already-running emulators', async () => {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'finalrun-avd-discovery-'));
   const sdkDir = path.join(tempDir, 'sdk');
@@ -101,6 +137,7 @@ test('DeviceDiscoveryService discovers installed Android AVDs and skips already-
 
   const discoveryService = new DeviceDiscoveryService({
     env: {
+      NODE_ENV: 'test',
       ANDROID_HOME: sdkDir,
       ANDROID_AVD_HOME: avdHome,
     },
@@ -163,7 +200,7 @@ test('DeviceDiscoveryService discovers installed Android AVDs and skips already-
   }
 });
 
-test('DeviceDiscoveryService keeps booted and shutdown iOS simulators while ignoring unavailable and non-iOS runtimes', async () => {
+test('DeviceDiscoveryService keeps booted, shutdown, and unavailable iOS simulators while ignoring non-iOS runtimes', async () => {
   const discoveryService = new DeviceDiscoveryService({
     execFileFn: async (file, args) => {
       if (file === '/platform-tools/adb' && args[0] === 'devices') {
@@ -219,9 +256,12 @@ test('DeviceDiscoveryService keeps booted and shutdown iOS simulators while igno
   const inventory = await discoveryService.detectInventory('/platform-tools/adb');
   const iosEntries = inventory.entries.filter((entry) => entry.platform === 'ios');
 
-  assert.equal(iosEntries.length, 2);
+  assert.equal(iosEntries.length, 3);
   assert.equal(iosEntries[0]?.displayName, 'iPhone 15 Pro - iOS 17.5 - BOOTED-DEVICE-1');
   assert.equal(iosEntries[1]?.displayName, 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1');
+  assert.equal(iosEntries[2]?.displayName, 'Unavailable Simulator - iOS 18.0 - UNAVAILABLE-DEVICE');
+  assert.equal(iosEntries[2]?.state, 'unavailable');
+  assert.equal(iosEntries[2]?.stateDetail, 'simulator unavailable');
 });
 
 test('DeviceDiscoveryService startTarget boots a shutdown iOS simulator and waits until it is runnable', async () => {
@@ -231,6 +271,7 @@ test('DeviceDiscoveryService startTarget boots a shutdown iOS simulator and wait
     platform: 'ios',
     targetKind: 'ios-simulator',
     state: 'shutdown',
+    stateDetail: null,
     runnable: false,
     startable: true,
     displayName: 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1',
@@ -303,6 +344,7 @@ test('DeviceDiscoveryService startTarget launches an Android emulator and waits 
 
   const discoveryService = new DeviceDiscoveryService({
     env: {
+      NODE_ENV: 'test',
       ANDROID_HOME: sdkDir,
     },
     delayFn: async () => {},

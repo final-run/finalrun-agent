@@ -24,13 +24,17 @@ interface EntrySection {
 export async function promptForDeviceSelection(params: {
   heading: string;
   entries: DeviceInventoryEntry[];
+  selectableEntries?: DeviceInventoryEntry[];
   io: DeviceSelectionIO;
 }): Promise<DeviceInventoryEntry> {
   if (!params.io.isTTY) {
     throw new Error('Interactive device selection requires a TTY.');
   }
 
-  const rendered = formatDeviceSelectionList(params.entries);
+  const rendered = formatDeviceSelectionList(
+    params.entries,
+    params.selectableEntries ?? params.entries,
+  );
   params.io.output.write(`\n${params.heading}\n`);
   params.io.output.write(`${rendered.text}\n`);
 
@@ -57,7 +61,22 @@ export async function promptForDeviceSelection(params: {
 export function formatDeviceSelectionList(entries: DeviceInventoryEntry[]): {
   text: string;
   numberedEntries: NumberedEntry[];
+}
+export function formatDeviceSelectionList(
+  entries: DeviceInventoryEntry[],
+  selectableEntries: DeviceInventoryEntry[],
+): {
+  text: string;
+  numberedEntries: NumberedEntry[];
+}
+export function formatDeviceSelectionList(
+  entries: DeviceInventoryEntry[],
+  selectableEntries: DeviceInventoryEntry[] = entries,
+): {
+  text: string;
+  numberedEntries: NumberedEntry[];
 } {
+  const selectableIds = new Set(selectableEntries.map((entry) => entry.selectionId));
   const sections = buildEntrySections(entries);
   const lines: string[] = [];
   const numberedEntries: NumberedEntry[] = [];
@@ -69,9 +88,13 @@ export function formatDeviceSelectionList(entries: DeviceInventoryEntry[]): {
     }
     lines.push(section.title);
     for (const entry of section.entries) {
-      numberedEntries.push({ entry, index });
-      lines.push(`  ${index}. ${entry.displayName}`);
-      index += 1;
+      if (selectableIds.has(entry.selectionId)) {
+        numberedEntries.push({ entry, index });
+        lines.push(`  ${index}. ${entry.displayName} (${formatEntryState(entry)})`);
+        index += 1;
+      } else {
+        lines.push(`  - ${entry.displayName} (${formatEntryState(entry)})`);
+      }
     }
   }
 
@@ -79,6 +102,21 @@ export function formatDeviceSelectionList(entries: DeviceInventoryEntry[]): {
     text: lines.join('\n'),
     numberedEntries,
   };
+}
+
+export function printInventorySummary(params: {
+  heading: string;
+  entries: DeviceInventoryEntry[];
+  selectableEntries: DeviceInventoryEntry[];
+  output: NodeJS.WritableStream;
+}): void {
+  const rendered = formatDeviceSelectionList(params.entries, params.selectableEntries);
+  if (!rendered.text) {
+    return;
+  }
+
+  params.output.write(`\n${params.heading}\n`);
+  params.output.write(`${rendered.text}\n`);
 }
 
 export function formatDiagnosticsForOutput(diagnostics: DeviceInventoryDiagnostic[]): string {
@@ -108,33 +146,28 @@ export function printDiagnosticsFailure(params: {
 }
 
 function buildEntrySections(entries: DeviceInventoryEntry[]): EntrySection[] {
-  const runnableAndroid = entries.filter(
-    (entry) => entry.runnable && entry.platform === 'android',
-  );
-  const runnableIOS = entries.filter(
-    (entry) => entry.runnable && entry.platform === 'ios',
-  );
-  const startableAndroid = entries.filter(
-    (entry) => entry.startable && entry.platform === 'android',
-  );
-  const startableIOS = entries.filter(
-    (entry) => entry.startable && entry.platform === 'ios',
-  );
+  const readyEntries = entries.filter((entry) => entry.runnable);
+  const startableEntries = entries.filter((entry) => !entry.runnable && entry.startable);
+  const unavailableEntries = entries.filter((entry) => !entry.runnable && !entry.startable);
 
   const sections: EntrySection[] = [];
-  if (runnableAndroid.length > 0) {
-    sections.push({ title: 'Runnable Android Devices', entries: runnableAndroid });
+  if (readyEntries.length > 0) {
+    sections.push({ title: 'Ready Targets', entries: readyEntries });
   }
-  if (runnableIOS.length > 0) {
-    sections.push({ title: 'Runnable iOS Simulators', entries: runnableIOS });
+  if (startableEntries.length > 0) {
+    sections.push({ title: 'Available to Start', entries: startableEntries });
   }
-  if (runnableAndroid.length === 0 && runnableIOS.length === 0 && startableAndroid.length > 0) {
-    sections.push({ title: 'Startable Android Emulators', entries: startableAndroid });
-  }
-  if (runnableAndroid.length === 0 && runnableIOS.length === 0 && startableIOS.length > 0) {
-    sections.push({ title: 'Startable iOS Simulators', entries: startableIOS });
+  if (unavailableEntries.length > 0) {
+    sections.push({ title: 'Unavailable Targets', entries: unavailableEntries });
   }
   return sections;
+}
+
+function formatEntryState(entry: DeviceInventoryEntry): string {
+  if (entry.stateDetail && entry.stateDetail.trim().length > 0) {
+    return `${entry.state}: ${entry.stateDetail.trim()}`;
+  }
+  return entry.state;
 }
 
 function formatTranscriptBlock(transcript: CommandTranscript): string {
