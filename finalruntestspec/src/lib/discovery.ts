@@ -58,7 +58,7 @@ export interface PlanningDiscoveryContext {
   /** Relative paths to relevant existing tests and suites. */
   existingCoverage: {
     tests: string[];
-    testsuite: string[];
+    suites: string[];
   };
   /** All sources (test, spec, code) found that match the planning request. */
   sources: DiscoverySource[];
@@ -74,7 +74,7 @@ export interface BuildPlanningDiscoveryOptions {
   featureName: string;
   /** The natural language request from the user. */
   request: string;
-  /** The types of artifacts requested (e.g., 'tests', 'testsuite'). */
+  /** The types of artifacts requested (e.g., 'tests', 'suites'). */
   requestedOutputs: readonly OutputType[];
   /** Optional list of specific files to include as context. */
   contextFiles?: readonly string[];
@@ -103,13 +103,13 @@ export async function buildPlanningDiscoveryContext(
   const workspaceTestSources = await scanWorkspaceDirectory(
     options.cwd,
     workspace.testsDir,
-    'workspace-test',
+    'workspace-tests',
     terms,
   );
-  const workspaceTestsuiteSources = await scanWorkspaceDirectory(
+  const workspaceSuitesSources = await scanWorkspaceDirectory(
     options.cwd,
     workspace.suitesDir,
-    'workspace-testsuite',
+    'workspace-suites',
     terms,
   );
 
@@ -125,7 +125,7 @@ export async function buildPlanningDiscoveryContext(
   const sources = [
     ...providedSources,
     ...workspaceTestSources,
-    ...workspaceTestsuiteSources,
+    ...workspaceSuitesSources,
     ...specSources,
     ...codeSources,
   ];
@@ -133,7 +133,7 @@ export async function buildPlanningDiscoveryContext(
   return {
     existingCoverage: {
       tests: workspaceTestSources.map((source) => source.path),
-      testsuite: workspaceTestsuiteSources.map((source) => source.path),
+      suites: workspaceSuitesSources.map((source) => source.path),
     },
     sources,
   };
@@ -185,7 +185,7 @@ async function loadProvidedSources(
 async function scanWorkspaceDirectory(
   cwd: string,
   directoryPath: string,
-  sourceType: 'workspace-test' | 'workspace-testsuite',
+  sourceType: 'workspace-tests' | 'workspace-suites',
   terms: readonly string[],
 ): Promise<DiscoverySource[]> {
   const files = await collectFiles(directoryPath, {

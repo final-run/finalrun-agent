@@ -48,7 +48,7 @@ export interface PlanCommandOptions {
   cwd?: string;
   /** The natural language request for what to test. */
   request?: string;
-  /** Comma-separated output types: 'tests' or 'testsuite'. */
+  /** Comma-separated output types: 'tests' or 'suites'. */
   output?: string;
   /** Additional files to include as planning context. */
   contextFile?: string[];
@@ -158,7 +158,7 @@ export function registerPlanCommand(program: Command): void {
   program
     .command('plan <feature-name> [request...]')
     .description('Generate a planning-only test campaign and draft a structured test plan')
-    .option('-o, --output <types>', 'Comma-separated outputs to plan: tests, testsuite', 'tests')
+    .option('-o, --output <types>', 'Comma-separated outputs to plan: tests, suites', 'tests')
     .option('--context-file <paths...>', 'Additional files to inspect while building the test plan')
     .action(async (
       featureName: string,
@@ -233,7 +233,7 @@ Return JSON only with this shape:
     {
       "title": string,
       "category": string,
-      "outputType": "tests" | "testsuite",
+      "outputType": "tests" | "suites",
       "action": "update" | "create",
       "targetPath": string,
       "reason": string
@@ -245,7 +245,7 @@ Rules:
 - Use the discovered workspace coverage to decide whether to update existing files or create new ones.
 - Prefer updating existing files only when the existing coverage clearly matches the request.
 - New test files MUST live under .finalrun/tests/<feature-folder>/ and MUST use '.yml' or '.yaml' extension.
-- Testsuite files MUST live under .finalrun/suites/.
+- Suite files MUST live under .finalrun/suites/.
 - Scenario titles must be user-facing and concrete.
 - Scenario reason MUST include a brief justification for the idempotency strategy (e.g., how the setup flow will clean up data from prior runs).
 - Do not invent unsupported output types.
@@ -293,7 +293,7 @@ function sanitizeScenarios(input: {
   requestedOutputs: readonly OutputType[];
   existingCoverage: {
     tests: string[];
-    testsuite: string[];
+    suites: string[];
   };
   draftScenarios: z.infer<typeof planDraftSchema>['scenarios'];
 }): PlanScenario[] {
@@ -307,7 +307,7 @@ function sanitizeScenarios(input: {
 
     const existingPaths = rawScenario.outputType === 'tests'
       ? input.existingCoverage.tests
-      : input.existingCoverage.testsuite;
+      : input.existingCoverage.suites;
     
     const defaultTargetDecision = inferDefaultTargetPath({
       featureName: input.featureName,
@@ -371,7 +371,7 @@ function sanitizeScenarios(input: {
 
     const existingPaths = requestedOutput === 'tests'
       ? input.existingCoverage.tests
-      : input.existingCoverage.testsuite;
+      : input.existingCoverage.suites;
     
     const fallbackTarget = existingPaths.length === 1
       ? existingPaths[0]
@@ -398,7 +398,7 @@ function sanitizeScenarios(input: {
       title: requestedOutput === 'tests'
         ? `${input.featureName} coverage`
         : `${input.featureName} suite`,
-      category: requestedOutput === 'tests' ? 'general' : 'testsuite',
+      category: requestedOutput === 'tests' ? 'general' : 'suites',
       outputType: requestedOutput,
       action: existingPaths.length === 1 ? 'update' : 'create',
       targetPath: existingPaths.length === 1 ? existingPaths[0] : ensureUniquePath(fallbackTarget, usedPaths),
@@ -407,7 +407,7 @@ function sanitizeScenarios(input: {
           'Fallback scenario created because no explicit test artifact was returned.',
           fallbackDecision?.note ?? null,
         )
-        : 'Fallback testsuite artifact created because no explicit suite artifact was returned.',
+        : 'Fallback suites artifact created because no explicit suite artifact was returned.',
     }));
   }
 
@@ -464,14 +464,14 @@ function buildImpactSummary(impact: ReturnType<typeof buildImpactFromScenarios>)
   if (impact.update.tests.length > 0) {
     lines.push(`Update existing test files: ${impact.update.tests.join(', ')}`);
   }
-  if (impact.update.testsuite.length > 0) {
-    lines.push(`Update existing testsuite files: ${impact.update.testsuite.join(', ')}`);
+  if (impact.update.suites.length > 0) {
+    lines.push(`Update existing suite files: ${impact.update.suites.join(', ')}`);
   }
   if (impact.create.tests.length > 0) {
     lines.push(`Create new test files: ${impact.create.tests.join(', ')}`);
   }
-  if (impact.create.testsuite.length > 0) {
-    lines.push(`Create new testsuite files: ${impact.create.testsuite.join(', ')}`);
+  if (impact.create.suites.length > 0) {
+    lines.push(`Create new suite files: ${impact.create.suites.join(', ')}`);
   }
 
   return lines.length > 0
@@ -484,14 +484,14 @@ function buildImpactSummary(impact: ReturnType<typeof buildImpactFromScenarios>)
  */
 function buildExistingCoverageSummary(existingCoverage: {
   tests: string[];
-  testsuite: string[];
+  suites: string[];
 }): string[] {
   const lines: string[] = [];
   if (existingCoverage.tests.length > 0) {
     lines.push(`Relevant existing tests: ${existingCoverage.tests.join(', ')}`);
   }
-  if (existingCoverage.testsuite.length > 0) {
-    lines.push(`Relevant existing suites: ${existingCoverage.testsuite.join(', ')}`);
+  if (existingCoverage.suites.length > 0) {
+    lines.push(`Relevant existing suites: ${existingCoverage.suites.join(', ')}`);
   }
 
   return lines;

@@ -84,7 +84,7 @@ The app SHALL let users sign in with email and password.
   await runPlanCommand('login-flow', {
     cwd: repoRoot,
     request: 'Create coverage for email/password login and invalid password handling.',
-    output: 'tests,testsuite',
+    output: 'tests,suite',
   });
 
   const planPath = path.join(repoRoot, 'frtestspec', 'changes', 'login-flow', 'test-plan.md');
@@ -94,10 +94,10 @@ The app SHALL let users sign in with email and password.
 
   assert.ok(await exists(instructionsPath), 'plan-instructions.md should be created');
   assert.equal(await exists(path.join(repoRoot, 'frtestspec', 'changes', 'login-flow', 'ui-tests')), false);
-  assert.deepEqual(plan.metadata.requestedOutputs, ['tests', 'testsuite']);
+  assert.deepEqual(plan.metadata.requestedOutputs, ['tests', 'suites']);
   assert.equal(plan.metadata.approval.status, 'draft');
   assert.ok(plan.metadata.existingCoverage.tests.includes('.finalrun/tests/auth/login.yaml'));
-  assert.ok(plan.metadata.existingCoverage.testsuite.includes('.finalrun/suites/login-suite.yaml'));
+  assert.ok(plan.metadata.existingCoverage.suites.includes('.finalrun/suites/login-suite.yaml'));
   assert.ok(plan.metadata.sources.some((source) => source.type === 'spec'));
   assert.match(planContent, /## Why/);
   assert.match(planContent, /## What Changes/);
@@ -141,7 +141,7 @@ assertions: []
   await runPlanCommand('login-flow', {
     cwd: repoRoot,
     request: 'Refresh login coverage and add a suite.',
-    output: 'tests,testsuite',
+    output: 'tests,suite',
   });
 
   await assert.rejects(

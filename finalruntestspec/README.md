@@ -113,7 +113,7 @@ frtestspec generate login-flow
 Output locations:
 
 - tests -> `.finalrun/tests/`
-- testsuites -> `.finalrun/suites/`
+- suites -> `.finalrun/suites/`
 
 If the approved plan marks an existing file as impacted, generation updates that file. If the approved plan marks coverage as new, generation creates a new file.
 
@@ -200,4 +200,4 @@ npm test
 ```
 
 > [!NOTE]
-> **Migration from `.finalrun/testsuite/`**: This CLI now looks for test suites in `.finalrun/suites/`. If you have existing suites, please move them to the new directory.
+> **Standardized Naming**: Information internal to this CLI has been standardized to use `suite` and `suites` instead of `testsuite`. The CLI looks for suites in `.finalrun/suites/`.

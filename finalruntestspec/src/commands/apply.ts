@@ -60,7 +60,7 @@ export async function runApplyCommand(
     `# Instructions: Generate FinalRun Tests for '${featureName}'`,
     '',
     '## Objective',
-    'Generate the approved FinalRun test and testsuite artifacts.',
+    'Generate the approved FinalRun test and suite artifacts.',
     '',
     '## Prompt Context',
     '### System Instruction guidelines:',
@@ -155,7 +155,7 @@ Rules for test files under .finalrun/tests/:
   assertions:
     - <string>
 
-Rules for testsuite files under .finalrun/suites/:
+Rules for suite files under .finalrun/suites/:
 - Use this exact YAML shape:
   name: <snake_case_name>
   description: <One or two sentences describes what the suite covers.>

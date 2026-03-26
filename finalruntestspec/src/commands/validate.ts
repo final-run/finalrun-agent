@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import yaml from 'yaml';
 import { loadTestPlan } from '../lib/test-plan.js';
 import { pathExists, resolveChangePaths, uniqueStrings } from '../lib/workspace.js';
-import { testScenarioSchema, testsuiteSchema } from '../schemas/grammar.js';
+import { testScenarioSchema, suiteSchema } from '../schemas/grammar.js';
 
 /**
  * Options for the validate command.
@@ -70,7 +70,7 @@ export async function runValidateCommand(
           continue;
         }
       } else if (relativeTargetPath.startsWith('.finalrun/suites/')) {
-        const result = testsuiteSchema.safeParse(parsed);
+        const result = suiteSchema.safeParse(parsed);
         if (!result.success) {
           validationErrors.push(...result.error.errors.map((error) =>
             `${relativeTargetPath}: [${error.path.join('.')}] ${error.message}`,
@@ -82,7 +82,7 @@ export async function runValidateCommand(
         for (const referencedTestPath of result.data.tests) {
           if (!referencedTestPath.startsWith('.finalrun/tests/')) {
             validationErrors.push(
-              `${relativeTargetPath}: testsuite entries must stay inside .finalrun/tests/ (${referencedTestPath})`,
+              `${relativeTargetPath}: suite entries must stay inside .finalrun/tests/ (${referencedTestPath})`,
             );
             continue;
           }

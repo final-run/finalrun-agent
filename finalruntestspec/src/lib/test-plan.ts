@@ -12,7 +12,7 @@ import {
 /**
  * Supported output types for a testing campaign.
  */
-export const outputTypeSchema = z.enum(['tests', 'testsuite']);
+export const outputTypeSchema = z.enum(['tests', 'suites']);
 export type OutputType = z.infer<typeof outputTypeSchema>;
 
 /**
@@ -20,7 +20,7 @@ export type OutputType = z.infer<typeof outputTypeSchema>;
  */
 export const planSourceSchema = z.object({
   /** Type of the source (e.g., 'spec', 'code'). */
-  type: z.enum(['workspace-test', 'workspace-testsuite', 'spec', 'code', 'provided-file']),
+  type: z.enum(['workspace-tests', 'workspace-suites', 'spec', 'code', 'provided-file']),
   /** Workspace-relative path to the source file. */
   path: z.string(),
   /** Explanation of why this source is considered relevant. */
@@ -34,7 +34,7 @@ export type PlanSource = z.infer<typeof planSourceSchema>;
  */
 const planPathListSchema = z.object({
   tests: z.array(z.string()),
-  testsuite: z.array(z.string()),
+  suites: z.array(z.string()),
 }).strict();
 
 /**
@@ -115,11 +115,11 @@ export interface ParsedTestPlan {
 export interface PlanImpact {
   update: {
     tests: string[];
-    testsuite: string[];
+    suites: string[];
   };
   create: {
     tests: string[];
-    testsuite: string[];
+    suites: string[];
   };
 }
 
@@ -178,11 +178,9 @@ const GENERIC_FEATURE_TOKENS = new Set([
   'secondary',
   'should',
   'simple',
-  'suites',
   'suite',
   'test',
   'tests',
-  'testsuite',
   'validate',
   'verify',
 ]);
@@ -199,8 +197,8 @@ export function buildCapabilities(requestedOutputs: readonly OutputType[]): stri
     capabilities.push('Generate or update runnable FinalRun YAML test files under `.finalrun/tests/`.');
   }
 
-  if (requestedOutputs.includes('testsuite')) {
-    capabilities.push('Generate or update testsuite YAML files under `.finalrun/suites/`.');
+  if (requestedOutputs.includes('suites')) {
+    capabilities.push('Generate or update suite YAML files under `.finalrun/suites/`.');
   }
 
   return capabilities;
@@ -211,29 +209,29 @@ export function buildCapabilities(requestedOutputs: readonly OutputType[]): stri
  */
 export function buildImpactFromScenarios(scenarios: readonly PlanScenario[]): PlanImpact {
   const updateTests: string[] = [];
-  const updateTestsuite: string[] = [];
+  const updateSuites: string[] = [];
   const createTests: string[] = [];
-  const createTestsuite: string[] = [];
+  const createSuites: string[] = [];
 
   for (const scenario of scenarios) {
     const bucket = scenario.action === 'update'
       ? scenario.outputType === 'tests'
         ? updateTests
-        : updateTestsuite
+        : updateSuites
       : scenario.outputType === 'tests'
         ? createTests
-        : createTestsuite;
+        : createSuites;
     bucket.push(scenario.targetPath);
   }
 
   return {
     update: {
       tests: uniqueStrings(updateTests),
-      testsuite: uniqueStrings(updateTestsuite),
+      suites: uniqueStrings(updateSuites),
     },
     create: {
       tests: uniqueStrings(createTests),
-      testsuite: uniqueStrings(createTestsuite),
+      suites: uniqueStrings(createSuites),
     },
   };
 }
@@ -382,7 +380,7 @@ export function normalizeRequestedOutputs(value?: string): OutputType[] {
         return 'tests';
       }
       if (entry === 'suite') {
-        return 'testsuite';
+        return 'suites';
       }
       return entry;
     });
@@ -418,7 +416,7 @@ export function createDefaultTargetPath(
  * the feature name, and existing workspace coverage.
  * 
  * Logic:
- * 1. Testsuites always go to `.finalrun/suites/<feature-name>.yaml`.
+ * 1. Suites always go to `.finalrun/suites/<feature-name>.yaml`.
  * 2. Tests go to `.finalrun/tests/<feature-folder>/<slug>.yaml`.
  * 3. Feature folder is inferred from existing tests or the feature name.
  * 4. File slug is derived from scenario title with generic tokens stripped.
@@ -429,7 +427,7 @@ export function inferDefaultTargetPath(input: {
   outputType: OutputType;
   existingTestPaths?: readonly string[];
 }): DefaultTargetPathDecision {
-  if (input.outputType === 'testsuite') {
+  if (input.outputType === 'suites') {
     return {
       targetPath: `.finalrun/suites/${slugify(input.featureName)}.yaml`,
       ambiguous: false,

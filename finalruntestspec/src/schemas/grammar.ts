@@ -22,11 +22,11 @@ export const testScenarioSchema = z.object({
 }).strict();
 
 /**
- * Strict schema for a FinalRun testsuite.
+ * Strict schema for a FinalRun suite.
  * 
  * A suite groups multiple tests together for bulk execution.
  */
-export const testsuiteSchema = z.object({
+export const suiteSchema = z.object({
   /** Human-readable name of the suite. */
   name: z.string(),
   /** Detailed description of the suite's purpose. */

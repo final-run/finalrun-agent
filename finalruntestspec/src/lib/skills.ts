@@ -157,7 +157,7 @@ function renderApplySkill(cwd: string, skillsBaseDir: string, tool: SupportedToo
       body: `
 # frtestspec-apply
 
-Use this skill once a test plan has been approved to generate the actual FinalRun YAML test and testsuite files.
+Use this skill once a test plan has been approved to generate the actual FinalRun YAML test and suite files.
 
 ## Workflow
 1. Confirm the campaign name.
