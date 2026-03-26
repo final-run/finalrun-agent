@@ -88,11 +88,9 @@ The app SHALL let users sign in with email and password.
   });
 
   const planPath = path.join(repoRoot, 'frtestspec', 'changes', 'login-flow', 'test-plan.md');
-  const instructionsPath = path.join(repoRoot, 'frtestspec', 'changes', 'login-flow', 'plan-instructions.md');
   const plan = await loadTestPlan(planPath);
   const planContent = await fs.readFile(planPath, 'utf8');
 
-  assert.ok(await exists(instructionsPath), 'plan-instructions.md should be created');
   assert.equal(await exists(path.join(repoRoot, 'frtestspec', 'changes', 'login-flow', 'ui-tests')), false);
   assert.deepEqual(plan.metadata.requestedOutputs, ['tests', 'suites']);
   assert.equal(plan.metadata.approval.status, 'draft');

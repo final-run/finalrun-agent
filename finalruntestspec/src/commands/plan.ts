@@ -126,17 +126,15 @@ export async function runPlanCommand(
     capabilities: buildCapabilities(requestedOutputs),
   });
 
-  const instructionsContent = buildInstructionsFileContent(featureName, request, requestedOutputs, discovery);
 
   await ensureDirectory(changeDir);
   await fs.writeFile(planPath, document);
-  await fs.writeFile(path.join(changeDir, 'plan-instructions.md'), instructionsContent);
 
-  console.log(chalk.green(`✓ Created test plan template and instructions at frtestspec/changes/${featureName}/`));
+  console.log(chalk.green(`✓ Created test plan template at frtestspec/changes/${featureName}/`));
   console.log(chalk.yellow('\n📝 Next Steps:'));
-  console.log(`1. Your AI assistant should read the instructions in frtestspec/changes/${featureName}/plan-instructions.md.`);
-  console.log(`2. Populate the \`scenarios\` list inside the frontmatter of \`test-plan.md\`.`);
-  console.log(`3. Mark the plan approved in the frontmatter, then run \`frtestspec apply ${featureName}\`.`);
+  console.log(`1. Populate the \`scenarios\` list inside \`test-plan.md\`.`);
+  console.log(`2. Mark the plan approved by setting \`Current status: approved\` in the Status section.`);
+  console.log(`3. Run \`frtestspec apply ${featureName}\`.`);
 
   return { planPath };
 }
@@ -170,108 +168,6 @@ export function registerPlanCommand(program: Command): void {
     });
 }
 
-/**
- * Builds the content for the plan-instructions.md file.
- */
-function buildInstructionsFileContent(
-  featureName: string,
-  request: string,
-  requestedOutputs: OutputType[],
-  discovery: Awaited<ReturnType<typeof buildPlanningDiscoveryContext>>
-): string {
-  return [
-    `# Instructions: Plan Testing Campaign for '${featureName}'`,
-    '',
-    '## Objective',
-    `You are designing a FinalRun test plan for the request: "${request}"`,
-    '',
-    '## Prompt Context',
-    '### System Instruction guidelines:',
-    '```',
-    buildPlanSystemInstruction().replace(/Return JSON only with this shape:[\s\S]*?Rules:/, 'Rules:'),
-    '```',
-    '',
-    '### User Prompt context:',
-    '```',
-    buildPlanUserPrompt({
-      featureName,
-      request,
-      requestedOutputs,
-      discovery,
-    }),
-    '```',
-    '',
-    '## Next Steps',
-    `1. Read the discovered workspace context above.`,
-    `2. Open and fill out the scaffolded \`test-plan.md\` in this directory.`,
-    `3. Populate the \`scenarios\` array in the YAML frontmatter with concrete, user-facing scenarios.`,
-    `4. Scenario reason MUST include a brief justification for the idempotency strategy.`,
-  ].join('\n');
-}
-
-/**
- * Builds the system instructions for the AI agent performing the plan phase.
- */
-function buildPlanSystemInstruction(): string {
-  return `
-You are designing a FinalRun test plan that MUST be approved before any runnable artifacts are generated.
-
-Return JSON only with this shape:
-{
-  "why": string,
-  "whatChanges": string[],
-  "existingCoverageSummary": string[],
-  "scenarios": [
-    {
-      "title": string,
-      "category": string,
-      "outputType": "tests" | "suites",
-      "action": "update" | "create",
-      "targetPath": string,
-      "reason": string
-    }
-  ]
-}
-
-Rules:
-- Use the discovered workspace coverage to decide whether to update existing files or create new ones.
-- Prefer updating existing files only when the existing coverage clearly matches the request.
-- New test files MUST live under .finalrun/tests/<feature-folder>/ and MUST use '.yml' or '.yaml' extension.
-- Suite files MUST live under .finalrun/suites/.
-- Scenario titles must be user-facing and concrete.
-- Scenario reason MUST include a brief justification for the idempotency strategy (e.g., how the setup flow will clean up data from prior runs).
-- Do not invent unsupported output types.
-`.trim();
-}
-
-/**
- * Builds the user prompt for the AI agent performing the plan phase.
- */
-function buildPlanUserPrompt(input: {
-  featureName: string;
-  request: string;
-  requestedOutputs: OutputType[];
-  discovery: Awaited<ReturnType<typeof buildPlanningDiscoveryContext>>;
-}): string {
-  const sourcePayload = input.discovery.sources.map((source) => ({
-    type: source.type,
-    path: source.path,
-    relevance: source.relevance,
-    excerpt: source.excerpt,
-  }));
-
-  return `
-Feature name: ${input.featureName}
-User request: ${input.request}
-Requested outputs: ${input.requestedOutputs.join(', ')}
-
-Relevant existing coverage:
-${JSON.stringify(input.discovery.existingCoverage, null, 2)}
-
-Discovered sources:
-${JSON.stringify(sourcePayload, null, 2)}
-`;
-}
 
 /**
  * Sanitizes and normalizes the proposed test scenarios.
