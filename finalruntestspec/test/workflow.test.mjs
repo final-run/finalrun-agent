@@ -152,7 +152,7 @@ assertions: []
   await markPlanApproved(repoRoot, 'login-flow');
 
   const result = await runApplyCommand('login-flow', { cwd: repoRoot, useSpinner: false });
-  assert.ok(await exists(path.join(repoRoot, 'frtestspec', 'changes', 'login-flow', 'apply-instructions.md')));
+  assert.ok(typeof result.instructions === 'string' && result.instructions.length > 0, 'apply should return instructions');
 
   const validation = await runValidateCommand('login-flow', { cwd: repoRoot });
   assert.equal(validation.validatedFiles.length, 1);

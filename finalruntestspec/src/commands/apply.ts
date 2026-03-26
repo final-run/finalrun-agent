@@ -39,7 +39,7 @@ export interface ApplyCommandOptions {
 export async function runApplyCommand(
   featureName: string,
   options: ApplyCommandOptions = {},
-): Promise<{ files: string[] }> {
+): Promise<{ files: string[]; instructions: string }> {
   const cwd = options.cwd ?? process.cwd();
   const { planPath } = resolveChangePaths(cwd, featureName);
 
@@ -54,8 +54,6 @@ export async function runApplyCommand(
     );
   }
 
-  const changeDir = path.dirname(planPath);
-  const instructionsPath = path.join(changeDir, 'apply-instructions.md');
   const targetPaths = uniqueStrings(plan.metadata.scenarios.map((scenario) => scenario.targetPath));
   const existingFileContents = await loadExistingFileContents(cwd, plan.metadata.scenarios);
   const instructionsContent = [
@@ -88,14 +86,13 @@ export async function runApplyCommand(
     `4. Validate the generated artifacts with \`frtestspec validate ${featureName}\`.`,
   ].join('\n');
 
-  await fs.writeFile(instructionsPath, instructionsContent);
-
-  console.log(chalk.green(`✓ Created apply instructions at frtestspec/changes/${featureName}/apply-instructions.md`));
+  console.log(chalk.green(`✓ Apply instructions for '${featureName}':\n`));
+  console.log(instructionsContent);
   console.log(chalk.yellow('\n📝 Next Steps:'));
-  console.log(`1. Your AI assistant should now read the instructions file and create the actual FinalRun YAML files.`);
+  console.log(`1. Follow the instructions printed above to create the actual FinalRun YAML files.`);
   console.log(`2. Verify the structure with \`frtestspec validate ${featureName}\`.`);
 
-  return { files: [] };
+  return { files: [], instructions: instructionsContent };
 }
 
 /**

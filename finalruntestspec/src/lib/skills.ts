@@ -166,7 +166,7 @@ Use this skill once a test plan has been approved to generate the actual FinalRu
    \`\`\`bash
    ${command} apply <campaign-name>
    \`\`\`
-4. Follow the generated instructions to create the actual YAML artifacts under \`.finalrun/tests/\` and \`.finalrun/suites/\`.
+4. Follow the instructions printed by the command to create the actual YAML artifacts under \`.finalrun/tests/\` and \`.finalrun/suites/\`.
 `.trim(),
     }),
   };
