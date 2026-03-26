@@ -3,17 +3,28 @@ import {
   Logger,
   LogLevel,
   type DeviceInfo,
+  type DeviceInventoryDiagnostic,
+  type LogEntry,
+  type RunTargetRecord,
   type RuntimeBindings,
   type SpecArtifactRecord,
 } from '@finalrun/common';
 import {
   executeGoalOnSession,
+  isDevicePreparationError,
   prepareGoalSession,
   type GoalSession,
 } from './goalRunner.js';
+import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
-import { runCheck, type CheckRunnerOptions } from './checkRunner.js';
+import {
+  runCheck,
+  type CheckRunnerOptions,
+  type CheckRunnerResult,
+} from './checkRunner.js';
 import { ReportWriter } from './reportWriter.js';
+import { rebuildRunIndex } from './runIndex.js';
+import type { LoadedEnvironmentConfig } from './specLoader.js';
 import {
   createRunId,
   ensureWorkspaceDirectories,
@@ -32,7 +43,9 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
 
 export interface TestRunnerResult {
   success: boolean;
+  runId: string;
   runDir: string;
+  runIndexPath: string;
   specResults: SpecArtifactRecord[];
 }
 
@@ -47,6 +60,10 @@ export const testRunnerDependencies = {
 export async function runTests(
   options: TestRunnerOptions,
 ): Promise<TestRunnerResult> {
+  Logger.init({
+    level: options.debug ? LogLevel.DEBUG : LogLevel.INFO,
+    resetSinks: true,
+  });
   const workspace = await testRunnerDependencies.resolveWorkspace(options.cwd);
   await testRunnerDependencies.ensureWorkspaceDirectories(workspace);
 
@@ -58,13 +75,25 @@ export async function runTests(
   let logSink: ReturnType<ReportWriter['createLoggerSink']> | undefined;
   let goalSession: GoalSession | undefined;
   const fallbackEnvName = await resolveRunEnvName(workspace.envDir, options.envName);
+  const bufferedLogEntries: LogEntry[] = [];
+  const bufferingSink = (entry: LogEntry) => {
+    bufferedLogEntries.push(entry);
+  };
+  Logger.addSink(bufferingSink);
 
-  let checked;
+  let checked: CheckRunnerResult;
+  let effectiveGoals = new Map<string, string>();
   try {
     checked = await testRunnerDependencies.runCheck({
       ...options,
       requireSelection: true,
     });
+    effectiveGoals = new Map(
+      checked.specs.map((spec) => [
+        spec.specId,
+        compileSpecToGoal(spec, checked.environment.bindings),
+      ]),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failedRun = await writeRunFailureArtifacts({
@@ -74,6 +103,12 @@ export async function runTests(
       startedAt,
       bindings: EMPTY_RUNTIME_BINDINGS,
       message: `Run validation failed: ${message}`,
+      bufferedLogEntries,
+      cliContext: buildCliContext(options),
+      modelContext: buildModelContext(options.provider, options.modelName),
+      appContext: buildAppContext(options.appPath),
+      target: buildFallbackRunTarget(options),
+      failurePhase: 'validation',
     });
     return failedRun;
   }
@@ -95,6 +130,18 @@ export async function runTests(
       startedAt,
       bindings: checked.environment.bindings,
       message: `Run setup failed before execution: ${message}`,
+      bufferedLogEntries,
+      diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
+      environment: checked.environment,
+      specs: checked.specs,
+      suite: checked.suite,
+      effectiveGoals,
+      workspaceRoot: checked.workspace.rootDir,
+      cliContext: buildCliContext(options),
+      modelContext: buildModelContext(options.provider, options.modelName),
+      appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+      target: checked.target,
+      failurePhase: 'setup',
     });
     return failedRun;
   }
@@ -106,15 +153,23 @@ export async function runTests(
     startedAt,
     bindings: checked.environment.bindings,
   }));
-
-  Logger.init({
-    level: options.debug ? LogLevel.DEBUG : LogLevel.INFO,
-    resetSinks: true,
-  });
   logSink = reportWriter.createLoggerSink();
+  flushBufferedLogEntries(bufferedLogEntries, logSink);
+  Logger.removeSink(bufferingSink);
   Logger.addSink(logSink);
 
   try {
+    await reportWriter.writeRunInputs({
+      workspaceRoot: checked.workspace.rootDir,
+      environment: checked.environment,
+      specs: checked.specs,
+      effectiveGoals,
+      cli: buildCliContext(options),
+      model: buildModelContext(options.provider, options.modelName),
+      app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+      target: checked.target,
+      suite: checked.suite,
+    });
     reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
 
     for (const spec of checked.specs) {
@@ -122,7 +177,8 @@ export async function runTests(
       const specStartedAt = new Date().toISOString();
 
       try {
-        const goal = compileSpecToGoal(spec, checked.environment.bindings);
+        const goal = effectiveGoals.get(spec.specId) ??
+          compileSpecToGoal(spec, checked.environment.bindings);
         const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
           goal,
           apiKey: options.apiKey,
@@ -171,17 +227,18 @@ export async function runTests(
       completedAt: new Date().toISOString(),
       specs: specResults,
       successOverride: success,
+      failurePhase: encounteredFailure ? 'execution' : undefined,
     });
+    await rebuildRunIndex(workspace.artifactsDir);
 
     return {
       success,
+      runId: path.basename(runDir),
       runDir,
+      runIndexPath: path.join(workspace.artifactsDir, 'runs.json'),
       specResults,
     };
   } finally {
-    if (logSink) {
-      Logger.removeSink(logSink);
-    }
     if (goalSession) {
       try {
         await goalSession.cleanup();
@@ -189,6 +246,10 @@ export async function runTests(
         Logger.w('Failed to clean up device resources:', error);
       }
     }
+    if (logSink) {
+      Logger.removeSink(logSink);
+    }
+    Logger.removeSink(bufferingSink);
   }
 }
 
@@ -251,6 +312,18 @@ async function writeRunFailureArtifacts(params: {
   startedAt: Date;
   bindings: RuntimeBindings;
   message: string;
+  bufferedLogEntries: LogEntry[];
+  diagnostics?: DeviceInventoryDiagnostic[];
+  environment?: LoadedEnvironmentConfig;
+  specs?: Awaited<ReturnType<typeof runCheck>>['specs'];
+  suite?: Awaited<ReturnType<typeof runCheck>>['suite'];
+  effectiveGoals?: Map<string, string>;
+  workspaceRoot?: string;
+  cliContext: ReturnType<typeof buildCliContext>;
+  modelContext: ReturnType<typeof buildModelContext>;
+  appContext: ReturnType<typeof buildAppContext>;
+  target: RunTargetRecord;
+  failurePhase: 'validation' | 'setup' | 'execution';
 }): Promise<TestRunnerResult> {
   const { reportWriter, runDir } = await createReportWriter({
     workspace: params.workspace,
@@ -259,16 +332,52 @@ async function writeRunFailureArtifacts(params: {
     startedAt: params.startedAt,
     bindings: params.bindings,
   });
+  reportWriter.setRunContext({
+    cli: params.cliContext,
+    model: params.modelContext,
+    app: params.appContext,
+    target: params.target,
+  });
+  flushBufferedLogEntries(params.bufferedLogEntries, reportWriter.createLoggerSink());
+  if (
+    params.environment &&
+    params.specs &&
+    params.effectiveGoals &&
+    params.workspaceRoot
+  ) {
+    await reportWriter.writeRunInputs({
+      workspaceRoot: params.workspaceRoot,
+      environment: params.environment,
+      specs: params.specs,
+      suite: params.suite,
+      effectiveGoals: params.effectiveGoals,
+      target: params.target,
+      cli: params.cliContext,
+      model: params.modelContext,
+      app: params.appContext,
+    });
+  }
   reportWriter.appendLogLine(params.message);
+  if (params.diagnostics && params.diagnostics.length > 0) {
+    reportWriter.appendRawBlock(formatDiagnosticsForOutput(params.diagnostics));
+  }
   await reportWriter.finalize({
     startedAt: params.startedAt.toISOString(),
     completedAt: new Date().toISOString(),
     specs: [],
     successOverride: false,
+    failurePhase: params.failurePhase,
+    diagnosticsSummary:
+      params.diagnostics && params.diagnostics.length > 0
+        ? params.diagnostics.map((diagnostic) => diagnostic.summary).join(' | ')
+        : params.message,
   });
+  await rebuildRunIndex(params.workspace.artifactsDir);
   return {
     success: false,
+    runId: path.basename(runDir),
     runDir,
+    runIndexPath: path.join(params.workspace.artifactsDir, 'runs.json'),
     specResults: [],
   };
 }
@@ -300,4 +409,88 @@ async function resolveRunEnvName(
   } catch {
     return requestedEnvName ?? 'none';
   }
+}
+
+function flushBufferedLogEntries(
+  entries: LogEntry[],
+  sink: ReturnType<ReportWriter['createLoggerSink']>,
+): void {
+  for (const entry of entries) {
+    sink(entry);
+  }
+  entries.length = 0;
+}
+
+function buildCliContext(
+  options: TestRunnerOptions,
+): {
+  command: string;
+  selectors: string[];
+  suitePath?: string;
+  requestedPlatform?: string;
+  appOverridePath?: string;
+  debug: boolean;
+  maxIterations?: number;
+} {
+  const commandParts = ['finalrun', 'test'];
+  if (options.suitePath) {
+    commandParts.push('--suite', options.suitePath);
+  }
+  return {
+    command: commandParts.join(' '),
+    selectors: options.selectors ?? [],
+    suitePath: options.suitePath,
+    requestedPlatform: options.platform,
+    appOverridePath: options.appPath,
+    debug: options.debug === true,
+    maxIterations: options.maxIterations,
+  };
+}
+
+function buildModelContext(
+  provider: string | undefined,
+  modelName: string | undefined,
+): {
+  provider: string;
+  modelName: string;
+  label: string;
+} {
+  const resolvedProvider = provider ?? 'unknown';
+  const resolvedModelName = modelName ?? 'unknown';
+  return {
+    provider: resolvedProvider,
+    modelName: resolvedModelName,
+    label: `${resolvedProvider}/${resolvedModelName}`,
+  };
+}
+
+function buildAppContext(
+  appOverridePath?: string,
+): {
+  source: 'repo' | 'override';
+  label: string;
+  overridePath?: string;
+} {
+  if (!appOverridePath) {
+    return {
+      source: 'repo',
+      label: 'repo app',
+    };
+  }
+  return {
+    source: 'override',
+    label: path.basename(appOverridePath),
+    overridePath: appOverridePath,
+  };
+}
+
+function buildFallbackRunTarget(options: CheckRunnerOptions): RunTargetRecord {
+  if (!options.suitePath) {
+    return { type: 'direct' };
+  }
+
+  return {
+    type: 'suite',
+    suitePath: options.suitePath,
+  };
 }

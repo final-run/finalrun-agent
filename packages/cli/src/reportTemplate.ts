@@ -1,10 +1,14 @@
-import type { RunSummaryRecord, SpecArtifactRecord, StepArtifactRecord } from '@finalrun/common';
+import type {
+  RunManifestRecord,
+  RunManifestSpecRecord,
+  RunManifestStepRecord,
+} from '@finalrun/common';
 
-export function renderHtmlReport(params: {
-  summary: RunSummaryRecord;
-  specs: SpecArtifactRecord[];
-}): string {
-  const dataJson = JSON.stringify(params).replace(/</g, '\\u003c');
+export function renderHtmlReport(manifest: RunManifestRecord): string {
+  const dataJson = JSON.stringify(manifest).replace(/</g, '\\u003c');
+  const run = manifest.run;
+  const specs = manifest.specs;
+  const target = resolveRunTarget(manifest);
 
   return `<!doctype html>
 <html lang="en">
@@ -481,20 +485,74 @@ export function renderHtmlReport(params: {
       <div class="run-title">
         <div>
           <h1>FinalRun Local Report</h1>
-          <p>Run ID: ${escapeHtml(params.summary.runId)}</p>
+          <p>Run ID: ${escapeHtml(run.runId)}</p>
         </div>
-        <div class="status-pill ${params.summary.success ? 'success' : 'failure'}">
-          ${params.summary.success ? 'Passed' : 'Failed'}
+        <div class="status-pill ${run.success ? 'success' : 'failure'}">
+          ${run.success ? 'Passed' : 'Failed'}
         </div>
       </div>
       <div class="meta-grid">
-        <div class="meta-card"><strong>Environment</strong><span>${escapeHtml(params.summary.envName)}</span></div>
-        <div class="meta-card"><strong>Platform</strong><span>${escapeHtml(params.summary.platform)}</span></div>
-        <div class="meta-card"><strong>Started</strong><span>${escapeHtml(params.summary.startedAt)}</span></div>
-        <div class="meta-card"><strong>Duration</strong><span>${formatDuration(params.summary.durationMs)}</span></div>
-        <div class="meta-card"><strong>Specs</strong><span>${params.summary.specCount}</span></div>
-        <div class="meta-card"><strong>Artifacts</strong><span><a href="summary.json">summary.json</a> · <a href="runner.log">runner.log</a></span></div>
+        <div class="meta-card"><strong>Environment</strong><span>${escapeHtml(run.envName)}</span></div>
+        <div class="meta-card"><strong>Platform</strong><span>${escapeHtml(run.platform)}</span></div>
+        <div class="meta-card"><strong>Model</strong><span>${escapeHtml(run.model.label)}</span></div>
+        <div class="meta-card"><strong>Run Target</strong><span>${escapeHtml(formatRunTarget(target))}</span></div>
+        ${target.type === 'suite' && target.suiteName
+          ? `<div class="meta-card"><strong>Suite</strong><span>${escapeHtml(target.suiteName)}</span></div>`
+          : ''}
+        ${target.type === 'suite' && target.suitePath
+          ? `<div class="meta-card"><strong>Suite Path</strong><span>${escapeHtml(target.suitePath)}</span></div>`
+          : ''}
+        <div class="meta-card"><strong>Started</strong><span>${escapeHtml(run.startedAt)}</span></div>
+        <div class="meta-card"><strong>Duration</strong><span>${formatDuration(run.durationMs)}</span></div>
+        <div class="meta-card"><strong>Specs</strong><span>${run.counts.specs.passed}/${run.counts.specs.total} passed</span></div>
+        <div class="meta-card"><strong>Steps</strong><span>${run.counts.steps.failed} failed of ${run.counts.steps.total}</span></div>
+        <div class="meta-card"><strong>Artifacts</strong><span><a href="run.json">run.json</a> · <a href="summary.json">summary.json</a> · <a href="runner.log">runner.log</a></span></div>
       </div>
+    </section>
+
+    <section class="spec-index">
+      <h2>Run Context</h2>
+      <table>
+        <tbody>
+          <tr>
+            <th>Run Target</th>
+            <td>${escapeHtml(formatRunTarget(target))}</td>
+          </tr>
+          ${target.type === 'suite'
+            ? `
+          <tr>
+            <th>Suite</th>
+            <td>${escapeHtml(target.suiteName ?? 'Unknown suite')}</td>
+          </tr>
+          <tr>
+            <th>Suite Manifest</th>
+            <td>${renderSuiteManifestLink(manifest)}</td>
+          </tr>
+          <tr>
+            <th>Suite Tests</th>
+            <td>${renderSuiteTests(manifest)}</td>
+          </tr>
+          `
+            : `
+          <tr>
+            <th>Selectors</th>
+            <td>${run.selectors.length > 0 ? run.selectors.map((selector) => escapeHtml(selector)).join(', ') : '<span class="muted">No selectors recorded.</span>'}</td>
+          </tr>
+          `}
+          <tr>
+            <th>Variables</th>
+            <td>${renderVariables(manifest)}</td>
+          </tr>
+          <tr>
+            <th>Secrets</th>
+            <td>${renderSecretReferences(manifest)}</td>
+          </tr>
+          <tr>
+            <th>Spec Snapshots</th>
+            <td>${manifest.input.specs.length > 0 ? manifest.input.specs.map((spec) => `<a href="${escapeHtml(spec.snapshotYamlPath)}">${escapeHtml(spec.relativePath)}</a>`).join(' · ') : '<span class="muted">No spec snapshots recorded.</span>'}</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="spec-index">
@@ -502,6 +560,7 @@ export function renderHtmlReport(params: {
       <table>
         <thead>
           <tr>
+            <th>#</th>
             <th>Spec</th>
             <th>Status</th>
             <th>Duration</th>
@@ -509,8 +568,9 @@ export function renderHtmlReport(params: {
           </tr>
         </thead>
         <tbody>
-          ${params.specs.map((spec) => `
+          ${specs.map((spec, index) => `
             <tr>
+              <td>${index + 1}</td>
               <td><a href="#spec-${escapeHtml(spec.specId)}">${escapeHtml(spec.specName)}</a></td>
               <td>${spec.success ? 'Passed' : 'Failed'}</td>
               <td>${formatDuration(spec.durationMs)}</td>
@@ -521,7 +581,7 @@ export function renderHtmlReport(params: {
       </table>
     </section>
 
-    ${params.specs.map((spec) => renderSpecSection(spec)).join('')}
+    ${specs.map((spec) => renderSpecSection(spec)).join('')}
   </div>
 
   <script id="finalrun-report-data" type="application/json">${dataJson}</script>
@@ -695,7 +755,7 @@ export function renderHtmlReport(params: {
 </html>`;
 }
 
-function renderSpecSection(spec: SpecArtifactRecord): string {
+function renderSpecSection(spec: RunManifestSpecRecord): string {
   const analysisText = escapeHtml(spec.analysis || spec.message || 'No overall analysis recorded.');
   const initialStep = spec.steps[0];
 
@@ -797,7 +857,7 @@ function renderSpecSection(spec: SpecArtifactRecord): string {
   `;
 }
 
-function renderStepButton(specId: string, step: StepArtifactRecord, index: number): string {
+function renderStepButton(specId: string, step: RunManifestStepRecord, index: number): string {
   const isFailure = !step.success;
   const isSetup = step.actionType === 'launchApp';
   return `
@@ -839,6 +899,59 @@ function escapeJs(value: string): string {
 function formatDuration(durationMs: number): string {
   const seconds = durationMs / 1000;
   return seconds >= 10 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`;
+}
+
+function renderVariables(manifest: RunManifestRecord): string {
+  const entries = Object.entries(manifest.input.environment.variables);
+  if (entries.length === 0) {
+    return '<span class="muted">No variables recorded.</span>';
+  }
+  return entries
+    .map(([key, value]) => `<code>${escapeHtml(key)}=${escapeHtml(String(value))}</code>`)
+    .join(' · ');
+}
+
+function renderSecretReferences(manifest: RunManifestRecord): string {
+  const references = manifest.input.environment.secretReferences;
+  if (references.length === 0) {
+    return '<span class="muted">No secrets recorded.</span>';
+  }
+  return references
+    .map((reference) => `<code>${escapeHtml(reference.key)} ← ${escapeHtml(reference.envVar)}</code>`)
+    .join(' · ');
+}
+
+function resolveRunTarget(manifest: RunManifestRecord): {
+  type: 'direct' | 'suite';
+  suiteId?: string;
+  suiteName?: string;
+  suitePath?: string;
+} {
+  return manifest.run.target ?? { type: 'direct' };
+}
+
+function formatRunTarget(target: {
+  type: 'direct' | 'suite';
+}): string {
+  return target.type === 'suite' ? 'Suite' : 'Direct';
+}
+
+function renderSuiteManifestLink(manifest: RunManifestRecord): string {
+  if (!manifest.input.suite?.snapshotYamlPath) {
+    return '<span class="muted">No suite manifest snapshot recorded.</span>';
+  }
+
+  const label = manifest.run.target?.suitePath ?? manifest.input.suite.snapshotYamlPath;
+  return `<a href="${escapeHtml(manifest.input.suite.snapshotYamlPath)}">${escapeHtml(label)}</a>`;
+}
+
+function renderSuiteTests(manifest: RunManifestRecord): string {
+  const tests = manifest.input.suite?.tests ?? [];
+  if (tests.length === 0) {
+    return '<span class="muted">No suite tests recorded.</span>';
+  }
+
+  return tests.map((entry) => `<code>${escapeHtml(entry)}</code>`).join(' · ');
 }
 
 function formatVideoTimestamp(videoOffsetMs: number | undefined): string {

@@ -1,11 +1,26 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import YAML from 'yaml';
 import {
+  type BindingReferenceRecord,
+  type FailurePhase,
   Logger,
   type LoadedRepoTestSpec,
+  type LoadedRepoTestSuite,
   type LogEntry,
   type LoggerSink,
+  type RunManifestAppRecord,
+  type RunManifestCliRecord,
+  type RunManifestEnvironmentRecord,
+  type RunManifestFirstFailureRecord,
+  type RunManifestModelRecord,
+  type RunManifestRecord,
+  type RunManifestSelectedSpecRecord,
+  type RunManifestSpecRecord,
+  type RunManifestSuiteRecord,
+  type RunManifestStepRecord,
+  type RunTargetRecord,
   type RunSummaryRecord,
   type RuntimeBindings,
   type SpecArtifactRecord,
@@ -13,7 +28,23 @@ import {
   redactResolvedValue,
 } from '@finalrun/common';
 import type { GoalResult, StepResult } from '@finalrun/goal-executor';
-import { renderHtmlReport } from './reportTemplate.js';
+import type { LoadedEnvironmentConfig } from './specLoader.js';
+
+interface SpecSnapshotState {
+  authored: {
+    name: string;
+    description?: string;
+    preconditions: string[];
+    setup: string[];
+    steps: string[];
+    assertions: string[];
+  };
+  bindingReferences: BindingReferenceRecord;
+  snapshotYamlPath: string;
+  snapshotJsonPath: string;
+  workspaceSourcePath: string;
+  effectiveGoal: string;
+}
 
 export class ReportWriter {
   private static readonly _FAILURE_PLACEHOLDER_IMAGE = Buffer.from(
@@ -26,6 +57,28 @@ export class ReportWriter {
   private readonly _runId: string;
   private readonly _bindings: RuntimeBindings;
   private readonly _runnerLogPath: string;
+  private _inputEnvironment: RunManifestEnvironmentRecord;
+  private _inputSuite?: RunManifestSuiteRecord;
+  private _inputSpecs: RunManifestSelectedSpecRecord[] = [];
+  private readonly _specSnapshots = new Map<string, SpecSnapshotState>();
+  private _cliContext: RunManifestCliRecord = {
+    command: 'finalrun test',
+    selectors: [],
+    debug: false,
+  };
+  private _runTarget: RunTargetRecord = {
+    type: 'direct',
+  };
+  private _modelContext: RunManifestModelRecord = {
+    provider: 'unknown',
+    modelName: 'unknown',
+    label: 'unknown/unknown',
+  };
+  private _appContext: RunManifestAppRecord = {
+    source: 'repo',
+    label: 'repo app',
+  };
+  private _runContextJsonPath?: string;
 
   constructor(params: {
     runDir: string;
@@ -40,6 +93,11 @@ export class ReportWriter {
     this._runId = params.runId;
     this._bindings = params.bindings;
     this._runnerLogPath = path.join(this._runDir, 'runner.log');
+    this._inputEnvironment = {
+      envName: params.envName,
+      variables: params.bindings.variables,
+      secretReferences: [],
+    };
   }
 
   async init(): Promise<void> {
@@ -66,6 +124,171 @@ export class ReportWriter {
       `${new Date().toISOString()} ${renderedLine}\n`,
       'utf-8',
     );
+  }
+
+  appendRawBlock(block: string): void {
+    const renderedBlock = redactResolvedValue(block, this._bindings) ?? block;
+    fs.appendFileSync(
+      this._runnerLogPath,
+      renderedBlock.endsWith('\n') ? renderedBlock : `${renderedBlock}\n`,
+      'utf-8',
+    );
+  }
+
+  setRunContext(params: {
+    cli: RunManifestCliRecord;
+    model: RunManifestModelRecord;
+    app: RunManifestAppRecord;
+    target?: RunTargetRecord;
+  }): void {
+    this._cliContext = params.cli;
+    this._modelContext = params.model;
+    this._appContext = params.app;
+    this._runTarget = params.target ?? { type: 'direct' };
+  }
+
+  async writeRunInputs(params: {
+    workspaceRoot: string;
+    environment: LoadedEnvironmentConfig;
+    specs: LoadedRepoTestSpec[];
+    suite?: LoadedRepoTestSuite;
+    effectiveGoals: Map<string, string>;
+    target: RunTargetRecord;
+    cli: RunManifestCliRecord;
+    model: RunManifestModelRecord;
+    app: RunManifestAppRecord;
+  }): Promise<void> {
+    const inputDir = path.join(this._runDir, 'input');
+    const specSnapshotDir = path.join(inputDir, 'specs');
+    await fsp.mkdir(specSnapshotDir, { recursive: true });
+
+    this.setRunContext({
+      cli: params.cli,
+      model: params.model,
+      app: params.app,
+      target: params.target,
+    });
+    this._runContextJsonPath = path.posix.join('input', 'run-context.json');
+    await fsp.writeFile(
+      path.join(this._runDir, this._runContextJsonPath),
+      JSON.stringify(
+        {
+          cli: params.cli,
+          model: params.model,
+          app: params.app,
+          target: params.target,
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+
+    const envSnapshotYamlPath = path.posix.join('input', 'env.snapshot.yaml');
+    const envSnapshotJsonPath = path.posix.join('input', 'env.json');
+    const workspaceEnvPath = params.environment.envPath
+      ? toDisplayPath(params.workspaceRoot, params.environment.envPath)
+      : undefined;
+    this._inputEnvironment = {
+      envName: params.environment.envName,
+      workspaceEnvPath,
+      snapshotYamlPath: envSnapshotYamlPath,
+      snapshotJsonPath: envSnapshotJsonPath,
+      variables: params.environment.config.variables,
+      secretReferences: params.environment.secretReferences,
+    };
+    await fsp.writeFile(
+      path.join(this._runDir, envSnapshotYamlPath),
+      YAML.stringify({
+        secrets: params.environment.config.secrets,
+        variables: params.environment.config.variables,
+      }),
+      'utf-8',
+    );
+    await fsp.writeFile(
+      path.join(this._runDir, envSnapshotJsonPath),
+      JSON.stringify(this._inputEnvironment, null, 2),
+      'utf-8',
+    );
+
+    this._inputSuite = undefined;
+    if (params.suite) {
+      const suiteSnapshotYamlPath = path.posix.join('input', 'suite.snapshot.yaml');
+      const suiteSnapshotJsonPath = path.posix.join('input', 'suite.json');
+      const suiteRecord: RunManifestSuiteRecord = {
+        suiteId: params.suite.suiteId,
+        suiteName: params.suite.name,
+        workspaceSourcePath: toDisplayPath(params.workspaceRoot, params.suite.sourcePath),
+        snapshotYamlPath: suiteSnapshotYamlPath,
+        snapshotJsonPath: suiteSnapshotJsonPath,
+        tests: params.suite.tests,
+        resolvedSpecIds: params.specs.map((spec) => spec.specId),
+      };
+      await fsp.copyFile(
+        params.suite.sourcePath,
+        path.join(this._runDir, suiteSnapshotYamlPath),
+      );
+      await fsp.writeFile(
+        path.join(this._runDir, suiteSnapshotJsonPath),
+        JSON.stringify(suiteRecord, null, 2),
+        'utf-8',
+      );
+      this._inputSuite = suiteRecord;
+    }
+
+    const selectedSpecs: RunManifestSelectedSpecRecord[] = [];
+    this._specSnapshots.clear();
+    for (const spec of params.specs) {
+      const snapshotYamlPath = path.posix.join('input', 'specs', `${spec.specId}.yaml`);
+      const snapshotJsonPath = path.posix.join('input', 'specs', `${spec.specId}.json`);
+      const bindingReferences = collectBindingReferences(spec);
+      const authored = {
+        name: spec.name,
+        description: spec.description,
+        preconditions: spec.preconditions,
+        setup: spec.setup,
+        steps: spec.steps,
+        assertions: spec.assertions,
+      };
+      const workspaceSourcePath = toDisplayPath(params.workspaceRoot, spec.sourcePath);
+      const effectiveGoal = params.effectiveGoals.get(spec.specId) ?? '';
+      await fsp.copyFile(spec.sourcePath, path.join(this._runDir, snapshotYamlPath));
+      await fsp.writeFile(
+        path.join(this._runDir, snapshotJsonPath),
+        JSON.stringify(
+          {
+            specId: spec.specId,
+            specName: spec.name,
+            relativePath: spec.relativePath,
+            workspaceSourcePath,
+            bindingReferences,
+            ...authored,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+      this._specSnapshots.set(spec.specId, {
+        authored,
+        bindingReferences,
+        snapshotYamlPath,
+        snapshotJsonPath,
+        workspaceSourcePath,
+        effectiveGoal,
+      });
+      selectedSpecs.push({
+        specId: spec.specId,
+        specName: spec.name,
+        relativePath: spec.relativePath,
+        workspaceSourcePath,
+        snapshotYamlPath,
+        snapshotJsonPath,
+        bindingReferences,
+      });
+    }
+
+    this._inputSpecs = selectedSpecs;
   }
 
   async writeSpecRecord(
@@ -147,9 +370,12 @@ export class ReportWriter {
     completedAt: string;
     specs: SpecArtifactRecord[];
     successOverride?: boolean;
+    failurePhase?: FailurePhase;
+    diagnosticsSummary?: string;
   }): Promise<RunSummaryRecord> {
     const passedCount = params.specs.filter((spec) => spec.success).length;
     const failedCount = params.specs.length - passedCount;
+    const stepCount = params.specs.reduce((total, spec) => total + spec.steps.length, 0);
     const summary: RunSummaryRecord = {
       runId: this._runId,
       envName: this._envName,
@@ -161,9 +387,12 @@ export class ReportWriter {
         new Date(params.completedAt).getTime() - new Date(params.startedAt).getTime(),
       ),
       success: params.successOverride ?? failedCount === 0,
+      failurePhase: params.failurePhase,
       specCount: params.specs.length,
       passedCount,
       failedCount,
+      stepCount,
+      target: this._runTarget,
       variables: this._bindings.variables,
       tests: params.specs.map((spec) => ({
         specId: spec.specId,
@@ -173,7 +402,16 @@ export class ReportWriter {
         durationMs: spec.durationMs,
         resultFile: path.posix.join('tests', spec.specId, 'result.json'),
       })),
+      runJsonFile: 'run.json',
     };
+    const manifest = this._buildRunManifest({
+      startedAt: params.startedAt,
+      completedAt: params.completedAt,
+      specs: params.specs,
+      success: summary.success,
+      failurePhase: params.failurePhase,
+      diagnosticsSummary: params.diagnosticsSummary,
+    });
 
     await fsp.writeFile(
       path.join(this._runDir, 'summary.json'),
@@ -181,8 +419,8 @@ export class ReportWriter {
       'utf-8',
     );
     await fsp.writeFile(
-      path.join(this._runDir, 'index.html'),
-      renderHtmlReport({ summary, specs: params.specs }),
+      path.join(this._runDir, 'run.json'),
+      JSON.stringify(manifest, null, 2),
       'utf-8',
     );
 
@@ -280,6 +518,120 @@ export class ReportWriter {
     return specRecord;
   }
 
+  private _buildRunManifest(params: {
+    startedAt: string;
+    completedAt: string;
+    specs: SpecArtifactRecord[];
+    success: boolean;
+    failurePhase?: FailurePhase;
+    diagnosticsSummary?: string;
+  }): RunManifestRecord {
+    const specRecords = params.specs.map((spec) => this._toRunManifestSpec(spec));
+    const stepTotal = specRecords.reduce(
+      (total, spec) => total + spec.counts.executionStepsTotal,
+      0,
+    );
+    const stepPassed = specRecords.reduce(
+      (total, spec) => total + spec.counts.executionStepsPassed,
+      0,
+    );
+    const firstFailure = findRunFirstFailure(specRecords, params.diagnosticsSummary);
+    return {
+      schemaVersion: 1,
+      run: {
+        runId: this._runId,
+        success: params.success,
+        status: params.success ? 'success' : 'failure',
+        failurePhase: params.failurePhase,
+        startedAt: params.startedAt,
+        completedAt: params.completedAt,
+        durationMs: Math.max(
+          0,
+          new Date(params.completedAt).getTime() - new Date(params.startedAt).getTime(),
+        ),
+        envName: this._envName,
+        platform: this._platform,
+        model: this._modelContext,
+        app: this._appContext,
+        selectors: this._cliContext.selectors,
+        target: this._runTarget,
+        counts: {
+          specs: {
+            total: specRecords.length,
+            passed: specRecords.filter((spec) => spec.success).length,
+            failed: specRecords.filter((spec) => !spec.success).length,
+          },
+          steps: {
+            total: stepTotal,
+            passed: stepPassed,
+            failed: stepTotal - stepPassed,
+          },
+        },
+        firstFailure,
+        diagnosticsSummary: params.diagnosticsSummary,
+      },
+      input: {
+        environment: this._inputEnvironment,
+        suite: this._inputSuite,
+        specs: this._inputSpecs,
+        cli: this._cliContext,
+      },
+      specs: specRecords,
+      paths: {
+        runJson: 'run.json',
+        summaryJson: 'summary.json',
+        log: 'runner.log',
+        runContextJson: this._runContextJsonPath,
+      },
+    };
+  }
+
+  private _toRunManifestSpec(spec: SpecArtifactRecord): RunManifestSpecRecord {
+    const snapshot = this._specSnapshots.get(spec.specId);
+    const steps = spec.steps.map((step) => ({ ...step })) as RunManifestStepRecord[];
+    const passedSteps = steps.filter((step) => step.success).length;
+    const firstFailureStep = steps.find((step) => !step.success);
+    const firstFailure = firstFailureStep
+      ? {
+          specId: spec.specId,
+          specName: spec.specName,
+          stepNumber: firstFailureStep.stepNumber,
+          actionType: firstFailureStep.actionType,
+          message:
+            firstFailureStep.errorMessage ??
+            firstFailureStep.trace?.failureReason ??
+            spec.message,
+          screenshotPath: firstFailureStep.screenshotFile,
+          stepJsonPath: firstFailureStep.stepJsonFile,
+        }
+      : undefined;
+
+    return {
+      ...spec,
+      workspaceSourcePath: snapshot?.workspaceSourcePath ?? spec.sourcePath,
+      snapshotYamlPath: snapshot?.snapshotYamlPath ?? '',
+      snapshotJsonPath: snapshot?.snapshotJsonPath ?? '',
+      bindingReferences: snapshot?.bindingReferences ?? { variables: [], secrets: [] },
+      authored: snapshot?.authored ?? {
+        name: spec.specName,
+        preconditions: [],
+        setup: [],
+        steps: [],
+        assertions: [],
+      },
+      effectiveGoal: snapshot?.effectiveGoal ?? '',
+      counts: {
+        executionStepsTotal: steps.length,
+        executionStepsPassed: passedSteps,
+        executionStepsFailed: steps.length - passedSteps,
+      },
+      firstFailure,
+      previewScreenshotPath: selectPreviewScreenshotPath(steps),
+      resultJsonPath: path.posix.join('tests', spec.specId, 'result.json'),
+      steps,
+    };
+  }
+
   private async _copyRecordingArtifact(
     specId: string,
     recording: GoalResult['recording'],
@@ -300,6 +652,76 @@ export class ReportWriter {
     await fsp.copyFile(recording.filePath, path.join(this._runDir, recordingRelative));
     return recordingRelative;
   }
+}
+
+function collectBindingReferences(spec: LoadedRepoTestSpec): BindingReferenceRecord {
+  const variables = new Set<string>();
+  const secrets = new Set<string>();
+  const values = [
+    spec.name,
+    spec.description,
+    ...spec.preconditions,
+    ...spec.setup,
+    ...spec.steps,
+    ...spec.assertions,
+  ].filter((value): value is string => typeof value === 'string');
+
+  for (const value of values) {
+    for (const match of value.matchAll(/\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g)) {
+      const namespace = match[1];
+      const key = match[2];
+      if (namespace === 'variables') {
+        variables.add(key);
+      } else if (namespace === 'secrets') {
+        secrets.add(key);
+      }
+    }
+  }
+
+  return {
+    variables: Array.from(variables.values()).sort((left, right) => left.localeCompare(right)),
+    secrets: Array.from(secrets.values()).sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+function toDisplayPath(rootDir: string, filePath: string): string {
+  const relative = path.relative(rootDir, filePath);
+  if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return relative.split(path.sep).join('/');
+  }
+  return filePath.split(path.sep).join('/');
+}
+
+function selectPreviewScreenshotPath(
+  steps: StepArtifactRecord[],
+): string | undefined {
+  const failedScreenshot = steps.find((step) => !step.success && step.screenshotFile);
+  if (failedScreenshot?.screenshotFile) {
+    return failedScreenshot.screenshotFile;
+  }
+  return steps.find((step) => step.screenshotFile)?.screenshotFile;
+}
+
+function findRunFirstFailure(
+  specs: RunManifestSpecRecord[],
+  diagnosticsSummary?: string,
+): RunManifestFirstFailureRecord | undefined {
+  const failedSpec = specs.find((spec) => !spec.success);
+  if (failedSpec?.firstFailure) {
+    return failedSpec.firstFailure;
+  }
+  if (failedSpec) {
+    return {
+      specId: failedSpec.specId,
+      specName: failedSpec.specName,
+      message: failedSpec.message,
+      screenshotPath: failedSpec.previewScreenshotPath,
+    };
+  }
+  if (diagnosticsSummary) {
+    return { message: diagnosticsSummary };
+  }
+  return undefined;
 }
 
 function toStepArtifactRecord(

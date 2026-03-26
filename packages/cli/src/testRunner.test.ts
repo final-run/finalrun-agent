@@ -5,12 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  Logger,
   redactResolvedValue,
   type LoadedRepoTestSpec,
   type RuntimeBindings,
 } from '@finalrun/common';
 import type { GoalResult } from '@finalrun/goal-executor';
 import { ReportWriter } from './reportWriter.js';
+import { DevicePreparationError } from './goalRunner.js';
 import { runTests, selectExecutionPlatform, testRunnerDependencies } from './testRunner.js';
 
 function createDevice(platform: string): { getPlatform(): string } {
@@ -95,8 +97,11 @@ test('redactResolvedValue preserves complete placeholders when secrets overlap',
   assert.equal(redacted, 'primary=${secrets.long} secondary=${secrets.short}');
 });
 
-test('ReportWriter emits redacted JSON artifacts and the static reasoning-first HTML report', async () => {
+test('ReportWriter emits redacted JSON artifacts and input snapshots without persisted HTML', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-'));
+  const workspaceRoot = path.join(runDir, 'workspace');
+  const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'auth', 'login.yaml');
+  const envPath = path.join(workspaceRoot, '.finalrun', 'env', 'staging.yaml');
   const writer = new ReportWriter({
     runDir,
     envName: 'staging',
@@ -128,7 +133,7 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     setup: [],
     steps: ['Enter ${secrets.email} on the login screen.'],
     assertions: ['The feed is visible.'],
-    sourcePath: '/repo/.finalrun/tests/auth/login.yaml',
+    sourcePath: specSourcePath,
     relativePath: 'auth/login.yaml',
     specId: 'auth__login',
   };
@@ -200,8 +205,71 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
   };
 
   try {
+    await fsp.mkdir(path.dirname(specSourcePath), { recursive: true });
+    await fsp.mkdir(path.dirname(envPath), { recursive: true });
+    await fsp.writeFile(
+      specSourcePath,
+      [
+        'name: login',
+        'description: Verify a user can log in.',
+        'steps:',
+        '  - Enter ${secrets.email} on the login screen.',
+        'assertions:',
+        '  - The feed is visible.',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fsp.writeFile(
+      envPath,
+      ['secrets:', '  email: ${FINALRUN_TEST_EMAIL_SECRET}', 'variables:', '  language: Spanish'].join('\n'),
+      'utf-8',
+    );
     await fsp.writeFile(recordingPath, 'fake-video-data', 'utf-8');
     await writer.init();
+    await writer.writeRunInputs({
+      workspaceRoot,
+      environment: {
+        envName: 'staging',
+        envPath,
+        config: {
+          secrets: {
+            email: '${FINALRUN_TEST_EMAIL_SECRET}',
+          },
+          variables: {
+            language: 'Spanish',
+          },
+        },
+        bindings,
+        secretReferences: [
+          {
+            key: 'email',
+            envVar: 'FINALRUN_TEST_EMAIL_SECRET',
+          },
+        ],
+      },
+      specs: [spec],
+      effectiveGoals: new Map([
+        [spec.specId, 'Test Name: login\n\nSteps:\n1. Enter ${secrets.email}.'],
+      ]),
+      target: {
+        type: 'direct',
+      },
+      cli: {
+        command: 'finalrun test',
+        selectors: ['auth/login.yaml'],
+        debug: false,
+        maxIterations: 50,
+      },
+      model: {
+        provider: 'openai',
+        modelName: 'gpt-4o',
+        label: 'openai/gpt-4o',
+      },
+      app: {
+        source: 'repo',
+        label: 'repo app',
+      },
+    });
     writer.appendLogLine('report writer smoke check for person@example.com');
     writer.createLoggerSink()({
       level: 1,
@@ -225,8 +293,12 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     const recordingArtifactPath = path.join(runDir, 'tests', 'auth__login', 'recording.mp4');
     const resultJsonPath = path.join(runDir, 'tests', 'auth__login', 'result.json');
     const summaryJsonPath = path.join(runDir, 'summary.json');
-    const htmlPath = path.join(runDir, 'index.html');
+    const runJsonPath = path.join(runDir, 'run.json');
     const runnerLogPath = path.join(runDir, 'runner.log');
+    const specSnapshotYamlPath = path.join(runDir, 'input', 'specs', 'auth__login.yaml');
+    const specSnapshotJsonPath = path.join(runDir, 'input', 'specs', 'auth__login.json');
+    const envSnapshotYamlPath = path.join(runDir, 'input', 'env.snapshot.yaml');
+    const envSnapshotJsonPath = path.join(runDir, 'input', 'env.json');
 
     for (const target of [
       stepJsonPath,
@@ -234,31 +306,184 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
       recordingArtifactPath,
       resultJsonPath,
       summaryJsonPath,
-      htmlPath,
+      runJsonPath,
       runnerLogPath,
+      specSnapshotYamlPath,
+      specSnapshotJsonPath,
+      envSnapshotYamlPath,
+      envSnapshotJsonPath,
     ]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
 
     const stepJson = await fsp.readFile(stepJsonPath, 'utf-8');
-    const html = await fsp.readFile(htmlPath, 'utf-8');
+    const runJson = await fsp.readFile(runJsonPath, 'utf-8');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
 
     assert.equal(stepJson.includes('person@example.com'), false);
     assert.equal(stepJson.includes('${secrets.email}'), true);
-    assert.equal(html.includes('person@example.com'), false);
-    assert.equal(html.includes('${secrets.email}'), true);
+    assert.equal(runJson.includes('person@example.com'), false);
+    assert.equal(runJson.includes('${secrets.email}'), true);
     assert.equal(stepJson.includes('driver echoed ${secrets.email}'), true);
-    assert.equal(html.includes('Reasoning'), true);
-    assert.equal(html.includes('Planner Thought'), true);
-    assert.equal(html.includes('selectStep('), true);
-    assert.equal(html.includes('tests/auth__login/screenshots/001.jpg'), true);
-    assert.equal(html.includes('tests/auth__login/recording.mp4'), true);
-    assert.equal(html.includes('recording-video'), true);
+    assert.equal(runJson.includes('"target": {\n      "type": "direct"'), true);
     assert.equal(stepJson.includes('"videoOffsetMs": 1000'), true);
     assert.equal(runnerLog.includes('person@example.com'), false);
     assert.equal(runnerLog.includes('${secrets.email}'), true);
+    await assert.rejects(() => fsp.stat(path.join(runDir, 'index.html')));
+  } finally {
+    await fsp.rm(runDir, { recursive: true, force: true });
+  }
+});
+
+test('ReportWriter persists suite snapshots and suite metadata without changing per-spec result files', async () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-report-'));
+  const workspaceRoot = path.join(runDir, 'workspace');
+  const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'login', 'valid_login.yaml');
+  const suiteSourcePath = path.join(
+    workspaceRoot,
+    '.finalrun',
+    'suites',
+    'login_suite.yaml',
+  );
+  const writer = new ReportWriter({
+    runDir,
+    envName: 'none',
+    platform: 'android',
+    runId: '2026-03-24T08-10-11.000Z-none-android',
+    bindings: {
+      secrets: {},
+      variables: {},
+    },
+  });
+
+  const spec: LoadedRepoTestSpec = {
+    name: 'valid login',
+    preconditions: [],
+    setup: [],
+    steps: ['Open login.', 'Submit valid credentials.'],
+    assertions: ['The dashboard is visible.'],
+    sourcePath: specSourcePath,
+    relativePath: 'login/valid_login.yaml',
+    specId: 'login__valid_login',
+  };
+
+  try {
+    await fsp.mkdir(path.dirname(specSourcePath), { recursive: true });
+    await fsp.mkdir(path.dirname(suiteSourcePath), { recursive: true });
+    await fsp.writeFile(
+      specSourcePath,
+      [
+        'name: valid login',
+        'steps:',
+        '  - Open login.',
+        '  - Submit valid credentials.',
+        'assertions:',
+        '  - The dashboard is visible.',
+      ].join('\n'),
+      'utf-8',
+    );
+    await fsp.writeFile(
+      suiteSourcePath,
+      [
+        'name: login suite',
+        'tests:',
+        '  - login/valid_login.yaml',
+        '  - dashboard/**',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writer.init();
+    await writer.writeRunInputs({
+      workspaceRoot,
+      environment: {
+        envName: 'none',
+        config: {
+          secrets: {},
+          variables: {},
+        },
+        bindings: {
+          secrets: {},
+          variables: {},
+        },
+        secretReferences: [],
+      },
+      specs: [spec],
+      suite: {
+        name: 'login suite',
+        tests: ['login/valid_login.yaml', 'dashboard/**'],
+        sourcePath: suiteSourcePath,
+        relativePath: 'login_suite.yaml',
+        suiteId: 'login_suite',
+      },
+      effectiveGoals: new Map([
+        [spec.specId, 'Test Name: valid login\n\nSteps:\n1. Open login.\n2. Submit valid credentials.'],
+      ]),
+      target: {
+        type: 'suite',
+        suiteId: 'login_suite',
+        suiteName: 'login suite',
+        suitePath: 'login_suite.yaml',
+      },
+      cli: {
+        command: 'finalrun test --suite login_suite.yaml',
+        selectors: [],
+        suitePath: 'login_suite.yaml',
+        debug: false,
+      },
+      model: {
+        provider: 'openai',
+        modelName: 'gpt-4o',
+        label: 'openai/gpt-4o',
+      },
+      app: {
+        source: 'repo',
+        label: 'repo app',
+      },
+    });
+
+    const specRecord = await writer.writeSpecRecord(spec, createGoalResult(), {
+      secrets: {},
+      variables: {},
+    });
+    await writer.finalize({
+      startedAt: '2026-03-24T08:10:11.000Z',
+      completedAt: '2026-03-24T08:10:20.000Z',
+      specs: [specRecord],
+      successOverride: true,
+    });
+
+    const suiteSnapshotYamlPath = path.join(runDir, 'input', 'suite.snapshot.yaml');
+    const suiteSnapshotJsonPath = path.join(runDir, 'input', 'suite.json');
+    const runJsonPath = path.join(runDir, 'run.json');
+    const resultJsonPath = path.join(runDir, 'tests', 'login__valid_login', 'result.json');
+
+    for (const targetPath of [
+      suiteSnapshotYamlPath,
+      suiteSnapshotJsonPath,
+      runJsonPath,
+      resultJsonPath,
+    ]) {
+      const stats = await fsp.stat(targetPath);
+      assert.equal(stats.isFile(), true);
+    }
+
+    const runJson = JSON.parse(await fsp.readFile(runJsonPath, 'utf-8'));
+    const resultJson = JSON.parse(await fsp.readFile(resultJsonPath, 'utf-8'));
+    const suiteJson = JSON.parse(await fsp.readFile(suiteSnapshotJsonPath, 'utf-8'));
+
+    assert.deepEqual(runJson.run.target, {
+      type: 'suite',
+      suiteId: 'login_suite',
+      suiteName: 'login suite',
+      suitePath: 'login_suite.yaml',
+    });
+    assert.equal(runJson.input.suite.suiteName, 'login suite');
+    assert.deepEqual(runJson.input.suite.tests, ['login/valid_login.yaml', 'dashboard/**']);
+    assert.deepEqual(runJson.input.suite.resolvedSpecIds, ['login__valid_login']);
+    assert.equal(suiteJson.snapshotYamlPath, 'input/suite.snapshot.yaml');
+    assert.equal(resultJson.suiteName, undefined);
+    await assert.rejects(() => fsp.stat(path.join(runDir, 'index.html')));
   } finally {
     await fsp.rm(runDir, { recursive: true, force: true });
   }
@@ -321,7 +546,7 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     );
 
     const summaryPath = path.join(result.runDir, 'summary.json');
-    const indexPath = path.join(result.runDir, 'index.html');
+    const runJsonPath = path.join(result.runDir, 'run.json');
     const resultPath = path.join(result.runDir, 'tests', 'login', 'result.json');
     const stepPath = path.join(result.runDir, 'tests', 'login', 'steps', '001.json');
     const screenshotPath = path.join(
@@ -335,28 +560,29 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
 
     for (const target of [
       summaryPath,
-      indexPath,
+      runJsonPath,
       resultPath,
       stepPath,
       screenshotPath,
       runnerLogPath,
+      result.runIndexPath,
     ]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
 
     const summaryJson = await fsp.readFile(summaryPath, 'utf-8');
-    const html = await fsp.readFile(indexPath, 'utf-8');
     const specResultJson = await fsp.readFile(resultPath, 'utf-8');
     const stepJson = await fsp.readFile(stepPath, 'utf-8');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
 
     assert.equal(summaryJson.includes('person@example.com'), false);
     assert.equal(summaryJson.includes('${secrets.email}'), false);
-    for (const content of [html, specResultJson, stepJson, runnerLog]) {
+    for (const content of [specResultJson, stepJson, runnerLog]) {
       assert.equal(content.includes('person@example.com'), false);
       assert.equal(content.includes('${secrets.email}'), true);
     }
+    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
@@ -409,13 +635,14 @@ test('runTests succeeds without env config when the repo is env-free', async () 
     assert.match(result.runDir, /-none-android$/);
 
     const summaryPath = path.join(result.runDir, 'summary.json');
-    const indexPath = path.join(result.runDir, 'index.html');
+    const runJsonPath = path.join(result.runDir, 'run.json');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
-    for (const target of [summaryPath, indexPath, runnerLogPath]) {
+    for (const target of [summaryPath, runJsonPath, runnerLogPath, result.runIndexPath]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
+    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
@@ -583,10 +810,10 @@ test('runTests writes top-level artifacts when validation fails before platform 
     assert.equal(result.specResults.length, 0);
 
     const summaryPath = path.join(result.runDir, 'summary.json');
-    const indexPath = path.join(result.runDir, 'index.html');
+    const runJsonPath = path.join(result.runDir, 'run.json');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
-    for (const target of [summaryPath, indexPath, runnerLogPath]) {
+    for (const target of [summaryPath, runJsonPath, runnerLogPath, result.runIndexPath]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
@@ -596,6 +823,7 @@ test('runTests writes top-level artifacts when validation fails before platform 
 
     assert.equal(summaryJson.includes('"success": false'), true);
     assert.equal(runnerLog.includes('Run validation failed'), true);
+    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -629,7 +857,73 @@ test('runTests writes failure artifacts when no selectors are provided', async (
     const runnerLogPath = path.join(result.runDir, 'runner.log');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
     assert.equal(runnerLog.includes('At least one test selector is required'), true);
+    const runIndexStats = await fsp.stat(result.runIndexPath);
+    assert.equal(runIndexStats.isFile(), true);
   } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests persists buffered setup logs and raw command transcripts when device setup fails early', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-setup-buffering-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+
+  testRunnerDependencies.prepareGoalSession = async () => {
+    Logger.i('Buffered setup log before runner.log exists');
+    throw new DevicePreparationError('No runnable devices or startable targets were found.', [
+      {
+        scope: 'android-connected',
+        summary: 'Android device discovery failed.',
+        blocking: true,
+        transcripts: [
+          {
+            command: 'adb devices -l',
+            stdout: '',
+            stderr: 'adb executable missing',
+            exitCode: 1,
+          },
+        ],
+      },
+    ]);
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    const runnerLogPath = path.join(result.runDir, 'runner.log');
+    const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
+
+    assert.match(runnerLog, /Buffered setup log before runner\.log exists/);
+    assert.match(runnerLog, /Run setup failed before execution/);
+    assert.match(runnerLog, /Command: adb devices -l/);
+    assert.match(runnerLog, /stderr:\nadb executable missing/);
+    const runJson = await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8');
+    assert.match(runJson, /"failurePhase": "setup"/);
+    const specSnapshotStats = await fsp.stat(
+      path.join(result.runDir, 'input', 'specs', 'login.yaml'),
+    );
+    assert.equal(specSnapshotStats.isFile(), true);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });

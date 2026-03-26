@@ -4,6 +4,7 @@ packages/*/node_modules/
 
 # TypeScript build output
 packages/*/dist/
+packages/report-web/.next/
 *.tsbuildinfo
 packages/*/*.tsbuildinfo
 resources/ios/Debug-iphonesimulator/

@@ -6,6 +6,7 @@ export interface FinalRunWorkspace {
   rootDir: string;
   finalrunDir: string;
   testsDir: string;
+  suitesDir: string;
   envDir: string;
   artifactsDir: string;
 }
@@ -34,6 +35,7 @@ export async function resolveWorkspace(
         rootDir: currentDir,
         finalrunDir,
         testsDir: path.join(finalrunDir, 'tests'),
+        suitesDir: path.join(finalrunDir, 'suites'),
         envDir: path.join(finalrunDir, 'env'),
         artifactsDir: path.join(finalrunDir, 'artifacts'),
       };
@@ -131,6 +133,29 @@ export async function validateAppOverride(
 
 export function isYamlFile(filePath: string): boolean {
   return /\.ya?ml$/i.test(filePath);
+}
+
+export async function resolveSuiteManifestPath(
+  suitesDir: string,
+  suitePath: string,
+): Promise<string> {
+  if (!(await pathExists(suitesDir))) {
+    throw new Error(`Missing .finalrun/suites directory: ${suitesDir}`);
+  }
+
+  const resolvedPath = resolveWorkspaceScopedPath(suitePath, suitesDir, '.finalrun/suites/');
+  assertPathWithinRoot(suitesDir, resolvedPath, 'Suite manifest');
+
+  if (!isYamlFile(resolvedPath)) {
+    throw new Error(`Suite manifest must point to a .yaml or .yml file: ${suitePath}`);
+  }
+
+  const stats = await fs.stat(resolvedPath).catch(() => null);
+  if (!stats?.isFile()) {
+    throw new Error(`Suite manifest not found: ${resolvedPath}`);
+  }
+
+  return resolvedPath;
 }
 
 export async function resolveEnvironmentFile(
@@ -251,4 +276,22 @@ function formatMissingEnvironmentError(
   }
 
   return `Environment "${requestedEnvName}" was not found in ${envDir}. Available environments: ${availableEnvNames.join(', ')}`;
+}
+
+function resolveWorkspaceScopedPath(
+  candidatePath: string,
+  scopedRootDir: string,
+  workspacePrefix: string,
+): string {
+  const normalizedCandidatePath = candidatePath.split(path.sep).join('/');
+  const workspaceRoot = path.resolve(scopedRootDir, '..', '..');
+  if (path.isAbsolute(candidatePath)) {
+    return path.resolve(candidatePath);
+  }
+
+  if (normalizedCandidatePath.startsWith(workspacePrefix)) {
+    return path.resolve(workspaceRoot, candidatePath);
+  }
+
+  return path.resolve(scopedRootDir, candidatePath);
 }

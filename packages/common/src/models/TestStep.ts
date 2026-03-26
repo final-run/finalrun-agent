@@ -1,5 +1,5 @@
-// Port of common/model/TestStep.dart — ONLY the 15 action classes used by goal-executor.
-// The Dart file is 5,048 lines with 50+ classes; we take only what the CLI needs.
+// Port of common/model/TestStep.dart — a focused subset used by the CLI,
+// device-node runtime, and transport parity layers.
 
 import { AppUpload } from './AppUpload.js';
 import { SingleArgument } from './SingleArgument.js';
@@ -29,6 +29,34 @@ export class Point {
 
   toJson(): Record<string, unknown> {
     return { x: this.x, y: this.y };
+  }
+}
+
+/**
+ * Percent-based point coordinates.
+ * Dart: PointPercent class in TestStep.dart
+ */
+export class PointPercent {
+  readonly xPercent: number;
+  readonly yPercent: number;
+
+  constructor(params: { xPercent: number; yPercent: number }) {
+    this.xPercent = params.xPercent;
+    this.yPercent = params.yPercent;
+  }
+
+  static fromJson(json: Record<string, unknown>): PointPercent {
+    return new PointPercent({
+      xPercent: json['xPercent'] as number,
+      yPercent: json['yPercent'] as number,
+    });
+  }
+
+  toJson(): Record<string, unknown> {
+    return {
+      xPercent: this.xPercent,
+      yPercent: this.yPercent,
+    };
   }
 }
 
@@ -80,7 +108,7 @@ export abstract class StepAction {
 }
 
 // ============================================================================
-// Concrete action classes — ONLY the 15 used by HeadlessActionExecutor
+// Concrete action classes — focused subset used by the CLI + runtime parity
 // ============================================================================
 
 /**
@@ -113,6 +141,32 @@ export class TapAction extends StepAction {
       point: this.point.toJson(),
       repeat: this.repeat,
       delay: this.delay,
+    };
+  }
+}
+
+/**
+ * Tap at percentage coordinates.
+ * Dart: TapPercentAction in TestStep.dart
+ */
+export class TapPercentAction extends StepAction {
+  readonly point: PointPercent;
+
+  constructor(params: { point: PointPercent }) {
+    super(StepAction.TAP_PERCENT);
+    this.point = params.point;
+  }
+
+  static fromJson(json: Record<string, unknown>): TapPercentAction {
+    return new TapPercentAction({
+      point: PointPercent.fromJson(json['point'] as Record<string, unknown>),
+    });
+  }
+
+  override toJson(): Record<string, unknown> {
+    return {
+      ...super.toJson(),
+      point: this.point.toJson(),
     };
   }
 }
@@ -182,6 +236,16 @@ export class EnterTextAction extends StepAction {
 }
 
 /**
+ * Erase text from the focused input field.
+ * Dart: EraseTextAction in TestStep.dart
+ */
+export class EraseTextAction extends StepAction {
+  constructor() {
+    super(StepAction.ERASE_TEXT);
+  }
+}
+
+/**
  * Absolute-coordinate scroll/swipe action.
  * Dart: ScrollAbsAction in TestStep.dart
  */
@@ -246,6 +310,16 @@ export class BackAction extends StepAction {
 export class HomeAction extends StepAction {
   constructor() {
     super(StepAction.HOME);
+  }
+}
+
+/**
+ * Rotate device orientation.
+ * Dart: RotateAction in TestStep.dart
+ */
+export class RotateAction extends StepAction {
+  constructor() {
+    super(StepAction.ROTATE);
   }
 }
 
@@ -394,6 +468,26 @@ export class WaitAction extends StepAction {
 export class GetScreenshotAndHierarchyAction extends StepAction {
   constructor() {
     super(StepAction.GET_SCREENSHOT_AND_HIERARCHY);
+  }
+}
+
+/**
+ * Request the current device screenshot.
+ * Dart: GetScreenshotAction in TestStep.dart
+ */
+export class GetScreenshotAction extends StepAction {
+  constructor() {
+    super(StepAction.GET_SCREENSHOT);
+  }
+}
+
+/**
+ * Request the current device hierarchy.
+ * Dart: GetHierarchyAction in TestStep.dart
+ */
+export class GetHierarchyAction extends StepAction {
+  constructor() {
+    super(StepAction.GET_HIERARCHY);
   }
 }
 

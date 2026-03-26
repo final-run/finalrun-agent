@@ -14,6 +14,7 @@ import {
   ScrollAbsAction,
   BackAction,
   HomeAction,
+  RotateAction,
   HideKeyboardAction,
   PressKeyAction,
   LaunchAppAction,
@@ -33,6 +34,7 @@ import {
   PLANNER_ACTION_SCROLL,
   PLANNER_ACTION_BACK,
   PLANNER_ACTION_HOME,
+  PLANNER_ACTION_ROTATE,
   PLANNER_ACTION_HIDE_KEYBOARD,
   PLANNER_ACTION_PRESS_ENTER,
   PLANNER_ACTION_LAUNCH_APP,
@@ -157,6 +159,9 @@ export class HeadlessActionExecutor {
 
         case PLANNER_ACTION_HOME:
           return await this._executeSimpleAction(input, new HomeAction());
+
+        case PLANNER_ACTION_ROTATE:
+          return await this._executeSingleDevicePhase(input, new RotateAction());
 
         case PLANNER_ACTION_HIDE_KEYBOARD:
           return await this._executeSimpleAction(input, new HideKeyboardAction());
@@ -725,6 +730,7 @@ export class HeadlessActionExecutor {
       | ScrollAbsAction
       | BackAction
       | HomeAction
+      | RotateAction
       | HideKeyboardAction
       | PressKeyAction
       | LaunchAppAction

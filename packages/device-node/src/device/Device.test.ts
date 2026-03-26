@@ -2,46 +2,141 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AppUpload,
-  DeeplinkAction,
-  DeviceAppInfo,
+  EraseTextAction,
   DeviceActionRequest,
   DeviceInfo,
   DeviceNodeResponse,
-  GetAppListAction,
+  GetHierarchyAction,
+  GetScreenshotAction,
   LaunchAppAction,
+  PointPercent,
   RecordingRequest,
-  ScrollAbsAction,
+  RotateAction,
+  TapPercentAction,
 } from '@finalrun/common';
-import type { GrpcDriverClient } from '../grpc/GrpcDriverClient.js';
 import { Device } from './Device.js';
+import type {
+  DeviceRuntime,
+  DeviceScreenshotAndHierarchy,
+} from './shared/DeviceRuntime.js';
 
-test('Device refreshes iOS app IDs before launchApp', async () => {
-  const calls: string[] = [];
-  const grpcClient = {
-    isConnected: true,
+function createRuntime(overrides?: Partial<DeviceRuntime>): DeviceRuntime {
+  return {
+    setShouldEnsureStability() {},
+    isConnected() {
+      return true;
+    },
+    async tap() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async tapPercent() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async longPress() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async enterText() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async eraseText() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async scrollAbs() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async back() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async home() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async rotate() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async hideKeyboard() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async pressKey() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async launchApp() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async killApp() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async openDeepLink() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async setLocation() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async switchToPrimaryApp() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async checkAppInForeground() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async captureState() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async getInstalledAppsResponse() {
+      return new DeviceNodeResponse({ success: true, data: { apps: [] } });
+    },
+    async getInstalledApps() {
+      return [];
+    },
+    async getScreenshot() {
+      return new DeviceNodeResponse({ success: true, data: { screenshot: 'image' } });
+    },
+    async getHierarchy() {
+      return new DeviceNodeResponse({ success: true, data: { hierarchy: '[]' } });
+    },
+    async getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy> {
+      return {
+        screenshot: 'image',
+        hierarchy: '[]',
+        screenWidth: 100,
+        screenHeight: 200,
+      };
+    },
+    async close() {},
+    killDriver() {},
+    ...overrides,
+  };
+}
+
+function createIOSDeviceInfo(): DeviceInfo {
+  return new DeviceInfo({
+    id: 'SIM-1',
+    deviceUUID: 'SIM-1',
+    isAndroid: false,
+    sdkVersion: 17,
+    name: 'iPhone 15 Pro',
+  });
+}
+
+test('Device delegates launchApp and stability preference to the runtime', async () => {
+  const calls: Array<string | boolean | undefined> = [];
+  const runtime = createRuntime({
+    setShouldEnsureStability(shouldEnsureStability) {
+      calls.push(shouldEnsureStability);
+    },
     async launchApp() {
       calls.push('launch');
-      return { success: true };
+      return new DeviceNodeResponse({ success: true, message: 'launched' });
     },
-  };
+  });
 
   const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'SIM-1',
-      deviceUUID: 'SIM-1',
-      isAndroid: false,
-      sdkVersion: 17,
-      name: 'iPhone 15 Pro',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
-    refreshIOSAppIdsBeforeLaunch: async () => {
-      calls.push('refresh');
-    },
+    deviceInfo: createIOSDeviceInfo(),
+    runtime,
   });
 
   const response = await device.executeAction(
     new DeviceActionRequest({
       requestId: 'req-1',
+      shouldEnsureStability: false,
       action: new LaunchAppAction({
         appUpload: new AppUpload({
           id: '',
@@ -53,275 +148,132 @@ test('Device refreshes iOS app IDs before launchApp', async () => {
   );
 
   assert.equal(response.success, true);
-  assert.deepEqual(calls, ['refresh', 'launch']);
+  assert.equal(response.message, 'launched');
+  assert.deepEqual(calls, [false, 'launch']);
 });
 
-test('Device does not refresh app IDs before Android launchApp', async () => {
-  let refreshCalls = 0;
-  let launchCalls = 0;
-  const grpcClient = {
-    isConnected: true,
-    async launchApp() {
-      launchCalls += 1;
-      return { success: true };
+test('Device routes parity primitives to the runtime', async () => {
+  const calls: string[] = [];
+  const runtime = createRuntime({
+    async tapPercent() {
+      calls.push('tapPercent');
+      return new DeviceNodeResponse({ success: true });
     },
-  };
-
-  const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'emulator-5554',
-      deviceUUID: 'device-1',
-      isAndroid: true,
-      sdkVersion: 34,
-      name: 'Android Emulator',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
-    refreshIOSAppIdsBeforeLaunch: async () => {
-      refreshCalls += 1;
+    async eraseText() {
+      calls.push('eraseText');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async rotate() {
+      calls.push('rotate');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async getScreenshot() {
+      calls.push('getScreenshot');
+      return new DeviceNodeResponse({ success: true });
+    },
+    async getHierarchy() {
+      calls.push('getHierarchy');
+      return new DeviceNodeResponse({ success: true });
     },
   });
+  const device = new Device({
+    deviceInfo: createIOSDeviceInfo(),
+    runtime,
+  });
 
-  const response = await device.executeAction(
+  await device.executeAction(
+    new DeviceActionRequest({
+      requestId: 'req-1',
+      action: new TapPercentAction({
+        point: new PointPercent({ xPercent: 0.5, yPercent: 0.5 }),
+      }),
+    }),
+  );
+  await device.executeAction(
     new DeviceActionRequest({
       requestId: 'req-2',
-      action: new LaunchAppAction({
-        appUpload: new AppUpload({
-          id: '',
-          platform: 'android',
-          packageName: 'org.wikipedia',
-        }),
-      }),
+      action: new EraseTextAction(),
     }),
   );
-
-  assert.equal(response.success, true);
-  assert.equal(refreshCalls, 0);
-  assert.equal(launchCalls, 1);
-});
-
-test('Device returns host-side iOS installed apps for GetAppListAction', async () => {
-  const grpcClient = {
-    isConnected: true,
-    async getAppList() {
-      return {
-        success: true,
-        apps: [],
-      };
-    },
-  };
-
-  const apps = [
-    new DeviceAppInfo({
-      packageName: 'org.wikipedia',
-      name: 'Wikipedia',
-      version: '7.7.1',
-    }),
-  ];
-
-  const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'SIM-1',
-      deviceUUID: 'SIM-1',
-      isAndroid: false,
-      sdkVersion: 17,
-      name: 'iPhone 15 Pro',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
-    getIOSInstalledApps: async () => apps,
-  });
-
-  const response = await device.executeAction(
+  await device.executeAction(
     new DeviceActionRequest({
       requestId: 'req-3',
-      action: new GetAppListAction(),
+      action: new RotateAction(),
     }),
   );
-
-  assert.equal(response.success, true);
-  assert.deepEqual(response.data, {
-    apps: apps.map((app) => app.toJson()),
-  });
-});
-
-test('Device executes deeplink actions through the host-side callback', async () => {
-  const openedLinks: string[] = [];
-  const grpcClient = {
-    isConnected: true,
-  };
-
-  const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'emulator-5554',
-      deviceUUID: 'device-1',
-      isAndroid: true,
-      sdkVersion: 34,
-      name: 'Android Emulator',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
-    openDeepLink: async (deeplink) => {
-      openedLinks.push(deeplink);
-      return true;
-    },
-  });
-
-  const response = await device.executeAction(
+  await device.executeAction(
     new DeviceActionRequest({
       requestId: 'req-4',
-      action: new DeeplinkAction({
-        deeplink: 'wikipedia://settings',
-      }),
+      action: new GetScreenshotAction(),
     }),
   );
-
-  assert.equal(response.success, true);
-  assert.deepEqual(openedLinks, ['wikipedia://settings']);
-  assert.equal(response.message, 'Successfully opened deep link: wikipedia://settings');
-});
-
-test('Device routes Android scroll actions through the host-side swipe callback', async () => {
-  const swipeCalls: Array<Record<string, number>> = [];
-  let grpcSwipeCalls = 0;
-  const grpcClient = {
-    isConnected: true,
-    async swipe() {
-      grpcSwipeCalls += 1;
-      return { success: true };
-    },
-  };
-
-  const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'emulator-5554',
-      deviceUUID: 'device-1',
-      isAndroid: true,
-      sdkVersion: 34,
-      name: 'Android Emulator',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
-    performAndroidSwipe: async (params) => {
-      swipeCalls.push(params);
-      return { success: true, message: 'scrolled via adb' };
-    },
-  });
-
-  const response = await device.executeAction(
+  await device.executeAction(
     new DeviceActionRequest({
-      requestId: 'req-scroll-1',
-      action: new ScrollAbsAction({
-        startX: 10,
-        startY: 20,
-        endX: 30,
-        endY: 40,
-        durationMs: 500,
-      }),
+      requestId: 'req-5',
+      action: new GetHierarchyAction(),
     }),
   );
 
-  assert.equal(response.success, true);
-  assert.equal(response.message, 'scrolled via adb');
-  assert.equal(grpcSwipeCalls, 0);
-  assert.deepEqual(swipeCalls, [
-    { startX: 10, startY: 20, endX: 30, endY: 40, durationMs: 500 },
+  assert.deepEqual(calls, [
+    'tapPercent',
+    'eraseText',
+    'rotate',
+    'getScreenshot',
+    'getHierarchy',
   ]);
 });
 
-test('Device routes iOS scroll actions through gRPC swipe', async () => {
-  const grpcSwipeCalls: Array<Record<string, number>> = [];
-  const grpcClient = {
-    isConnected: true,
-    async swipe(params: Record<string, number>) {
-      grpcSwipeCalls.push(params);
-      return { success: true, message: 'scrolled via grpc' };
+test('Device exposes runtime screenshot and installed app helpers', async () => {
+  const runtime = createRuntime({
+    async getInstalledApps() {
+      return [
+        {
+          packageName: 'org.wikipedia',
+          name: 'Wikipedia',
+          version: '7.7.1',
+          toJson() {
+            return {
+              packageName: 'org.wikipedia',
+              name: 'Wikipedia',
+              version: '7.7.1',
+            };
+          },
+        },
+      ] as never;
     },
-  };
-
-  const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'SIM-1',
-      deviceUUID: 'SIM-1',
-      isAndroid: false,
-      sdkVersion: 17,
-      name: 'iPhone 15 Pro',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
+    async getScreenshotAndHierarchy() {
+      return {
+        screenshot: 'base64',
+        hierarchy: '[]',
+        screenWidth: 1179,
+        screenHeight: 2556,
+      };
+    },
   });
 
-  const response = await device.executeAction(
-    new DeviceActionRequest({
-      requestId: 'req-scroll-2',
-      action: new ScrollAbsAction({
-        startX: 50,
-        startY: 60,
-        endX: 70,
-        endY: 80,
-        durationMs: 600,
-      }),
-    }),
-  );
-
-  assert.equal(response.success, true);
-  assert.equal(response.message, 'scrolled via grpc');
-  assert.deepEqual(grpcSwipeCalls, [
-    { startX: 50, startY: 60, endX: 70, endY: 80, durationMs: 600 },
-  ]);
-});
-
-test('Device returns a clear error when Android scroll callback is missing', async () => {
-  let grpcSwipeCalls = 0;
-  const grpcClient = {
-    isConnected: true,
-    async swipe() {
-      grpcSwipeCalls += 1;
-      return { success: true };
-    },
-  };
-
   const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'emulator-5554',
-      deviceUUID: 'device-1',
-      isAndroid: true,
-      sdkVersion: 34,
-      name: 'Android Emulator',
-    }),
-    grpcClient: grpcClient as unknown as GrpcDriverClient,
+    deviceInfo: createIOSDeviceInfo(),
+    runtime,
   });
 
-  const response = await device.executeAction(
-    new DeviceActionRequest({
-      requestId: 'req-scroll-3',
-      action: new ScrollAbsAction({
-        startX: 5,
-        startY: 15,
-        endX: 25,
-        endY: 35,
-        durationMs: 400,
-      }),
-    }),
-  );
+  const apps = await device.getInstalledApps();
+  const screenshot = await device.getScreenshotAndHierarchy();
 
-  assert.equal(response.success, false);
-  assert.equal(
-    response.message,
-    'Android scroll actions require a host-side swipe handler, but none is configured.',
-  );
-  assert.equal(grpcSwipeCalls, 0);
+  assert.equal(apps.length, 1);
+  assert.equal(apps[0]?.packageName, 'org.wikipedia');
+  assert.deepEqual(screenshot, {
+    screenshot: 'base64',
+    hierarchy: '[]',
+    screenWidth: 1179,
+    screenHeight: 2556,
+  });
 });
 
 test('Device delegates startRecording through the recording controller with the device platform', async () => {
   const calls: Array<Record<string, unknown>> = [];
   const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'SIM-1',
-      deviceUUID: 'SIM-1',
-      isAndroid: false,
-      sdkVersion: 17,
-      name: 'iPhone 15 Pro',
-    }),
-    grpcClient: {
-      isConnected: true,
-      close() {},
-    } as unknown as GrpcDriverClient,
+    deviceInfo: createIOSDeviceInfo(),
+    runtime: createRuntime(),
     recordingController: {
       async startRecording(params) {
         calls.push(params as unknown as Record<string, unknown>);
@@ -358,22 +310,15 @@ test('Device delegates startRecording through the recording controller with the 
   ]);
 });
 
-test('Device.closeConnection cleans up active recordings before closing gRPC', async () => {
+test('Device.closeConnection cleans up active recordings before closing the runtime', async () => {
   const calls: string[] = [];
   const device = new Device({
-    deviceInfo: new DeviceInfo({
-      id: 'SIM-1',
-      deviceUUID: 'SIM-1',
-      isAndroid: false,
-      sdkVersion: 17,
-      name: 'iPhone 15 Pro',
-    }),
-    grpcClient: {
-      isConnected: true,
-      close() {
+    deviceInfo: createIOSDeviceInfo(),
+    runtime: createRuntime({
+      async close() {
         calls.push('close');
       },
-    } as unknown as GrpcDriverClient,
+    }),
     recordingController: {
       async startRecording() {
         return new DeviceNodeResponse({ success: true });

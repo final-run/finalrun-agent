@@ -1,12 +1,20 @@
 // Port of device_node/lib/device_node.dart
 // Singleton entry point for device management.
 
-import type { FilePathUtil, DeviceInfo } from '@finalrun/common';
+import type {
+  FilePathUtil,
+  DeviceInfo,
+  DeviceInventoryDiagnostic,
+  DeviceInventoryEntry,
+  DeviceInventoryReport,
+} from '@finalrun/common';
 import { Logger } from '@finalrun/common';
-import { DeviceManager } from './device/DeviceManager.js';
+import { DeviceDiscoveryService } from './discovery/DeviceDiscoveryService.js';
 import { DevicePool } from './device/DevicePool.js';
 import { Device } from './device/Device.js';
 import { GrpcDriverSetup } from './grpc/GrpcDriverSetup.js';
+import { AdbClient } from './infra/android/AdbClient.js';
+import { SimctlClient } from './infra/ios/SimctlClient.js';
 
 /**
  * Singleton manager for detecting, tracking, and providing access to connected devices.
@@ -16,14 +24,18 @@ import { GrpcDriverSetup } from './grpc/GrpcDriverSetup.js';
 export class DeviceNode {
   private static _instance: DeviceNode | null = null;
 
-  private _deviceManager: DeviceManager;
+  private _deviceDiscoveryService: DeviceDiscoveryService;
   private _devicePool: DevicePool;
   private _grpcDriverSetup: GrpcDriverSetup | null = null;
   private _initialized: boolean = false;
+  private _adbClient: AdbClient;
+  private _simctlClient: SimctlClient;
 
   private constructor() {
-    this._deviceManager = new DeviceManager();
+    this._deviceDiscoveryService = new DeviceDiscoveryService();
     this._devicePool = new DevicePool();
+    this._adbClient = new AdbClient();
+    this._simctlClient = new SimctlClient();
   }
 
   /** Get the singleton instance. */
@@ -45,7 +57,8 @@ export class DeviceNode {
    */
   init(filePathUtil: FilePathUtil): void {
     this._grpcDriverSetup = new GrpcDriverSetup({
-      deviceManager: this._deviceManager,
+      adbClient: this._adbClient,
+      simctlClient: this._simctlClient,
       filePathUtil,
     });
     this._initialized = true;
@@ -55,19 +68,24 @@ export class DeviceNode {
    * Detect all connected devices (Android + iOS).
    * Dart: Future<List<DeviceInfo>> detectDevices()
    */
+  async detectInventory(adbPath: string | null): Promise<DeviceInventoryReport> {
+    const inventory = await this._deviceDiscoveryService.detectInventory(adbPath);
+    Logger.i(`Detected ${inventory.entries.length} target(s)`);
+    return inventory;
+  }
+
   async detectDevices(adbPath: string | null): Promise<DeviceInfo[]> {
-    const devices: DeviceInfo[] = [];
+    const inventory = await this.detectInventory(adbPath);
+    return inventory.entries
+      .filter((entry) => entry.runnable && entry.deviceInfo !== null)
+      .map((entry) => entry.deviceInfo as DeviceInfo);
+  }
 
-    if (adbPath) {
-      const androidDevices = await this._deviceManager.getAndroidDevices(adbPath);
-      devices.push(...androidDevices);
-    }
-
-    const iosDevices = await this._deviceManager.getIOSDevices();
-    devices.push(...iosDevices);
-
-    Logger.i(`Detected ${devices.length} device(s)`);
-    return devices;
+  async startTarget(
+    entry: DeviceInventoryEntry,
+    adbPath: string | null,
+  ): Promise<DeviceInventoryDiagnostic | null> {
+    return await this._deviceDiscoveryService.startTarget(entry, adbPath);
   }
 
   /**
@@ -111,7 +129,15 @@ export class DeviceNode {
     }
   }
 
-  get deviceManager(): DeviceManager {
-    return this._deviceManager;
+  async installAndroidApp(
+    adbPath: string,
+    deviceId: string,
+    appPath: string,
+  ): Promise<boolean> {
+    return await this._adbClient.installApp(adbPath, deviceId, appPath);
+  }
+
+  async installIOSApp(deviceId: string, appPath: string): Promise<boolean> {
+    return await this._simctlClient.installApp(deviceId, appPath);
   }
 }

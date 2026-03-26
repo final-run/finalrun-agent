@@ -7,12 +7,14 @@
     "packages/common",
     "packages/device-node",
     "packages/goal-executor",
-    "packages/cli"
+    "packages/cli",
+    "packages/report-web"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "clean": "rm -rf packages/*/dist",
+    "clean": "rm -rf packages/*/dist packages/report-web/.next",
     "dev:cli": "npm run dev --workspace=packages/cli --",
+    "dev:report": "npm run dev --workspace=packages/report-web --",
     "dev:watch": "tsc --build --watch --preserveWatchOutput packages/common/tsconfig.json packages/device-node/tsconfig.json packages/goal-executor/tsconfig.json packages/cli/tsconfig.json",
     "test": "npm run build && npm run test:workspaces",
     "test:workspaces": "npm run test --workspaces --if-present",
