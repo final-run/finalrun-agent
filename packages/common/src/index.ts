@@ -33,6 +33,7 @@ export type {
   ActionPayloadRecord,
   FailurePhase,
   BindingReferenceRecord,
+  ReportServerStateRecord,
   RunTargetRecord,
   StepArtifactRecord,
   SpecArtifactRecord,

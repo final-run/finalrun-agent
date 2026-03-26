@@ -97,7 +97,7 @@ test('redactResolvedValue preserves complete placeholders when secrets overlap',
   assert.equal(redacted, 'primary=${secrets.long} secondary=${secrets.short}');
 });
 
-test('ReportWriter emits redacted JSON artifacts and the static reasoning-first HTML report', async () => {
+test('ReportWriter emits redacted JSON artifacts and input snapshots without persisted HTML', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-'));
   const workspaceRoot = path.join(runDir, 'workspace');
   const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'auth', 'login.yaml');
@@ -294,7 +294,6 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
     const resultJsonPath = path.join(runDir, 'tests', 'auth__login', 'result.json');
     const summaryJsonPath = path.join(runDir, 'summary.json');
     const runJsonPath = path.join(runDir, 'run.json');
-    const htmlPath = path.join(runDir, 'index.html');
     const runnerLogPath = path.join(runDir, 'runner.log');
     const specSnapshotYamlPath = path.join(runDir, 'input', 'specs', 'auth__login.yaml');
     const specSnapshotJsonPath = path.join(runDir, 'input', 'specs', 'auth__login.json');
@@ -308,7 +307,6 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
       resultJsonPath,
       summaryJsonPath,
       runJsonPath,
-      htmlPath,
       runnerLogPath,
       specSnapshotYamlPath,
       specSnapshotJsonPath,
@@ -321,30 +319,18 @@ test('ReportWriter emits redacted JSON artifacts and the static reasoning-first 
 
     const stepJson = await fsp.readFile(stepJsonPath, 'utf-8');
     const runJson = await fsp.readFile(runJsonPath, 'utf-8');
-    const html = await fsp.readFile(htmlPath, 'utf-8');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
 
     assert.equal(stepJson.includes('person@example.com'), false);
     assert.equal(stepJson.includes('${secrets.email}'), true);
     assert.equal(runJson.includes('person@example.com'), false);
     assert.equal(runJson.includes('${secrets.email}'), true);
-    assert.equal(html.includes('person@example.com'), false);
-    assert.equal(html.includes('${secrets.email}'), true);
     assert.equal(stepJson.includes('driver echoed ${secrets.email}'), true);
-    assert.equal(html.includes('Reasoning'), true);
-    assert.equal(html.includes('Planner Thought'), true);
-    assert.equal(html.includes('Run Context'), true);
     assert.equal(runJson.includes('"target": {\n      "type": "direct"'), true);
-    assert.equal(html.includes('Effective Goal'), false);
-    assert.equal(html.includes('Authored Spec'), false);
-    assert.equal(html.includes('selectStep('), true);
-    assert.equal(html.includes('tests/auth__login/screenshots/001.jpg'), true);
-    assert.equal(html.includes('tests/auth__login/recording.mp4'), true);
-    assert.equal(html.includes('recording-video'), true);
-    assert.equal(html.includes('input/specs/auth__login.yaml'), true);
     assert.equal(stepJson.includes('"videoOffsetMs": 1000'), true);
     assert.equal(runnerLog.includes('person@example.com'), false);
     assert.equal(runnerLog.includes('${secrets.email}'), true);
+    await assert.rejects(() => fsp.stat(path.join(runDir, 'index.html')));
   } finally {
     await fsp.rm(runDir, { recursive: true, force: true });
   }
@@ -470,14 +456,12 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
     const suiteSnapshotYamlPath = path.join(runDir, 'input', 'suite.snapshot.yaml');
     const suiteSnapshotJsonPath = path.join(runDir, 'input', 'suite.json');
     const runJsonPath = path.join(runDir, 'run.json');
-    const reportHtmlPath = path.join(runDir, 'index.html');
     const resultJsonPath = path.join(runDir, 'tests', 'login__valid_login', 'result.json');
 
     for (const targetPath of [
       suiteSnapshotYamlPath,
       suiteSnapshotJsonPath,
       runJsonPath,
-      reportHtmlPath,
       resultJsonPath,
     ]) {
       const stats = await fsp.stat(targetPath);
@@ -487,7 +471,6 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
     const runJson = JSON.parse(await fsp.readFile(runJsonPath, 'utf-8'));
     const resultJson = JSON.parse(await fsp.readFile(resultJsonPath, 'utf-8'));
     const suiteJson = JSON.parse(await fsp.readFile(suiteSnapshotJsonPath, 'utf-8'));
-    const reportHtml = await fsp.readFile(reportHtmlPath, 'utf-8');
 
     assert.deepEqual(runJson.run.target, {
       type: 'suite',
@@ -499,11 +482,8 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
     assert.deepEqual(runJson.input.suite.tests, ['login/valid_login.yaml', 'dashboard/**']);
     assert.deepEqual(runJson.input.suite.resolvedSpecIds, ['login__valid_login']);
     assert.equal(suiteJson.snapshotYamlPath, 'input/suite.snapshot.yaml');
-    assert.match(reportHtml, /Run Target/);
-    assert.match(reportHtml, /Suite Tests/);
-    assert.match(reportHtml, /login suite/);
-    assert.match(reportHtml, /input\/suite\.snapshot\.yaml/);
     assert.equal(resultJson.suiteName, undefined);
+    await assert.rejects(() => fsp.stat(path.join(runDir, 'index.html')));
   } finally {
     await fsp.rm(runDir, { recursive: true, force: true });
   }
@@ -567,7 +547,6 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
 
     const summaryPath = path.join(result.runDir, 'summary.json');
     const runJsonPath = path.join(result.runDir, 'run.json');
-    const indexPath = path.join(result.runDir, 'index.html');
     const resultPath = path.join(result.runDir, 'tests', 'login', 'result.json');
     const stepPath = path.join(result.runDir, 'tests', 'login', 'steps', '001.json');
     const screenshotPath = path.join(
@@ -582,7 +561,6 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     for (const target of [
       summaryPath,
       runJsonPath,
-      indexPath,
       resultPath,
       stepPath,
       screenshotPath,
@@ -594,17 +572,17 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     }
 
     const summaryJson = await fsp.readFile(summaryPath, 'utf-8');
-    const html = await fsp.readFile(indexPath, 'utf-8');
     const specResultJson = await fsp.readFile(resultPath, 'utf-8');
     const stepJson = await fsp.readFile(stepPath, 'utf-8');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
 
     assert.equal(summaryJson.includes('person@example.com'), false);
     assert.equal(summaryJson.includes('${secrets.email}'), false);
-    for (const content of [html, specResultJson, stepJson, runnerLog]) {
+    for (const content of [specResultJson, stepJson, runnerLog]) {
       assert.equal(content.includes('person@example.com'), false);
       assert.equal(content.includes('${secrets.email}'), true);
     }
+    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
@@ -658,13 +636,13 @@ test('runTests succeeds without env config when the repo is env-free', async () 
 
     const summaryPath = path.join(result.runDir, 'summary.json');
     const runJsonPath = path.join(result.runDir, 'run.json');
-    const indexPath = path.join(result.runDir, 'index.html');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
-    for (const target of [summaryPath, runJsonPath, indexPath, runnerLogPath, result.runIndexPath]) {
+    for (const target of [summaryPath, runJsonPath, runnerLogPath, result.runIndexPath]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
+    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
@@ -833,10 +811,9 @@ test('runTests writes top-level artifacts when validation fails before platform 
 
     const summaryPath = path.join(result.runDir, 'summary.json');
     const runJsonPath = path.join(result.runDir, 'run.json');
-    const indexPath = path.join(result.runDir, 'index.html');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
-    for (const target of [summaryPath, runJsonPath, indexPath, runnerLogPath, result.runIndexPath]) {
+    for (const target of [summaryPath, runJsonPath, runnerLogPath, result.runIndexPath]) {
       const stats = await fsp.stat(target);
       assert.equal(stats.isFile(), true);
     }
@@ -846,6 +823,7 @@ test('runTests writes top-level artifacts when validation fails before platform 
 
     assert.equal(summaryJson.includes('"success": false'), true);
     assert.equal(runnerLog.includes('Run validation failed'), true);
+    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }

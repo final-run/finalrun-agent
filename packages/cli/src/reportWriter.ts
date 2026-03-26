@@ -29,7 +29,6 @@ import {
 } from '@finalrun/common';
 import type { GoalResult, StepResult } from '@finalrun/goal-executor';
 import type { LoadedEnvironmentConfig } from './specLoader.js';
-import { renderHtmlReport } from './reportTemplate.js';
 
 interface SpecSnapshotState {
   authored: {
@@ -404,7 +403,6 @@ export class ReportWriter {
         resultFile: path.posix.join('tests', spec.specId, 'result.json'),
       })),
       runJsonFile: 'run.json',
-      indexFile: 'index.html',
     };
     const manifest = this._buildRunManifest({
       startedAt: params.startedAt,
@@ -423,11 +421,6 @@ export class ReportWriter {
     await fsp.writeFile(
       path.join(this._runDir, 'run.json'),
       JSON.stringify(manifest, null, 2),
-      'utf-8',
-    );
-    await fsp.writeFile(
-      path.join(this._runDir, 'index.html'),
-      renderHtmlReport(manifest),
       'utf-8',
     );
 
@@ -585,7 +578,6 @@ export class ReportWriter {
       },
       specs: specRecords,
       paths: {
-        html: 'index.html',
         runJson: 'run.json',
         summaryJson: 'summary.json',
         log: 'runner.log',

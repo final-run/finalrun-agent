@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
-import { get } from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { RunManifestRecord, RunTargetRecord } from '@finalrun/common';
-import { serveReportArtifacts } from './reportServer.js';
 import { rebuildRunIndex } from './runIndex.js';
 
 function createRunManifest(
@@ -72,7 +70,6 @@ function createRunManifest(
     },
     specs: [],
     paths: {
-      html: 'index.html',
       runJson: 'run.json',
       summaryJson: 'summary.json',
       log: 'runner.log',
@@ -80,7 +77,7 @@ function createRunManifest(
   };
 }
 
-test('rebuildRunIndex writes runs.json and root index.html from run.json files', async () => {
+test('rebuildRunIndex writes runs.json from run.json files', async () => {
   const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-run-index-'));
   const runId = '2026-03-23T18-00-00.000Z-dev-android';
   const runDir = path.join(artifactsDir, runId);
@@ -97,21 +94,18 @@ test('rebuildRunIndex writes runs.json and root index.html from run.json files',
     assert.equal(index.runs[0]?.runId, runId);
 
     const runsJsonPath = path.join(artifactsDir, 'runs.json');
-    const indexHtmlPath = path.join(artifactsDir, 'index.html');
-    for (const target of [runsJsonPath, indexHtmlPath]) {
-      const stats = await fsp.stat(target);
-      assert.equal(stats.isFile(), true);
-    }
+    const stats = await fsp.stat(runsJsonPath);
+    assert.equal(stats.isFile(), true);
 
-    const html = await fsp.readFile(indexHtmlPath, 'utf-8');
-    assert.match(html, /FinalRun Reports/);
-    assert.match(html, /button not found/);
+    const runsJson = JSON.parse(await fsp.readFile(runsJsonPath, 'utf-8'));
+    assert.equal(runsJson.runs[0]?.firstFailure?.message, 'button not found');
+    assert.equal(runsJson.runs[0]?.paths.runJson, `${runId}/run.json`);
   } finally {
     await fsp.rm(artifactsDir, { recursive: true, force: true });
   }
 });
 
-test('rebuildRunIndex carries compact suite target metadata into runs.json and the root HTML', async () => {
+test('rebuildRunIndex carries compact suite target metadata into runs.json', async () => {
   const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-run-index-'));
   const runId = '2026-03-24T08-10-11.000Z-dev-android';
   const runDir = path.join(artifactsDir, runId);
@@ -139,44 +133,7 @@ test('rebuildRunIndex carries compact suite target metadata into runs.json and t
       suiteName: 'login suite',
       suitePath: 'login_suite.yaml',
     });
-
-    const html = await fsp.readFile(path.join(artifactsDir, 'index.html'), 'utf-8');
-    assert.match(html, /Target/);
-    assert.match(html, /Suite/);
-    assert.match(html, /login suite/);
   } finally {
-    await fsp.rm(artifactsDir, { recursive: true, force: true });
-  }
-});
-
-test('serveReportArtifacts serves the root report index over HTTP', async () => {
-  const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-server-'));
-  await fsp.writeFile(
-    path.join(artifactsDir, 'index.html'),
-    '<html><body>root report</body></html>',
-    'utf-8',
-  );
-
-  const server = await serveReportArtifacts({
-    artifactsDir,
-    port: 0,
-  });
-
-  try {
-    const body = await new Promise<string>((resolve, reject) => {
-      get(server.url, (response) => {
-        let output = '';
-        response.setEncoding('utf-8');
-        response.on('data', (chunk) => {
-          output += chunk;
-        });
-        response.on('end', () => resolve(output));
-      }).on('error', reject);
-    });
-
-    assert.match(body, /root report/);
-  } finally {
-    await server.close();
     await fsp.rm(artifactsDir, { recursive: true, force: true });
   }
 });

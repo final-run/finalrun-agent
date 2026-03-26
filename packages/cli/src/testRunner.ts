@@ -43,6 +43,7 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
 
 export interface TestRunnerResult {
   success: boolean;
+  runId: string;
   runDir: string;
   runIndexPath: string;
   specResults: SpecArtifactRecord[];
@@ -232,8 +233,9 @@ export async function runTests(
 
     return {
       success,
+      runId: path.basename(runDir),
       runDir,
-      runIndexPath: path.join(workspace.artifactsDir, 'index.html'),
+      runIndexPath: path.join(workspace.artifactsDir, 'runs.json'),
       specResults,
     };
   } finally {
@@ -373,8 +375,9 @@ async function writeRunFailureArtifacts(params: {
   await rebuildRunIndex(params.workspace.artifactsDir);
   return {
     success: false,
+    runId: path.basename(runDir),
     runDir,
-    runIndexPath: path.join(params.workspace.artifactsDir, 'index.html'),
+    runIndexPath: path.join(params.workspace.artifactsDir, 'runs.json'),
     specResults: [],
   };
 }
