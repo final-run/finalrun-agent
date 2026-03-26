@@ -193,10 +193,11 @@ export class DeviceDiscoveryService {
       .filter((line) => line.length > 0 && !line.startsWith('List of devices attached'));
 
     for (const line of lines) {
-      const [serial, state] = line.split(/\s+/, 3);
-      if (!serial || !state) {
+      const parsedLine = this._parseAdbDeviceLine(line);
+      if (!parsedLine) {
         continue;
       }
+      const { serial, state } = parsedLine;
 
       const inlineModel = this._parseInlineAdbField(line, 'model');
       if (state === 'offline' || state === 'unauthorized') {
@@ -206,6 +207,7 @@ export class DeviceDiscoveryService {
           platform: 'android',
           targetKind: emulator ? 'android-emulator' : 'android-device',
           state,
+          stateDetail: null,
           runnable: false,
           startable: false,
           displayName: this._formatAndroidDisplayName({
@@ -223,6 +225,26 @@ export class DeviceDiscoveryService {
       }
 
       if (state !== 'device') {
+        const emulator = serial.startsWith('emulator-');
+        entries.push({
+          selectionId: emulator ? `android-emulator:${serial}` : `android-device:${serial}`,
+          platform: 'android',
+          targetKind: emulator ? 'android-emulator' : 'android-device',
+          state: 'unavailable',
+          stateDetail: state,
+          runnable: false,
+          startable: false,
+          displayName: this._formatAndroidDisplayName({
+            modelName: inlineModel,
+            osVersionLabel: null,
+            id: serial,
+          }),
+          rawId: serial,
+          modelName: inlineModel,
+          osVersionLabel: null,
+          deviceInfo: null,
+          transcripts: [],
+        });
         continue;
       }
 
@@ -243,6 +265,7 @@ export class DeviceDiscoveryService {
         platform: 'android',
         targetKind: details.emulator ? 'android-emulator' : 'android-device',
         state: 'connected',
+        stateDetail: null,
         runnable: true,
         startable: false,
         displayName: this._formatAndroidDisplayName({
@@ -335,6 +358,7 @@ export class DeviceDiscoveryService {
           platform: 'android',
           targetKind: 'android-emulator',
           state: 'shutdown' as const,
+          stateDetail: null,
           runnable: false,
           startable: true,
           displayName,
@@ -392,10 +416,6 @@ export class DeviceDiscoveryService {
       }
 
       for (const device of runtimeDevices) {
-        if (device['isAvailable'] === false) {
-          continue;
-        }
-
         const udid =
           typeof device['udid'] === 'string' && device['udid'].trim().length > 0
             ? device['udid'].trim()
@@ -412,12 +432,37 @@ export class DeviceDiscoveryService {
           continue;
         }
 
+        const availabilityError =
+          typeof device['availabilityError'] === 'string' &&
+          device['availabilityError'].trim().length > 0
+            ? device['availabilityError'].trim()
+            : null;
+        if (device['isAvailable'] === false) {
+          entries.push({
+            selectionId: `ios-simulator:${udid}`,
+            platform: 'ios',
+            targetKind: 'ios-simulator',
+            state: 'unavailable',
+            stateDetail: availabilityError ?? 'simulator unavailable',
+            runnable: false,
+            startable: false,
+            displayName: this._formatIOSDisplayName(name, runtimeLabel.label, udid),
+            rawId: udid,
+            modelName: name,
+            osVersionLabel: runtimeLabel.label,
+            deviceInfo: null,
+            transcripts: [],
+          });
+          continue;
+        }
+
         if (state === 'Booted') {
           entries.push({
             selectionId: `ios-simulator:${udid}`,
             platform: 'ios',
             targetKind: 'ios-simulator',
             state: 'booted',
+            stateDetail: null,
             runnable: true,
             startable: false,
             displayName: this._formatIOSDisplayName(name, runtimeLabel.label, udid),
@@ -439,8 +484,25 @@ export class DeviceDiscoveryService {
             platform: 'ios',
             targetKind: 'ios-simulator',
             state: 'shutdown',
+            stateDetail: null,
             runnable: false,
             startable: true,
+            displayName: this._formatIOSDisplayName(name, runtimeLabel.label, udid),
+            rawId: udid,
+            modelName: name,
+            osVersionLabel: runtimeLabel.label,
+            deviceInfo: null,
+            transcripts: [],
+          });
+        } else {
+          entries.push({
+            selectionId: `ios-simulator:${udid}`,
+            platform: 'ios',
+            targetKind: 'ios-simulator',
+            state: 'unavailable',
+            stateDetail: state ?? 'unknown state',
+            runnable: false,
+            startable: false,
             displayName: this._formatIOSDisplayName(name, runtimeLabel.label, udid),
             rawId: udid,
             modelName: name,
@@ -891,6 +953,46 @@ export class DeviceDiscoveryService {
   private _parseInlineAdbField(line: string, fieldName: string): string | null {
     const match = line.match(new RegExp(`${fieldName}:([^\\s]+)`));
     return this._normalizeLabel(match?.[1] ?? null);
+  }
+
+  private _parseAdbDeviceLine(line: string): {
+    serial: string;
+    state: string;
+  } | null {
+    const match = line.match(/^(\S+)\s+(.+)$/);
+    if (!match) {
+      return null;
+    }
+
+    const serial = match[1]?.trim();
+    const remainder = match[2]?.trim();
+    if (!serial || !remainder) {
+      return null;
+    }
+
+    for (const knownState of ['device', 'offline', 'unauthorized']) {
+      if (remainder === knownState || remainder.startsWith(`${knownState} `)) {
+        return { serial, state: knownState };
+      }
+    }
+
+    const markers = [
+      ' product:',
+      ' model:',
+      ' device:',
+      ' transport_id:',
+      ' usb:',
+      ' features:',
+    ];
+    const markerIndex = markers
+      .map((marker) => remainder.indexOf(marker))
+      .filter((index) => index >= 0)
+      .reduce((smallest, index) => Math.min(smallest, index), Number.POSITIVE_INFINITY);
+    const state = (markerIndex === Number.POSITIVE_INFINITY
+      ? remainder
+      : remainder.slice(0, markerIndex)).trim();
+
+    return state.length > 0 ? { serial, state } : null;
   }
 
   private _parseAvdNameOutput(output: string): string | null {

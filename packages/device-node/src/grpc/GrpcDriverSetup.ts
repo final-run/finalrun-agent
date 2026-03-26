@@ -2,7 +2,7 @@
 // Handles driver app installation and gRPC connection setup.
 // MATCHES Dart logic: install -> port forward -> start driver (background) -> poll with ping
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { DeviceInfo, Logger } from '@finalrun/common';
 import type { FilePathUtil } from '@finalrun/common';
@@ -14,7 +14,10 @@ import type { DeviceRuntime } from '../device/shared/DeviceRuntime.js';
 import { AdbClient } from '../infra/android/AdbClient.js';
 import { SimctlClient } from '../infra/ios/SimctlClient.js';
 import { GrpcDriverClient } from './GrpcDriverClient.js';
-import { AndroidDeviceSetup } from './setup/AndroidDeviceSetup.js';
+import {
+  AndroidDeviceSetup,
+  type AndroidDriverProcessHandle,
+} from './setup/AndroidDeviceSetup.js';
 import { IOSSimulatorSetup } from './setup/IOSSimulatorSetup.js';
 
 const execFileAsync = promisify(execFile);
@@ -38,7 +41,7 @@ export class GrpcDriverSetup {
     adbPath: string,
     deviceSerial: string,
     port: number,
-  ) => void;
+  ) => AndroidDriverProcessHandle;
   private _androidDeviceSetup: AndroidDeviceSetup;
   private _iosSimulatorSetup: IOSSimulatorSetup;
 
@@ -55,7 +58,7 @@ export class GrpcDriverSetup {
       adbPath: string,
       deviceSerial: string,
       port: number,
-    ) => void;
+    ) => AndroidDriverProcessHandle;
   }) {
     this._adbClient = params.adbClient;
     this._simctlClient = params.simctlClient;
@@ -142,6 +145,8 @@ export class GrpcDriverSetup {
     port: number,
     options?: {
       getStartupFailureMessage?: () => string | null;
+      getWaitStatusMessage?: () => string | null;
+      getTimeoutMessage?: () => string | null;
     },
   ): Promise<boolean> {
     const maxAttempts = 240;
@@ -157,7 +162,12 @@ export class GrpcDriverSetup {
       }
 
       if (attempt > 0 && attempt % 20 === 0) {
-        Logger.i(`Still waiting for driver... (${(attempt * 500) / 1000}s)`);
+        const waitStatus = options?.getWaitStatusMessage?.();
+        Logger.i(
+          waitStatus
+            ? `Still waiting for driver... (${(attempt * 500) / 1000}s) ${waitStatus}`
+            : `Still waiting for driver... (${(attempt * 500) / 1000}s)`,
+        );
       }
 
       try {
@@ -180,6 +190,11 @@ export class GrpcDriverSetup {
       await this._delayFn(delayMs);
     }
 
+    const timeoutMessage = options?.getTimeoutMessage?.();
+    if (timeoutMessage) {
+      throw new Error(timeoutMessage);
+    }
+
     Logger.e('Failed to connect after 120s (driver did not start)');
     return false;
   }
@@ -188,9 +203,7 @@ export class GrpcDriverSetup {
     adbPath: string,
     deviceSerial: string,
     port: number,
-  ): void {
-    const { spawn } = require('child_process');
-
+  ): AndroidDriverProcessHandle {
     const args = [
       '-s',
       deviceSerial,
@@ -217,20 +230,7 @@ export class GrpcDriverSetup {
       detached: false,
     });
 
-    child.stdout?.on('data', (data: Buffer) => {
-      Logger.d(`Driver stdout: ${data.toString().trim()}`);
-    });
-    child.stderr?.on('data', (data: Buffer) => {
-      Logger.d(`Driver stderr: ${data.toString().trim()}`);
-    });
-
-    child.on('exit', (code: number | null) => {
-      Logger.i(`Driver app process ended with code ${code}`);
-    });
-
-    child.on('error', (error: Error) => {
-      Logger.e(`Driver app process error: ${error.message}`);
-    });
+    return child as AndroidDriverProcessHandle;
   }
 
   private _delay(ms: number): Promise<void> {

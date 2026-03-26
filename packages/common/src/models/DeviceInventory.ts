@@ -40,6 +40,7 @@ export interface DeviceInventoryEntry {
   platform: DeviceInventoryPlatform;
   targetKind: DeviceInventoryTargetKind;
   state: DeviceInventoryState;
+  stateDetail?: string | null;
   runnable: boolean;
   startable: boolean;
   displayName: string;
