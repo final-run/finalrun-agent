@@ -133,7 +133,7 @@ Use this skill to create a structured test plan artifact (\`test-plan.md\`) befo
    \`\`\`
 3. Review \`frtestspec/changes/<campaign-name>/test-plan.md\`.
 4. Follow the instructions to fill out the plan body and scenarios.
-5. Do not apply artifacts until the plan frontmatter sets \`approval.status: approved\`.
+5. Do not apply artifacts until the plan status is set to **approved** in the **Status** section.
 6. Remind the user that runnable tests are only applied later into \`.finalrun/tests/\` and \`.finalrun/suites/\`.
 `.trim(),
     }),
@@ -161,7 +161,7 @@ Use this skill once a test plan has been approved to generate the actual FinalRu
 
 ## Workflow
 1. Confirm the campaign name.
-2. Check \`frtestspec/changes/<campaign-name>/test-plan.md\` and make sure the frontmatter says \`approval.status: approved\`.
+2. Check \`frtestspec/changes/<campaign-name>/test-plan.md\` and make sure the **Status** section says \`Current status: approved\`.
 3. Run the backend command from the repository root:
    \`\`\`bash
    ${command} apply <campaign-name>

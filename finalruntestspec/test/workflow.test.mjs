@@ -99,11 +99,13 @@ The app SHALL let users sign in with email and password.
   assert.ok(plan.metadata.existingCoverage.tests.includes('.finalrun/tests/auth/login.yaml'));
   assert.ok(plan.metadata.existingCoverage.suites.includes('.finalrun/suites/login-suite.yaml'));
   assert.ok(plan.metadata.sources.some((source) => source.type === 'spec'));
+  assert.match(planContent, /## Status/);
+  assert.match(planContent, /- Current status: draft/);
   assert.match(planContent, /## Why/);
   assert.match(planContent, /## What Changes/);
   assert.match(planContent, /## Capabilities/);
   assert.match(planContent, /## Impact/);
-  assert.match(planContent, /## Approval/);
+  assert.match(planContent, /## Instructions/);
 });
 
 test('plan falls back to code sources when specs are missing', async () => {
@@ -185,7 +187,7 @@ test('init creates Codex skills and stores the configured backend command', asyn
   assert.match(planSkill, /frtestspec\/changes\//);
   assert.match(planSkill, /\.finalrun\/tests\//);
   assert.match(planSkill, /\.finalrun\/suites\//);
-  assert.match(planSkill, /approval\.status: approved/);
+  assert.match(planSkill, /set to \*\*approved\*\* in the \*\*Status\*\* section/);
   assert.match(planSkill, new RegExp(`${escapeRegex(backendCommand)}\\s+plan`));
   assert.match(planSkill, new RegExp(escapeRegex(backendCommand)));
   assert.match(planSkill, /tool: codex/);
@@ -363,35 +365,33 @@ async function exists(targetPath) {
 
 async function markPlanApproved(repoRoot, featureName) {
   const planPath = path.join(repoRoot, 'frtestspec', 'changes', featureName, 'test-plan.md');
-  const rawPlan = await fs.readFile(planPath, 'utf8');
-  const match = rawPlan.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  assert.ok(match, 'expected plan frontmatter');
+  let rawPlan = await fs.readFile(planPath, 'utf8');
 
-  const metadata = yaml.parse(match[1]);
-  metadata.approval = {
-    status: 'approved',
-    approvedAt: '2026-03-24T12:00:00.000Z',
-  };
-  metadata.scenarios = [
-    {
-      id: 'login-happy-path',
-      title: 'Email/password happy path',
-      category: 'happy-path',
-      outputType: 'tests',
-      action: 'create',
-      targetPath: '.finalrun/tests/auth/login.yaml',
-      reason: 'Mock scenario for testing apply instructions generation.',
-    }
-  ];
-
-  const updatedBody = match[2]
+  // Update Status
+  rawPlan = rawPlan
     .replace(/^- Current status: .*$/m, '- Current status: approved')
     .replace(/^- Approved at: .*$/m, '- Approved at: 2026-03-24T12:00:00.000Z');
 
-  await fs.writeFile(
-    planPath,
-    `---\n${yaml.stringify(metadata).trimEnd()}\n---\n\n${updatedBody.replace(/^\n/, '')}`,
-  );
+  // Inject a mock scenario for testing apply by replacing the entire Proposed Scenarios section
+  const mockScenariosHeader = '## Proposed Scenarios';
+  const mockScenarioBody = `
+### 1. Email/password happy path
+- Category: happy-path
+- Output: \`tests\`
+- Action: \`create\`
+- Target Path: \`.finalrun/tests/auth/login.yaml\`
+- Reason: Mock scenario for testing apply instructions generation.
+`;
+  
+  const scenariosStart = rawPlan.indexOf(mockScenariosHeader);
+  if (scenariosStart !== -1) {
+    const nextHeaderStart = rawPlan.indexOf('\n## ', scenariosStart + mockScenariosHeader.length);
+    const before = rawPlan.slice(0, scenariosStart + mockScenariosHeader.length);
+    const after = nextHeaderStart !== -1 ? rawPlan.slice(nextHeaderStart) : '';
+    rawPlan = `${before}\n\n${mockScenarioBody.trim()}\n${after}`;
+  }
+
+  await fs.writeFile(planPath, rawPlan);
 }
 
 

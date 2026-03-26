@@ -89,14 +89,6 @@ export interface RenderedPlanSections {
   why: string;
   whatChanges: string[];
   capabilities: string[];
-  impactSummary: string[];
-  requestSummary: string;
-  existingCoverageSummary: string[];
-  requestedOutputs: OutputType[];
-  proposedScenarios: PlanScenario[];
-  sources: PlanSource[];
-  approvalStatus: 'draft' | 'approved';
-  approvedAt?: string | null;
 }
 
 /**
@@ -243,9 +235,7 @@ export function renderTestPlanDocument(
   metadata: TestPlanFrontmatter,
   sections: RenderedPlanSections,
 ): string {
-  const frontmatter = yaml.stringify(metadata).trimEnd();
-  const requestedOutputList = sections.requestedOutputs.map((value) => `- \`${value}\``).join('\n');
-  const scenarioBlocks = sections.proposedScenarios.map((scenario, index) => [
+  const scenarioBlocks = metadata.scenarios.map((scenario, index) => [
     `### ${index + 1}. ${scenario.title}`,
     `- Category: ${scenario.category}`,
     `- Output: \`${scenario.outputType}\``,
@@ -254,22 +244,22 @@ export function renderTestPlanDocument(
     `- Reason: ${scenario.reason}`,
   ].join('\n')).join('\n\n');
 
-  const sourcesSection = sections.sources.length === 0
+  const sourcesSection = metadata.sources.length === 0
     ? '- No project sources were discovered automatically.'
-    : sections.sources.map((source) =>
+    : metadata.sources.map((source) =>
       `- [${source.type}] \`${source.path}\` — ${source.relevance}`,
     ).join('\n');
 
-  const existingCoverageSection = sections.existingCoverageSummary.length === 0
-    ? '- No relevant existing coverage was detected.'
-    : sections.existingCoverageSummary.map((item) => `- ${item}`).join('\n');
-
-  const impactSection = sections.impactSummary.length === 0
-    ? '- No file impact has been declared yet.'
-    : sections.impactSummary.map((item) => `- ${item}`).join('\n');
+  const existingCoverageSection = buildExistingCoverageSummaryMarkdown(metadata.existingCoverage);
+  const impactSummaryMarkdown = buildImpactSummaryMarkdown(metadata.impact);
 
   const body = [
     `# ${sections.title}`,
+    '',
+    '## Status',
+    '',
+    `- Current status: ${metadata.approval.status}`,
+    `- Approved at: ${metadata.approval.approvedAt ?? 'pending'}`,
     '',
     '## Why',
     '',
@@ -285,19 +275,19 @@ export function renderTestPlanDocument(
     '',
     '## Impact',
     '',
-    impactSection,
+    impactSummaryMarkdown.length === 0 ? '- No file impact has been declared yet.' : impactSummaryMarkdown.map((item) => `- ${item}`).join('\n'),
     '',
     '## Request',
     '',
-    sections.requestSummary,
+    metadata.request,
     '',
     '## Existing Coverage',
     '',
-    existingCoverageSection,
+    existingCoverageSection.length === 0 ? '- No relevant existing coverage was detected.' : existingCoverageSection.map((item) => `- ${item}`).join('\n'),
     '',
     '## Requested Outputs',
     '',
-    requestedOutputList,
+    metadata.requestedOutputs.map((value) => `- \`${value}\``).join('\n'),
     '',
     '## Proposed Scenarios',
     '',
@@ -307,37 +297,148 @@ export function renderTestPlanDocument(
     '',
     sourcesSection,
     '',
-    '## Approval',
+    '## Instructions',
     '',
-    `- Current status: ${sections.approvalStatus}`,
-    `- Approved at: ${sections.approvedAt ?? 'pending'}`,
     '- Review the proposed scenarios and file impact before approval.',
-    '- After review, set `approval.status: approved` in the YAML frontmatter.',
-    '- Optionally set `approval.approvedAt` to an ISO timestamp.',
+    '- After review, set `Current status: approved` in the **Status** section above.',
+    '- Optionally set `Approved at:` to an ISO timestamp.',
     `- After approval, run \`frtestspec apply ${metadata.featureName}\`.`,
     '',
   ].join('\n');
 
-  return `---\n${frontmatter}\n---\n\n${body}`;
+  return body;
 }
 
 /**
  * Parses a `test-plan.md` string into structured metadata and body.
- * 
- * @throws Error if frontmatter is missing or invalid.
  */
 export function parseTestPlanContent(content: string): ParsedTestPlan {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!frontmatterMatch) {
-    throw new Error('Test plan is missing YAML frontmatter.');
+  const metadata: Partial<TestPlanFrontmatter> = {};
+
+  // Extract Feature Name from Title
+  const titleMatch = content.match(/^# (?:Test Plan: )?(.+)$/m);
+  metadata.featureName = titleMatch ? slugify(titleMatch[1].trim()) : 'unknown';
+
+  // Extract Approval Status
+  const statusMatch = content.match(/^- Current status: (draft|approved)$/m);
+  const approvedAtMatch = content.match(/^- Approved at: (.+)$/m);
+  metadata.approval = {
+    status: (statusMatch?.[1] as 'draft' | 'approved') ?? 'draft',
+    approvedAt: approvedAtMatch && approvedAtMatch[1] !== 'pending' ? approvedAtMatch[1].trim() : null,
+  };
+
+  // Extract Request
+  const requestMatch = content.match(/## Request\n\n([\s\S]*?)(?=\n## |$)/);
+  metadata.request = requestMatch ? requestMatch[1].trim() : '';
+
+  // Extract Requested Outputs
+  const outputsMatch = content.match(/## Requested Outputs\n\n([\s\S]*?)(?=\n## |$)/);
+  if (outputsMatch) {
+    const outputs = Array.from(outputsMatch[1].matchAll(/- `(tests|suites)`/g))
+      .map((m) => m[1] as OutputType);
+    metadata.requestedOutputs = outputs.length > 0 ? (outputs as any) : ['tests'];
+  } else {
+    metadata.requestedOutputs = ['tests'];
   }
 
-  const parsedFrontmatter = yaml.parse(frontmatterMatch[1]);
-  const metadata = testPlanFrontmatterSchema.parse(parsedFrontmatter);
+  // Extract Scenarios
+  const scenariosSectionMatch = content.match(/## Proposed Scenarios\n\n([\s\S]*?)(?=\n## |$)/);
+  const scenarios: PlanScenario[] = [];
+  if (scenariosSectionMatch) {
+    const scenarioBlocks = scenariosSectionMatch[1].split(/### \d+\. /).filter(Boolean);
+    for (const block of scenarioBlocks) {
+      const lines = block.split('\n');
+      const title = lines[0].trim();
+      const categoryMatch = block.match(/- Category: (.+)$/m);
+      const outputMatch = block.match(/- Output: `(tests|suites)`/m);
+      const actionMatch = block.match(/- Action: `(update|create)`/m);
+      const targetMatch = block.match(/- Target Path: `(.+)`/m);
+      const reasonMatch = block.match(/- Reason: ([\s\S]*?)(?=\n- |$)/m);
+
+      if (title && categoryMatch && outputMatch && actionMatch && targetMatch) {
+        scenarios.push({
+          id: slugify(title),
+          title,
+          category: categoryMatch[1].trim(),
+          outputType: outputMatch[1] as OutputType,
+          action: actionMatch[1] as 'update' | 'create',
+          targetPath: targetMatch[1].trim(),
+          reason: reasonMatch ? reasonMatch[1].trim() : '',
+        });
+      }
+    }
+  }
+  metadata.scenarios = scenarios;
+
+  // Extract Sources
+  const sourcesSectionMatch = content.match(/## Sources\n\n([\s\S]*?)(?=\n## |$)/);
+  const sources: PlanSource[] = [];
+  if (sourcesSectionMatch) {
+    const sourceMatches = Array.from(sourcesSectionMatch[1].matchAll(/- \[(workspace-tests|workspace-suites|spec|code|provided-file)\] `(.+)` — (.+)$/gm));
+    for (const m of sourceMatches) {
+      sources.push({
+        type: m[1] as any,
+        path: m[2],
+        relevance: m[3],
+      });
+    }
+  }
+  metadata.sources = sources;
+
+  // Reconstruct Impact and Existing Coverage (minimal version for now, as they are derived)
+  metadata.existingCoverage = { tests: [], suites: [] };
+  const existingCoverageMatch = content.match(/## Existing Coverage\n\n([\s\S]*?)(?=\n## |$)/);
+  if (existingCoverageMatch) {
+    const testsLine = existingCoverageMatch[1].match(/- Relevant existing tests: (.+)$/m);
+    if (testsLine) {
+      metadata.existingCoverage.tests = testsLine[1].split(',').map(p => p.trim());
+    }
+    const suitesLine = existingCoverageMatch[1].match(/- Relevant existing suites: (.+)$/m);
+    if (suitesLine) {
+      metadata.existingCoverage.suites = suitesLine[1].split(',').map(p => p.trim());
+    }
+  }
+
+  metadata.impact = buildImpactFromScenarios(scenarios);
+
   return {
-    metadata,
-    body: frontmatterMatch[2].replace(/^\n/, ''),
+    metadata: testPlanFrontmatterSchema.parse(metadata),
+    body: content,
   };
+}
+
+/**
+ * Internal helper to build existing coverage summary lines.
+ */
+function buildExistingCoverageSummaryMarkdown(existingCoverage: { tests: string[], suites: string[] }): string[] {
+  const lines: string[] = [];
+  if (existingCoverage.tests.length > 0) {
+    lines.push(`Relevant existing tests: ${existingCoverage.tests.join(', ')}`);
+  }
+  if (existingCoverage.suites.length > 0) {
+    lines.push(`Relevant existing suites: ${existingCoverage.suites.join(', ')}`);
+  }
+  return lines;
+}
+
+/**
+ * Internal helper to build impact summary lines.
+ */
+function buildImpactSummaryMarkdown(impact: PlanImpact): string[] {
+  const lines: string[] = [];
+  if (impact.update.tests.length > 0) {
+    lines.push(`Update existing test files: ${impact.update.tests.join(', ')}`);
+  }
+  if (impact.update.suites.length > 0) {
+    lines.push(`Update existing suite files: ${impact.update.suites.join(', ')}`);
+  }
+  if (impact.create.tests.length > 0) {
+    lines.push(`Create new test files: ${impact.create.tests.join(', ')}`);
+  }
+  if (impact.create.suites.length > 0) {
+    lines.push(`Create new suite files: ${impact.create.suites.join(', ')}`);
+  }
+  return lines;
 }
 
 /**
@@ -357,8 +458,8 @@ export async function writeTestPlan(
   body: string,
 ): Promise<void> {
   await ensureParentDirectory(planPath);
-  const frontmatter = yaml.stringify(metadata).trimEnd();
-  await fs.writeFile(planPath, `---\n${frontmatter}\n---\n\n${body}`);
+  // Body is now the complete document in the Markdown-only approach.
+  await fs.writeFile(planPath, body);
 }
 
 /**

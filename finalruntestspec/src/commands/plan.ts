@@ -124,14 +124,6 @@ export async function runPlanCommand(
     why: '<!-- Describe WHY this test plan is needed and what it accomplishes -->',
     whatChanges: ['<!-- List the high-level functional changes that require testing -->'],
     capabilities: buildCapabilities(requestedOutputs),
-    impactSummary: buildImpactSummary(impact),
-    requestSummary: request,
-    existingCoverageSummary: buildExistingCoverageSummary(discovery.existingCoverage),
-    requestedOutputs,
-    proposedScenarios: scenarios,
-    sources: metadata.sources,
-    approvalStatus: 'draft',
-    approvedAt: null,
   });
 
   const instructionsContent = buildInstructionsFileContent(featureName, request, requestedOutputs, discovery);
@@ -456,46 +448,6 @@ function ensureUniquePath(targetPath: string, usedPaths: ReadonlySet<string>): s
   return nextPath;
 }
 
-/**
- * Builds a summary of intended file impact from the scenario list.
- */
-function buildImpactSummary(impact: ReturnType<typeof buildImpactFromScenarios>): string[] {
-  const lines: string[] = [];
-  if (impact.update.tests.length > 0) {
-    lines.push(`Update existing test files: ${impact.update.tests.join(', ')}`);
-  }
-  if (impact.update.suites.length > 0) {
-    lines.push(`Update existing suite files: ${impact.update.suites.join(', ')}`);
-  }
-  if (impact.create.tests.length > 0) {
-    lines.push(`Create new test files: ${impact.create.tests.join(', ')}`);
-  }
-  if (impact.create.suites.length > 0) {
-    lines.push(`Create new suite files: ${impact.create.suites.join(', ')}`);
-  }
-
-  return lines.length > 0
-    ? lines
-    : ['No impacted files have been declared yet.'];
-}
-
-/**
- * Builds a summary of discovered existing coverage.
- */
-function buildExistingCoverageSummary(existingCoverage: {
-  tests: string[];
-  suites: string[];
-}): string[] {
-  const lines: string[] = [];
-  if (existingCoverage.tests.length > 0) {
-    lines.push(`Relevant existing tests: ${existingCoverage.tests.join(', ')}`);
-  }
-  if (existingCoverage.suites.length > 0) {
-    lines.push(`Relevant existing suites: ${existingCoverage.suites.join(', ')}`);
-  }
-
-  return lines;
-}
 
 /**
  * Appends a secondary note to a scenario reason if provided.
