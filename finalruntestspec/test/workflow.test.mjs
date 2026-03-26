@@ -350,6 +350,64 @@ test('update refreshes managed skills and requires project config', async () => 
   assert.equal(await exists(legacySkillPath), false);
 });
 
+test('init fails if project is already initialized', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'frtestspec-init-fail-'));
+
+  // First init
+  await runInitCommand({
+    cwd: repoRoot,
+    tool: 'codex',
+    scope: 'local',
+  });
+
+  // Second init should fail
+  await assert.rejects(
+    () => runInitCommand({
+      cwd: repoRoot,
+      tool: 'antigravity',
+      scope: 'local',
+    }),
+    /Project already initialized/,
+  );
+});
+
+test('update modifies project configuration if tool or scope options are provided', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'frtestspec-update-config-'));
+
+  await runInitCommand({
+    cwd: repoRoot,
+    tool: 'codex',
+    scope: 'local',
+    command: 'old-command',
+  });
+
+  const oldConfig = await loadProjectConfig(repoRoot);
+  assert.deepEqual(oldConfig.tools, ['codex']);
+  assert.equal(oldConfig.command, 'old-command');
+
+  // Update tools and command
+  await runUpdateCommand({
+    cwd: repoRoot,
+    tool: 'antigravity,opencode',
+    command: 'new-command',
+  });
+
+  const newConfig = await loadProjectConfig(repoRoot);
+  assert.deepEqual(newConfig.tools, ['antigravity', 'opencode']);
+  assert.equal(newConfig.command, 'new-command');
+  assert.equal(newConfig.scope, 'local');
+
+  // Update scope
+  await runUpdateCommand({
+    cwd: repoRoot,
+    scope: 'global',
+  });
+
+  const globalConfig = await loadProjectConfig(repoRoot);
+  assert.equal(globalConfig.scope, 'global');
+  assert.deepEqual(globalConfig.tools, ['antigravity', 'opencode']);
+});
+
 
 
 async function exists(targetPath) {

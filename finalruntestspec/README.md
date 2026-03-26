@@ -38,10 +38,10 @@ frtestspec init --tool codex
 - `.codex/skills/frtestspec-generate/SKILL.md`
 - `.codex/skills/frtestspec-validate/SKILL.md`
 
-To refresh managed skills after updating `finalruntestspec`:
+To modify the configuration (e.g., add tools) or refresh managed skills after updating `finalruntestspec`:
 
 ```bash
-frtestspec update
+frtestspec update [--tool <tools>] [--scope <scope>]
 ```
 
 After setup, ask Codex to use `frtestspec-plan`, `frtestspec-generate`, or `frtestspec-validate`.
@@ -185,8 +185,8 @@ tests:
 ## Commands
 
 ```bash
-frtestspec init --tool codex [--command "<backend-command>"]
-frtestspec update
+frtestspec init --tool <tools> [--scope <scope>] [--command "<backend-command>"]
+frtestspec update [--tool <tools>] [--scope <scope>] [--command "<backend-command>"]
 frtestspec plan <campaign-name> [request...]
 frtestspec generate <campaign-name>
 frtestspec validate <campaign-name>

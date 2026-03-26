@@ -1,60 +1,54 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { select, checkbox } from '@inquirer/prompts';
 import {
-  ALL_SUPPORTED_TOOLS,
   createProjectConfig,
-  loadProjectConfig,
-  supportedToolSchema,
   writeProjectConfig,
-  type Scope,
-  type SupportedTool,
 } from '../lib/project-config.js';
 import { writeManagedSkills } from '../lib/skills.js';
 import { pathExists, resolveWorkspacePaths } from '../lib/workspace.js';
+import { resolveScope, resolveTools, type ConfigCommandOptions } from './cli-utils.js';
 
 /**
  * Options for the init command.
  */
-export interface InitCommandOptions {
+export interface InitCommandOptions extends ConfigCommandOptions {
   /** The current working directory. Defaults to process.cwd(). */
   cwd?: string;
-  /** Specific tool(s) to initialize. Can be 'all' or comma-separated names. */
-  tool?: string | string[];
-  /** Installation scope: 'local' (repo) or 'global' (home dir). */
-  scope?: string;
-  /** Custom backend command to embed in the generated skills. */
-  command?: string;
 }
 
 /**
  * Runs the initialization command for the workspace.
  * 
  * This command sets up the FinalRun project configuration and installs 
- * managed skill files for the selected AI tools.
+ * managed skill files for the selected AI tools. It will fail if a 
+ * configuration already exists.
  * 
  * @param options - Configuration options for the command.
  * @returns An object containing the written config path and skill files.
+ * @throws Error if the project is already initialized.
  */
 export async function runInitCommand(
   options: InitCommandOptions = {},
 ): Promise<{ configPath: string; skillFiles: string[] }> {
   const cwd = options.cwd ?? process.cwd();
   const { configPath: existingConfigPath } = resolveWorkspacePaths(cwd);
-  const existingConfig = await pathExists(existingConfigPath)
-    ? await loadProjectConfig(cwd).catch(() => null)
-    : null;
 
-  const scope = await resolveScope(options, existingConfig?.scope);
-  const tools = await resolveTools(options, existingConfig?.tools);
+  if (await pathExists(existingConfigPath)) {
+    throw new Error(
+      `Project already initialized at ${existingConfigPath}. Use 'frtestspec update' to modify orientation or refresh skills.`,
+    );
+  }
+
+  const scope = await resolveScope(options);
+  const tools = await resolveTools(options);
 
   const config = createProjectConfig({
     tools,
     scope,
-    command: options.command ?? existingConfig?.command,
+    command: options.command,
   });
 
-  console.log(chalk.blue(`${existingConfig ? 'Refreshing' : 'Initializing'} finalruntestspec for ${tools.join(', ')} (${scope})...`));
+  console.log(chalk.blue(`Initializing finalruntestspec for ${tools.join(', ')} (${scope})...`));
   const configPath = await writeProjectConfig(cwd, config);
   console.log(chalk.green('✓ Wrote frtestspec/config.yaml'));
 
@@ -68,88 +62,6 @@ export async function runInitCommand(
   console.log('2. Ask your assistant to use `frtestspec-plan` or `frtestspec-apply`.');
 
   return { configPath, skillFiles };
-}
-
-/**
- * Resolves the installation scope, either from options, existing config, or interactive prompt.
- * 
- * @param options - Provided command options.
- * @param existingScope - Current scope from config, if any.
- * @returns The resolved scope.
- */
-async function resolveScope(
-  options: InitCommandOptions,
-  existingScope?: Scope,
-): Promise<Scope> {
-  if (options.scope === 'local' || options.scope === 'global') {
-    return options.scope;
-  }
-
-  if (existingScope) {
-    return existingScope;
-  }
-
-  // Interactive mode
-  if (process.stdin.isTTY) {
-    return await select<Scope>({
-      message: 'Where should skills be installed?',
-      choices: [
-        { name: 'Local (this repo)', value: 'local' },
-        { name: 'Global (~/)', value: 'global' },
-      ],
-    });
-  }
-
-  return 'local';
-}
-
-/**
- * Resolves the list of tools to initialize, either from options, existing config, or interactive prompt.
- * 
- * @param options - Provided command options.
- * @param existingTools - Current list of tools from config, if any.
- * @returns The resolved list of supported tools.
- */
-async function resolveTools(
-  options: InitCommandOptions,
-  existingTools?: SupportedTool[],
-): Promise<SupportedTool[]> {
-  // CLI flag: --tool codex or --tool codex,antigravity
-  if (options.tool) {
-    const rawTools = Array.isArray(options.tool)
-      ? options.tool
-      : options.tool.split(',').map((t) => t.trim());
-
-    if (rawTools.includes('all')) {
-      return [...ALL_SUPPORTED_TOOLS];
-    }
-
-    return rawTools.map((t) => supportedToolSchema.parse(t));
-  }
-
-  if (existingTools && existingTools.length > 0) {
-    return existingTools;
-  }
-
-  // Interactive mode
-  if (process.stdin.isTTY) {
-    const selected = await checkbox<SupportedTool | 'all'>({
-      message: 'Select tools:',
-      choices: [
-        { name: 'All', value: 'all' as const },
-        ...ALL_SUPPORTED_TOOLS.map((t) => ({ name: t, value: t })),
-      ],
-      required: true,
-    });
-
-    if (selected.includes('all')) {
-      return [...ALL_SUPPORTED_TOOLS];
-    }
-
-    return selected.filter((t): t is SupportedTool => t !== 'all');
-  }
-
-  return [...ALL_SUPPORTED_TOOLS];
 }
 
 /**
