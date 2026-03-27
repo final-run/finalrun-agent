@@ -8,6 +8,7 @@ import { Logger, LogLevel } from '@finalrun/common';
 import { CliEnv, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
+import { runDoctorCommand } from '../src/doctorRunner.js';
 import {
   buildRunReportUrl,
   buildWorkspaceReportUrl,
@@ -66,6 +67,23 @@ program
         ? 'using no env bindings.'
         : `using env ${result.environment.envName}.`;
       console.log(`Validated ${result.specs.length} spec(s) in ${result.workspace.testsDir} ${envSummary}`);
+    });
+  });
+
+program
+  .command('doctor')
+  .description('Check mac host readiness for local FinalRun device runs')
+  .option('--platform <platform>', 'Target platform (android, ios, or all)')
+  .action(async (options: DoctorCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      const result = await runDoctorCommand({
+        platform: options.platform,
+        output: process.stdout,
+      });
+      if (!result.success) {
+        process.exit(1);
+      }
     });
   });
 
@@ -206,6 +224,10 @@ interface CheckCommandOptions {
   platform?: string;
   app?: string;
   suite?: string;
+}
+
+interface DoctorCommandOptions {
+  platform?: string;
 }
 
 interface TestCommandOptions extends CheckCommandOptions {

@@ -26,6 +26,12 @@ import { ReportWriter } from './reportWriter.js';
 import { rebuildRunIndex } from './runIndex.js';
 import type { LoadedEnvironmentConfig } from './specLoader.js';
 import {
+  formatHostPreflightReport,
+  resolveTestRequestedPlatforms,
+  runHostPreflight,
+  shouldBlockLocalRunPreflight,
+} from './hostPreflight.js';
+import {
   createRunId,
   ensureWorkspaceDirectories,
   resolveEnvironmentFile,
@@ -53,6 +59,7 @@ export const testRunnerDependencies = {
   prepareGoalSession,
   executeGoalOnSession,
   runCheck,
+  runHostPreflight,
   resolveWorkspace,
   ensureWorkspaceDirectories,
 };
@@ -114,6 +121,38 @@ export async function runTests(
   }
 
   try {
+    const requestedPlatforms = resolveTestRequestedPlatforms(
+      options.platform ?? checked.appOverride?.inferredPlatform,
+    );
+    const preflight = await testRunnerDependencies.runHostPreflight({
+      requestedPlatforms,
+    });
+    if (shouldBlockLocalRunPreflight(preflight)) {
+      const failedRun = await writeRunFailureArtifacts({
+        workspace,
+        envName: checked.environment.envName,
+        platform: inferPlatformHint(
+          options.platform ?? checked.appOverride?.inferredPlatform,
+          checked.appOverride?.appPath ?? options.appPath,
+        ),
+        startedAt,
+        bindings: checked.environment.bindings,
+        message: `Run setup failed before execution: ${formatHostPreflightReport(preflight, 'test')}`,
+        bufferedLogEntries,
+        environment: checked.environment,
+        specs: checked.specs,
+        suite: checked.suite,
+        effectiveGoals,
+        workspaceRoot: checked.workspace.rootDir,
+        cliContext: buildCliContext(options),
+        modelContext: buildModelContext(options.provider, options.modelName),
+        appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+        target: checked.target,
+        failurePhase: 'setup',
+      });
+      return failedRun;
+    }
+
     goalSession = await testRunnerDependencies.prepareGoalSession({
       platform: options.platform ?? checked.appOverride?.inferredPlatform,
       appOverridePath: checked.appOverride?.appPath,
