@@ -70,7 +70,7 @@ export class DeviceNode {
    */
   async detectInventory(adbPath: string | null): Promise<DeviceInventoryReport> {
     const inventory = await this._deviceDiscoveryService.detectInventory(adbPath);
-    Logger.i(`Detected ${inventory.entries.length} target(s)`);
+    Logger.d(`Detected ${inventory.entries.length} target(s)`);
     return inventory;
   }
 

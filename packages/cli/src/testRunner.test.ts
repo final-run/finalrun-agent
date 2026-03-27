@@ -69,6 +69,19 @@ function createGoalSession(params?: {
   };
 }
 
+const originalRunHostPreflight = testRunnerDependencies.runHostPreflight;
+
+test.beforeEach(() => {
+  testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
+    requestedPlatforms,
+    checks: [],
+  });
+});
+
+test.afterEach(() => {
+  testRunnerDependencies.runHostPreflight = originalRunHostPreflight;
+});
+
 test('selectExecutionPlatform requires an explicit platform when Android and iOS devices are both available', () => {
   assert.throws(
     () => selectExecutionPlatform([createDevice('android'), createDevice('ios')]),
@@ -922,6 +935,250 @@ test('runTests persists buffered setup logs and raw command transcripts when dev
       path.join(result.runDir, 'input', 'specs', 'login.yaml'),
     );
     assert.equal(specSnapshotStats.isFile(), true);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests fails before prepareGoalSession when Android host preflight is blocked', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-android-preflight-failure-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  let prepareCalls = 0;
+  testRunnerDependencies.prepareGoalSession = async () => {
+    prepareCalls += 1;
+    return createGoalSession();
+  };
+  testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
+    requestedPlatforms,
+    checks: [
+      {
+        platform: 'android',
+        status: 'error',
+        id: 'adb',
+        title: 'adb',
+        summary: 'Required to communicate with Android devices.',
+        detail: 'ADB was not found in ANDROID_HOME, ANDROID_SDK_ROOT, or PATH.',
+        blocking: true,
+      },
+    ],
+  });
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      platform: 'android',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(prepareCalls, 0);
+    const runJson = await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8');
+    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
+    assert.match(runJson, /"failurePhase": "setup"/);
+    assert.match(runnerLog, /Local device setup is blocked for android\./i);
+    assert.match(runnerLog, /finalrun doctor --platform android/);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests fails before prepareGoalSession when iOS host preflight is blocked', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-ios-preflight-failure-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  let prepareCalls = 0;
+  testRunnerDependencies.prepareGoalSession = async () => {
+    prepareCalls += 1;
+    return createGoalSession({ platform: 'ios' });
+  };
+  testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
+    requestedPlatforms,
+    checks: [
+      {
+        platform: 'ios',
+        status: 'error',
+        id: 'xcrun',
+        title: 'xcrun',
+        summary: 'Required to access iOS simulator tooling.',
+        detail: 'xcrun was not found in PATH.',
+        blocking: true,
+      },
+    ],
+  });
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      platform: 'ios',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(prepareCalls, 0);
+    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
+    assert.match(runnerLog, /Local device setup is blocked for ios\./i);
+    assert.match(runnerLog, /finalrun doctor --platform ios/);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests continues when one platform is healthy and the other is blocked', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-preflight-partial-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let prepareCalls = 0;
+  testRunnerDependencies.prepareGoalSession = async () => {
+    prepareCalls += 1;
+    return createGoalSession({ platform: 'ios' });
+  };
+  testRunnerDependencies.executeGoalOnSession = async () => createGoalResult({
+    platform: 'ios',
+  });
+  testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
+    requestedPlatforms,
+    checks: [
+      {
+        platform: 'android',
+        status: 'error',
+        id: 'adb',
+        title: 'adb',
+        summary: 'Required to communicate with Android devices.',
+        detail: 'ADB was not found in ANDROID_HOME, ANDROID_SDK_ROOT, or PATH.',
+        blocking: true,
+      },
+      {
+        platform: 'ios',
+        status: 'ok',
+        id: 'xcrun',
+        title: 'xcrun',
+        summary: 'Required to access iOS simulator tooling.',
+        detail: '/usr/bin/xcrun',
+        blocking: true,
+      },
+    ],
+  });
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(prepareCalls, 1);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests fails when both platforms are blocked and no platform is specified', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-preflight-both-blocked-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  let prepareCalls = 0;
+  testRunnerDependencies.prepareGoalSession = async () => {
+    prepareCalls += 1;
+    return createGoalSession();
+  };
+  testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
+    requestedPlatforms,
+    checks: [
+      {
+        platform: 'android',
+        status: 'error',
+        id: 'adb',
+        title: 'adb',
+        summary: 'Required to communicate with Android devices.',
+        detail: 'ADB was not found in ANDROID_HOME, ANDROID_SDK_ROOT, or PATH.',
+        blocking: true,
+      },
+      {
+        platform: 'ios',
+        status: 'error',
+        id: 'xcrun',
+        title: 'xcrun',
+        summary: 'Required to access iOS simulator tooling.',
+        detail: 'xcrun was not found in PATH.',
+        blocking: true,
+      },
+    ],
+  });
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(prepareCalls, 0);
+    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
+    assert.match(runnerLog, /Local device setup is blocked for Android and iOS\./);
+    assert.match(runnerLog, /Run 'finalrun doctor'/);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });

@@ -4,21 +4,28 @@ import test from 'node:test';
 import type { DeviceInventoryEntry } from '@finalrun/common';
 import {
   formatDiagnosticsForOutput,
+  formatDeviceSelectionList,
   promptForDeviceSelection,
 } from './deviceInventoryPresenter.js';
 
-function createRunnableEntry(params: {
+function createEntry(params: {
   selectionId: string;
   platform: 'android' | 'ios';
   displayName: string;
+  state?: DeviceInventoryEntry['state'];
+  stateDetail?: string | null;
+  runnable?: boolean;
+  startable?: boolean;
 }): DeviceInventoryEntry {
+  const defaultState = params.platform === 'android' ? 'connected' : 'booted';
   return {
     selectionId: params.selectionId,
     platform: params.platform,
     targetKind: params.platform === 'android' ? 'android-emulator' : 'ios-simulator',
-    state: params.platform === 'android' ? 'connected' : 'booted',
-    runnable: true,
-    startable: false,
+    state: params.state ?? defaultState,
+    stateDetail: params.stateDetail ?? null,
+    runnable: params.runnable ?? true,
+    startable: params.startable ?? false,
     displayName: params.displayName,
     rawId: params.selectionId,
     modelName: params.displayName,
@@ -43,12 +50,12 @@ test('promptForDeviceSelection reprompts until a valid device number is entered'
   const selected = await promptForDeviceSelection({
     heading: 'Select a device',
     entries: [
-      createRunnableEntry({
+      createEntry({
         selectionId: 'android:1',
         platform: 'android',
         displayName: 'Pixel 8 - Android 14 - emulator-5554',
       }),
-      createRunnableEntry({
+      createEntry({
         selectionId: 'ios:1',
         platform: 'ios',
         displayName: 'iPhone 15 Pro - iOS 17.5 - BOOTED-DEVICE-1',
@@ -63,6 +70,91 @@ test('promptForDeviceSelection reprompts until a valid device number is entered'
 
   assert.equal(selected.selectionId, 'ios:1');
   assert.match(outputText, /Invalid selection/);
+});
+
+test('promptForDeviceSelection fails with the exact non-TTY message', async () => {
+  await assert.rejects(
+    () =>
+      promptForDeviceSelection({
+        heading: 'Select a device',
+        entries: [
+          createEntry({
+            selectionId: 'android:1',
+            platform: 'android',
+            displayName: 'Pixel 8 - Android 14 - emulator-5554',
+          }),
+        ],
+        io: {
+          input: new PassThrough(),
+          output: new PassThrough(),
+          isTTY: false,
+        },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'Interactive device selection requires a TTY.');
+      return true;
+    },
+  );
+});
+
+test('formatDeviceSelectionList shows non-selectable targets with explicit states', () => {
+  const rendered = formatDeviceSelectionList(
+    [
+      createEntry({
+        selectionId: 'android:1',
+        platform: 'android',
+        displayName: 'Pixel 8 - Android 14 - emulator-5554',
+      }),
+      createEntry({
+        selectionId: 'android:2',
+        platform: 'android',
+        displayName: 'Pixel 7 - R52N30',
+        state: 'unauthorized',
+        runnable: false,
+        startable: false,
+      }),
+      createEntry({
+        selectionId: 'ios:1',
+        platform: 'ios',
+        displayName: 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1',
+        state: 'shutdown',
+        runnable: false,
+        startable: true,
+      }),
+      createEntry({
+        selectionId: 'ios:2',
+        platform: 'ios',
+        displayName: 'Unavailable Simulator - iOS 18 - UNAVAILABLE-DEVICE',
+        state: 'unavailable',
+        stateDetail: 'runtime profile missing',
+        runnable: false,
+        startable: false,
+      }),
+    ],
+    [
+      createEntry({
+        selectionId: 'android:1',
+        platform: 'android',
+        displayName: 'Pixel 8 - Android 14 - emulator-5554',
+      }),
+    ],
+  );
+
+  assert.match(rendered.text, /Ready Targets/);
+  assert.match(rendered.text, /1\. Pixel 8 - Android 14 - emulator-5554 \(connected\)/);
+  assert.match(rendered.text, /Available to Start/);
+  assert.match(rendered.text, /- iPhone 15 - iOS 17\.5 - SHUTDOWN-DEVICE-1 \(shutdown\)/);
+  assert.match(rendered.text, /Unavailable Targets/);
+  assert.match(rendered.text, /- Pixel 7 - R52N30 \(unauthorized\)/);
+  assert.match(
+    rendered.text,
+    /- Unavailable Simulator - iOS 18 - UNAVAILABLE-DEVICE \(unavailable: runtime profile missing\)/,
+  );
+  assert.deepEqual(
+    rendered.numberedEntries.map(({ entry }) => entry.selectionId),
+    ['android:1'],
+  );
 });
 
 test('formatDiagnosticsForOutput includes raw stdout and stderr blocks', () => {

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   DeviceInfo,
   DeviceNodeResponse,
+  Logger,
   PLATFORM_ANDROID,
   type DeviceInventoryDiagnostic,
   type DeviceInventoryEntry,
@@ -60,6 +61,7 @@ function createInventoryEntryFromDevice(deviceInfo: DeviceInfo): DeviceInventory
     platform,
     targetKind,
     state,
+    stateDetail: null,
     runnable: true,
     startable: false,
     displayName: `${deviceInfo.name ?? deviceInfo.id} - ${deviceInfo.id}`,
@@ -77,6 +79,7 @@ function createStartableIOSEntry(): DeviceInventoryEntry {
     platform: 'ios',
     targetKind: 'ios-simulator',
     state: 'shutdown',
+    stateDetail: null,
     runnable: false,
     startable: true,
     displayName: 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1',
@@ -306,6 +309,40 @@ test('prepareGoalSession installs the Android app override once during shared se
   }
 });
 
+test('prepareGoalSession logs a compact summary when one target is auto-selected', async () => {
+  const androidEntry = createInventoryEntryFromDevice(createAndroidDeviceInfo());
+  const shutdownEntry = createStartableIOSEntry();
+  const dependencies = createDependencies({
+    inventoryReports: [
+      {
+        entries: [androidEntry, shutdownEntry],
+        diagnostics: [],
+      },
+    ],
+  });
+  const logMessages: string[] = [];
+  const sink = (entry: { renderedMessage: string }) => {
+    logMessages.push(entry.renderedMessage);
+  };
+  Logger.addSink(sink);
+
+  const session = await prepareGoalSession({}, dependencies);
+
+  try {
+    const output = (dependencies as GoalRunnerDependencies & {
+      __selectionOutputText: () => string;
+    }).__selectionOutputText();
+    assert.equal(output, '');
+    assert.match(
+      logMessages.join('\n'),
+      /\[finalrun\] Detected 2 targets \(1 Android, 1 iOS\); 1 ready target: Android Emulator - emulator-5554/,
+    );
+  } finally {
+    Logger.removeSink(sink);
+    await session.cleanup();
+  }
+});
+
 test('prepareGoalSession prompts for a device when multiple runnable targets are available', async () => {
   const androidEntry = createInventoryEntryFromDevice(createAndroidDeviceInfo());
   const iosEntry = createInventoryEntryFromDevice(createIOSDeviceInfo());
@@ -326,8 +363,12 @@ test('prepareGoalSession prompts for a device when multiple runnable targets are
     const output = (dependencies as GoalRunnerDependencies & {
       __selectionOutputText: () => string;
     }).__selectionOutputText();
-    assert.match(output, /Runnable Android Devices/);
-    assert.match(output, /Runnable iOS Simulators/);
+    assert.doesNotMatch(output, /Detected local targets/);
+    assert.match(output, /Select a device/);
+    assert.match(output, /Ready Targets/);
+    assert.match(output, /\(connected\)/);
+    assert.match(output, /\(booted\)/);
+    assert.equal((output.match(/Ready Targets/g) ?? []).length, 1);
   } finally {
     await session.cleanup();
   }
@@ -340,6 +381,7 @@ test('prepareGoalSession starts a selected shutdown simulator before setup', asy
     platform: 'ios',
     targetKind: 'ios-simulator',
     state: 'booted',
+    stateDetail: null,
     runnable: true,
     startable: false,
     displayName: 'iPhone 15 - iOS 17.5 - SHUTDOWN-DEVICE-1',
@@ -381,6 +423,37 @@ test('prepareGoalSession starts a selected shutdown simulator before setup', asy
   } finally {
     await session.cleanup();
   }
+});
+
+test('prepareGoalSession reports Android app override failure after driver connection', async () => {
+  let cleanupCalls = 0;
+  let setUpCalls = 0;
+  const dependencies = createDependencies({
+    onSetUpDevice() {
+      setUpCalls += 1;
+    },
+    async onCleanup() {
+      cleanupCalls += 1;
+    },
+    async onInstallAndroidApp() {
+      return false;
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      prepareGoalSession(
+        {
+          platform: PLATFORM_ANDROID,
+          appOverridePath: '/tmp/app.apk',
+        },
+        dependencies,
+      ),
+    /Failed to install Android app override after driver connection: \/tmp\/app\.apk/,
+  );
+
+  assert.equal(setUpCalls, 1);
+  assert.equal(cleanupCalls, 1);
 });
 
 test('executeGoalOnSession reuses one prepared session while keeping recording scoped per spec', async () => {
