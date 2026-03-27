@@ -22,6 +22,11 @@ import {
 } from '../src/testSelection.js';
 import { runTests } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
+import { serveReportWorkspace } from '../src/reportServer.js';
+import {
+  initializeCliRuntimeEnvironment,
+  resolveCliPackageVersion,
+} from '../src/runtimePaths.js';
 import {
   ensureWorkspaceDirectories,
   resolveEnvironmentFile,
@@ -32,10 +37,12 @@ import {
 // CLI definition
 // ============================================================================
 
+initializeCliRuntimeEnvironment();
+
 const program = new Command()
   .name('finalrun')
   .description('AI-driven mobile app testing from the terminal')
-  .version('1.0.0');
+  .version(resolveCliPackageVersion());
 
 program
   .command('check')
@@ -217,6 +224,38 @@ reportCommand
     });
   });
 
+program
+  .command('internal-report-server', { hidden: true })
+  .option('--workspace-root <path>', 'Workspace root', '')
+  .option('--artifacts-dir <path>', 'Artifacts directory', '')
+  .option('--port <n>', 'Port to bind to', '4173')
+  .option('--mode <mode>', 'Internal report server mode', 'production')
+  .action(async (options: InternalReportServerOptions) => {
+    await runCommand(async () => {
+      const server = await serveReportWorkspace({
+        workspaceRoot: options.workspaceRoot,
+        artifactsDir: options.artifactsDir,
+        port: parseInt(options.port, 10) || 4173,
+      });
+
+      const shutdown = async (exitCode: number) => {
+        try {
+          await server.close();
+        } catch {
+          // ignore shutdown errors for the detached server process
+        }
+        process.exit(exitCode);
+      };
+
+      process.on('SIGINT', () => {
+        void shutdown(0);
+      });
+      process.on('SIGTERM', () => {
+        void shutdown(0);
+      });
+    });
+  });
+
 program.parse();
 
 interface CheckCommandOptions {
@@ -249,6 +288,13 @@ interface ReportServeCommandOptions {
 interface StartServerCommandOptions {
   port: string;
   dev?: boolean;
+}
+
+interface InternalReportServerOptions {
+  workspaceRoot: string;
+  artifactsDir: string;
+  port: string;
+  mode: string;
 }
 
 async function runCommand(run: () => Promise<void>): Promise<void> {

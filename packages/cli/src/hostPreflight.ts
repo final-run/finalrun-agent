@@ -64,7 +64,7 @@ export interface HostPreflightDependencies {
 }
 
 export const hostPreflightDependencies: HostPreflightDependencies = {
-  createFilePathUtil: () => new CliFilePathUtil(),
+  createFilePathUtil: () => new CliFilePathUtil(undefined, undefined, { downloadAssets: false }),
   execFile: execFileAsync,
   resolveCommand: async (command) => {
     try {
