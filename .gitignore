@@ -8,7 +8,16 @@ packages/report-web/.next/
 packages/cli/proto/
 *.tsbuildinfo
 packages/*/*.tsbuildinfo
+drivers/android/.gradle/
+drivers/android/.kotlin/
+drivers/android/app/build/
+drivers/android/build/
+drivers/android/local.properties
+drivers/ios/.derived-data/
+drivers/ios/finalrun-ios.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/configuration/
 resources/ios/Debug-iphonesimulator/
+resources/android/*.apk
+resources/ios/*.zip
 
 # Test and coverage artifacts
 coverage/

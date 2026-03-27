@@ -4,18 +4,18 @@
 
 ### Current TypeScript behavior
 
-iOS launch in [IOSSimulator.ts](/Users/ashishyadav/.codex/worktrees/a0b2/finalrun-ts/packages/device-node/src/device/ios/IOSSimulator.ts) now performs host-side prelaunch work before delegating to gRPC launch:
+iOS launch in `packages/device-node/src/device/ios/IOSSimulator.ts` now performs host-side prelaunch work before delegating to gRPC launch:
 
 - terminate app if `stopAppBeforeLaunch`
 - fail explicitly for `clearState`
-- apply `allowAllPermissions` or `permissions` through [SimctlClient.ts](/Users/ashishyadav/.codex/worktrees/a0b2/finalrun-ts/packages/device-node/src/infra/ios/SimctlClient.ts)
+- apply `allowAllPermissions` or `permissions` through `packages/device-node/src/infra/ios/SimctlClient.ts`
 - then call `CommonDriverActions.launchApp(...)`
 
-The regression is in the permission step: [SimctlClient.ts](/Users/ashishyadav/.codex/worktrees/a0b2/finalrun-ts/packages/device-node/src/infra/ios/SimctlClient.ts) currently hard-fails whenever non-location permission work needs `applesimutils` and the binary is not installed.
+The regression is in the permission step: `packages/device-node/src/infra/ios/SimctlClient.ts` currently hard-fails whenever non-location permission work needs `applesimutils` and the binary is not installed.
 
 ### Maestro comparison
 
-Maestro uses a looser fallback model in [SimctlIOSDevice.kt](/Users/ashishyadav/code/maestro/maestro-ios-driver/src/main/kotlin/device/SimctlIOSDevice.kt#L168):
+Maestro uses a looser fallback model in its iOS driver permission handling:
 
 - try `applesimutils`
 - log failures instead of aborting
@@ -71,7 +71,7 @@ This keeps normal launch working while still taking advantage of automation when
 
 ### 3. Expand `simctl` coverage beyond location
 
-[SimctlClient.ts](/Users/ashishyadav/.codex/worktrees/a0b2/finalrun-ts/packages/device-node/src/infra/ios/SimctlClient.ts) should stop treating `location` as the only first-party permission.
+`packages/device-node/src/infra/ios/SimctlClient.ts` should stop treating `location` as the only first-party permission.
 
 It should support current Apple `simctl privacy` services that map cleanly from the existing permission names:
 
