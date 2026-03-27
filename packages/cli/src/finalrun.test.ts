@@ -4,7 +4,10 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
+import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
+import { runDoctorCommand } from './doctorRunner.js';
 
 function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
@@ -58,12 +61,46 @@ function createTempWorkspace(params?: {
 }
 
 function runCli(args: string[], cwd: string) {
-  const binPath = path.resolve(__dirname, '../bin/finalrun.js');
-  return spawnSync(process.execPath, [binPath, ...args], {
+  const compiledBinPath = path.resolve(__dirname, '../bin/finalrun.js');
+  const sourceBinPath = path.resolve(__dirname, '../bin/finalrun.ts');
+  const tsxCliPath = path.resolve(__dirname, '../../../node_modules/tsx/dist/cli.mjs');
+  const tsconfigPath = path.resolve(__dirname, '../../../tsconfig.dev.json');
+  const commandArgs = fs.existsSync(compiledBinPath)
+    ? [compiledBinPath, ...args]
+    : [tsxCliPath, '--tsconfig', tsconfigPath, sourceBinPath, ...args];
+  return spawnSync(process.execPath, commandArgs, {
     cwd,
     env: process.env,
     encoding: 'utf-8',
   });
+}
+
+function createDoctorDependencies(params: {
+  requestedPlatforms?: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS>;
+  reportChecks: Array<{
+    platform: 'android' | 'ios' | 'common';
+    status: 'ok' | 'error' | 'warning';
+    id: string;
+    title: string;
+    summary: string;
+    detail?: string;
+    blocking: boolean;
+  }>;
+  hostPlatform?: NodeJS.Platform;
+}) {
+  return {
+    hostPreflightDependencies: {
+      getPlatform: () => params.hostPlatform ?? 'darwin',
+    },
+    async runHostPreflight(options: {
+      requestedPlatforms: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS>;
+    }) {
+      return {
+        requestedPlatforms: params.requestedPlatforms ?? options.requestedPlatforms,
+        checks: params.reportChecks,
+      };
+    },
+  };
 }
 
 test('finalrun check works without --env when dev.yaml exists', async () => {
@@ -81,6 +118,113 @@ test('finalrun check works without --env when dev.yaml exists', async () => {
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
+});
+
+test('runDoctorCommand reports missing Android blockers', async () => {
+  const output = new PassThrough();
+  let printed = '';
+  output.on('data', (chunk) => {
+    printed += chunk.toString();
+  });
+
+  const result = await runDoctorCommand({
+    platform: 'android',
+    output,
+  }, createDoctorDependencies({
+    reportChecks: [
+      {
+        platform: PLATFORM_ANDROID,
+        status: 'error',
+        id: 'adb',
+        title: 'adb',
+        summary: 'Required to communicate with Android devices.',
+        detail: 'ADB was not found in ANDROID_HOME, ANDROID_SDK_ROOT, or PATH.',
+        blocking: true,
+      },
+    ],
+  }));
+
+  assert.equal(result.success, false);
+  assert.match(printed, /Setup Required/);
+  assert.match(printed, /adb/);
+});
+
+test('runDoctorCommand reports missing iOS blockers', async () => {
+  const output = new PassThrough();
+  let printed = '';
+  output.on('data', (chunk) => {
+    printed += chunk.toString();
+  });
+
+  const result = await runDoctorCommand({
+    platform: 'ios',
+    output,
+  }, createDoctorDependencies({
+    reportChecks: [
+      {
+        platform: PLATFORM_IOS,
+        status: 'error',
+        id: 'xcrun',
+        title: 'xcrun',
+        summary: 'Required to access iOS simulator tooling.',
+        detail: 'xcrun was not found in PATH.',
+        blocking: true,
+      },
+    ],
+  }));
+
+  assert.equal(result.success, false);
+  assert.match(printed, /Setup Required/);
+  assert.match(printed, /xcrun/);
+});
+
+test('runDoctorCommand defaults to both platforms on mac and prints warnings separately', async () => {
+  const output = new PassThrough();
+  let printed = '';
+  output.on('data', (chunk) => {
+    printed += chunk.toString();
+  });
+
+  const observedPlatforms: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS> = [];
+  const result = await runDoctorCommand({
+    output,
+  }, {
+    hostPreflightDependencies: {
+      getPlatform: () => 'darwin',
+    },
+    async runHostPreflight(options) {
+      observedPlatforms.push(...options.requestedPlatforms);
+      return {
+        requestedPlatforms: options.requestedPlatforms,
+        checks: [
+          {
+            platform: PLATFORM_ANDROID,
+            status: 'ok',
+            id: 'adb',
+            title: 'adb',
+            summary: 'Required to communicate with Android devices.',
+            detail: '/mock/adb',
+            blocking: true,
+          },
+          {
+            platform: PLATFORM_IOS,
+            status: 'warning',
+            id: 'ffmpeg',
+            title: 'ffmpeg',
+            summary: 'Used to compress iOS recordings after capture.',
+            detail: 'ffmpeg was not found in PATH.',
+            blocking: false,
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(observedPlatforms, [PLATFORM_ANDROID, PLATFORM_IOS]);
+  assert.match(printed, /Ready/);
+  assert.match(printed, /Setup Required\n- None/);
+  assert.match(printed, /Warnings/);
 });
 
 test('finalrun check reports an env ambiguity error instead of a parser error when --env is omitted', async () => {

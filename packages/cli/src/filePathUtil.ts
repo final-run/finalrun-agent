@@ -118,6 +118,10 @@ export class CliFilePathUtil implements FilePathUtil {
     return null;
   }
 
+  getResourceDir(): string {
+    return this._resourceDir;
+  }
+
   /**
    * Get path to the extracted iOS runner app.
    * Files are extracted from resources/ios/finalrun-ios.zip and
