@@ -437,10 +437,13 @@ export class AIAgent {
     }
 
     const candidates = [
+      process.env['FINALRUN_PROMPTS_DIR']
+        ? path.resolve(process.env['FINALRUN_PROMPTS_DIR'], `${key}.md`)
+        : undefined,
       path.resolve(__dirname, `../prompts/${key}.md`),
       path.resolve(__dirname, `../../src/prompts/${key}.md`),
       path.resolve(__dirname, `../../../src/prompts/${key}.md`),
-    ];
+    ].filter((candidate): candidate is string => Boolean(candidate));
 
     for (const candidate of candidates) {
       if (fs.existsSync(candidate)) {

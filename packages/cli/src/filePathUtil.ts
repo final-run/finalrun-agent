@@ -1,18 +1,22 @@
 // Port of mobile_cli/lib/cli_file_path_util.dart
 // Resolves paths to ADB, driver APKs, and iOS apps.
-// Driver files are copied from studio-flutter/device_node_server/executables/
 
 import * as path from 'path';
 import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { FilePathUtil } from '@finalrun/common';
+import { RuntimeAssetStore } from './runtimeAssets.js';
 
 const execFileAsync = promisify(execFile);
 type ExecFileFn = (
   file: string,
   args: readonly string[],
 ) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
+
+interface CliFilePathUtilOptions {
+  downloadAssets?: boolean;
+}
 
 /**
  * CLI-specific file path resolver.
@@ -21,34 +25,18 @@ type ExecFileFn = (
  * Dart equivalent: CliFilePathUtil in mobile_cli/lib/cli_file_path_util.dart
  */
 export class CliFilePathUtil implements FilePathUtil {
-  private _resourceDir: string;
+  private _assetStore: RuntimeAssetStore;
   private _execFileFn: ExecFileFn;
 
-  constructor(resourceDir?: string, execFileFn?: ExecFileFn) {
-    // __dirname = packages/cli/src/ (tsx) or packages/cli/dist/src/ (compiled)
-    // We need to get to the monorepo root's 'resources/' directory.
-    // Walk up until we find a directory containing 'resources/'
-    this._resourceDir = resourceDir ?? this._findResourceDir();
+  constructor(
+    resourceDir?: string,
+    execFileFn?: ExecFileFn,
+    options?: CliFilePathUtilOptions,
+  ) {
+    this._assetStore = new RuntimeAssetStore(resourceDir, {
+      downloadAssets: options?.downloadAssets,
+    });
     this._execFileFn = execFileFn ?? execFileAsync;
-  }
-
-  private _findResourceDir(): string {
-    // Try multiple possible locations relative to __dirname
-    const candidates = [
-      path.resolve(__dirname, '../../../resources'),     // from packages/cli/src/
-      path.resolve(__dirname, '../../../../resources'),  // from packages/cli/dist/src/
-      path.resolve(__dirname, '../../resources'),        // fallback
-      path.resolve(process.cwd(), 'resources'),          // from CWD (monorepo root)
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    // Default to CWD/resources even if it doesn't exist yet
-    return path.resolve(process.cwd(), 'resources');
   }
 
   /**
@@ -84,19 +72,7 @@ export class CliFilePathUtil implements FilePathUtil {
    * File: resources/android/app-debug.apk
    */
   async getDriverAppPath(): Promise<string | null> {
-    const candidates = [
-      path.join(this._resourceDir, 'android', 'app-debug.apk'),
-      path.join(this._resourceDir, 'app-debug.apk'),
-      path.join(this._resourceDir, 'finalrun-driver.apk'),
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    return null;
+    return await this._assetStore.resolveAssetPath('android-driver-apk');
   }
 
   /**
@@ -104,22 +80,11 @@ export class CliFilePathUtil implements FilePathUtil {
    * File: resources/android/app-debug-androidTest.apk
    */
   async getDriverTestAppPath(): Promise<string | null> {
-    const candidates = [
-      path.join(this._resourceDir, 'android', 'app-debug-androidTest.apk'),
-      path.join(this._resourceDir, 'app-debug-androidTest.apk'),
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    return null;
+    return await this._assetStore.resolveAssetPath('android-driver-test-apk');
   }
 
   getResourceDir(): string {
-    return this._resourceDir;
+    return this._assetStore.getResourceDir();
   }
 
   /**
@@ -131,7 +96,7 @@ export class CliFilePathUtil implements FilePathUtil {
     await this.ensureIOSAppsAvailable();
 
     const runnerAppPath = path.join(
-      this._resourceDir,
+      this.getResourceDir(),
       'ios',
       'Debug-iphonesimulator',
       'finalrun-ios-test-Runner.app',
@@ -165,16 +130,20 @@ export class CliFilePathUtil implements FilePathUtil {
    * Ensure iOS apps are available (extract from .zip if needed).
    */
   async ensureIOSAppsAvailable(): Promise<void> {
-    const iosDir = path.join(this._resourceDir, 'ios');
+    const appZipPath = await this._assetStore.resolveAssetPath('ios-driver-archive');
+    const runnerZipPath = await this._assetStore.resolveAssetPath('ios-driver-runner-archive');
+    const iosDir = path.join(this.getResourceDir(), 'ios');
     const targetDir = path.join(iosDir, 'Debug-iphonesimulator');
-    const appZipPath = path.join(iosDir, 'finalrun-ios.zip');
-    const runnerZipPath = path.join(iosDir, 'finalrun-ios-test-Runner.zip');
 
-    if (!fs.existsSync(appZipPath)) {
-      throw new Error(`Missing iOS driver archive: ${appZipPath}`);
+    if (!appZipPath || !fs.existsSync(appZipPath)) {
+      throw new Error(
+        `Missing iOS driver archive in ${iosDir}. Configure FINALRUN_ASSET_DIR, FINALRUN_ASSET_MANIFEST_PATH, or FINALRUN_ASSET_MANIFEST_URL.`,
+      );
     }
-    if (!fs.existsSync(runnerZipPath)) {
-      throw new Error(`Missing iOS test runner archive: ${runnerZipPath}`);
+    if (!runnerZipPath || !fs.existsSync(runnerZipPath)) {
+      throw new Error(
+        `Missing iOS test runner archive in ${iosDir}. Configure FINALRUN_ASSET_DIR, FINALRUN_ASSET_MANIFEST_PATH, or FINALRUN_ASSET_MANIFEST_URL.`,
+      );
     }
 
     fs.mkdirSync(targetDir, { recursive: true });

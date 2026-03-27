@@ -4,12 +4,25 @@
 
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import * as fs from 'node:fs';
 import * as path from 'path';
 import { Logger } from '@finalrun/common';
 
-// We use dynamic proto loading instead of ts-proto codegen for simplicity.
-// This avoids the protoc build step and works identically.
-const PROTO_PATH = path.resolve(__dirname, '../../../../proto/finalrun/driver.proto');
+function resolveProtoPath(): string {
+  const candidates = [
+    process.env['FINALRUN_DRIVER_PROTO_PATH'],
+    path.resolve(__dirname, '../../proto/finalrun/driver.proto'),
+    path.resolve(__dirname, '../../../../proto/finalrun/driver.proto'),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`FinalRun driver.proto not found. Searched: ${candidates.join(', ')}`);
+}
 
 /**
  * gRPC client for communicating with the on-device driver app.
@@ -41,7 +54,7 @@ export class GrpcDriverClient {
   createChannel(host: string, port: number): void {
     Logger.d(`GrpcDriverClient: Creating channel to ${host}:${port}`);
 
-    const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+    const packageDefinition = protoLoader.loadSync(resolveProtoPath(), {
       keepCase: false,  // CamelCase → camelCase
       longs: String,
       enums: String,

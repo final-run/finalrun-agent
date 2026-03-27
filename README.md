@@ -9,7 +9,9 @@ TypeScript monorepo for the FinalRun local CLI. It detects devices, starts the m
 - `packages/goal-executor`: AI-driven planning and action execution.
 - `packages/cli`: terminal entrypoint and local developer workflow.
 - `packages/report-web`: local report server and dynamic report UI.
-- `resources/`: local driver artifacts used at runtime.
+- `drivers/android`: Android driver source, including the instrumentation target that hosts the Android driver server.
+- `drivers/ios`: iOS simulator driver source, including the Xcode project and generated gRPC Swift sources.
+- `resources/`: generated local driver artifacts used at runtime after running the native build scripts.
   - `resources/android/app-debug.apk`
   - `resources/android/app-debug-androidTest.apk`
   - `resources/ios/finalrun-ios.zip`
@@ -24,7 +26,9 @@ TypeScript monorepo for the FinalRun local CLI. It detects devices, starts the m
   - `adb` available via `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or your shell `PATH`
 - iOS simulator development when needed:
   - `xcrun` available from Xcode command line tools
-- Runtime assets already present under `resources/android` and `resources/ios`
+- Native assets built locally with:
+  - `npm run build:drivers:android`
+  - `npm run build:drivers:ios`
 
 ## Install
 
@@ -50,6 +54,12 @@ node packages/cli/dist/bin/finalrun.js --help
 
 The report app is built separately into `packages/report-web/.next`.
 
+Build the native driver artifacts expected by the CLI:
+
+```sh
+npm run build:drivers
+```
+
 ## Clean
 
 Remove compiled output:
@@ -58,7 +68,7 @@ Remove compiled output:
 npm run clean
 ```
 
-`clean` removes `packages/*/dist` and `packages/report-web/.next`. It does not remove TypeScript incremental build metadata.
+`clean` removes `packages/*/dist`, `packages/report-web/.next`, local native build output, and generated runtime artifacts under `resources/`. It does not remove TypeScript incremental build metadata.
 
 If `npm run build` reports success but a package is still missing `dist/index.js` or `packages/cli/dist/bin/finalrun.js`, force a rebuild instead of assuming the code is broken:
 
@@ -165,9 +175,9 @@ Then, from the target repo, run the CLI with the repo's development tsconfig so 
 
 ```sh
 GOOGLE_API_KEY="***" \
-/Users/ashishyadav/code/finalrun-ts/node_modules/.bin/tsx \
-  --tsconfig /Users/ashishyadav/code/finalrun-ts/tsconfig.dev.json \
-  /Users/ashishyadav/code/finalrun-ts/packages/cli/bin/finalrun.ts \
+/path/to/finalrun-ts/node_modules/.bin/tsx \
+  --tsconfig /path/to/finalrun-ts/tsconfig.dev.json \
+  /path/to/finalrun-ts/packages/cli/bin/finalrun.ts \
   test .finalrun/tests/your-test-spec-name.yaml --model google/gemini-3-flash-preview
 ```
 
@@ -398,13 +408,14 @@ iOS simulator flows require:
 - `resources/ios/finalrun-ios-test-Runner.zip`
 - `xcrun` from Xcode command line tools
 
-If any of these are missing, iOS driver startup will fail before the goal can run.
+If any of these are missing, run `npm run build:drivers:ios` first. iOS driver startup will fail before the goal can run until those generated archives exist.
 
 ## Useful Commands
 
 ```sh
 npm install
 npm run build
+npm run build:drivers
 npm run clean
 npm run dev:cli -- --help
 npm run dev:watch

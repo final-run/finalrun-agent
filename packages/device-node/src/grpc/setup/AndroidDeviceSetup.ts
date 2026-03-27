@@ -105,8 +105,7 @@ export class AndroidDeviceSetup {
       const driverPath = await this._filePathUtil.getDriverAppPath();
       if (!driverPath) {
         throw new Error(
-          'Driver app APK not found. Expected at resources/android/app-debug.apk. ' +
-          'Copy from studio-flutter/device_node_server/executables/android/',
+          'Driver app APK not found. Configure FINALRUN_ASSET_DIR, FINALRUN_ASSET_MANIFEST_PATH, or FINALRUN_ASSET_MANIFEST_URL.',
         );
       }
 

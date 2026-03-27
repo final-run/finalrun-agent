@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,5 +80,56 @@ test('CliFilePathUtil fails clearly when an iOS archive cannot be unzipped', asy
     );
   } finally {
     fs.rmSync(resourceDir, { recursive: true, force: true });
+  }
+});
+
+test('CliFilePathUtil downloads the Android driver asset from the manifest into the cache dir', async () => {
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-assets-cache-'));
+  const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-assets-source-'));
+  const previousManifestPath = process.env['FINALRUN_ASSET_MANIFEST_PATH'];
+
+  try {
+    const assetContents = Buffer.from('apk-binary');
+    const assetPath = path.join(sourceDir, 'app-debug.apk');
+    fs.writeFileSync(assetPath, assetContents);
+
+    const manifestPath = path.join(sourceDir, 'assets-manifest.json');
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: '0.1.0',
+        assets: [
+          {
+            kind: 'android-driver-apk',
+            platform: 'android',
+            filename: 'app-debug.apk',
+            url: `file://${assetPath}`,
+            sha256: createHash('sha256').update(assetContents).digest('hex'),
+            size: assetContents.length,
+          },
+        ],
+      }),
+      'utf-8',
+    );
+    process.env['FINALRUN_ASSET_MANIFEST_PATH'] = manifestPath;
+
+    const filePathUtil = new CliFilePathUtil(
+      cacheDir,
+      undefined,
+      { downloadAssets: true },
+    );
+
+    const resolvedAssetPath = await filePathUtil.getDriverAppPath();
+
+    assert.equal(resolvedAssetPath, path.join(cacheDir, 'android', 'app-debug.apk'));
+    assert.equal(fs.readFileSync(resolvedAssetPath!, 'utf-8'), 'apk-binary');
+  } finally {
+    if (previousManifestPath === undefined) {
+      delete process.env['FINALRUN_ASSET_MANIFEST_PATH'];
+    } else {
+      process.env['FINALRUN_ASSET_MANIFEST_PATH'] = previousManifestPath;
+    }
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+    fs.rmSync(sourceDir, { recursive: true, force: true });
   }
 });

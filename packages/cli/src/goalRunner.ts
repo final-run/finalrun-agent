@@ -104,7 +104,7 @@ export function isDevicePreparationError(error: unknown): error is DevicePrepara
 }
 
 export const goalRunnerDependencies: GoalRunnerDependencies = {
-  createFilePathUtil: () => new CliFilePathUtil(),
+  createFilePathUtil: () => new CliFilePathUtil(undefined, undefined, { downloadAssets: true }),
   getDeviceNode: () => DeviceNode.getInstance(),
   createSelectionIO: () => ({
     input: process.stdin,

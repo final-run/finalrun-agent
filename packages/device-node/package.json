@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "Device detection, gRPC communication, and driver management",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",

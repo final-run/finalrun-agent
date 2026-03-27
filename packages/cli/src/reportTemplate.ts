@@ -506,7 +506,7 @@ export function renderHtmlReport(manifest: RunManifestRecord): string {
         <div class="meta-card"><strong>Duration</strong><span>${formatDuration(run.durationMs)}</span></div>
         <div class="meta-card"><strong>Specs</strong><span>${run.counts.specs.passed}/${run.counts.specs.total} passed</span></div>
         <div class="meta-card"><strong>Steps</strong><span>${run.counts.steps.failed} failed of ${run.counts.steps.total}</span></div>
-        <div class="meta-card"><strong>Artifacts</strong><span><a href="run.json">run.json</a> · <a href="summary.json">summary.json</a> · <a href="runner.log">runner.log</a></span></div>
+        <div class="meta-card"><strong>Artifacts</strong><span><a href="${escapeHtml(manifest.paths.runJson)}">run.json</a> · <a href="${escapeHtml(manifest.paths.summaryJson)}">summary.json</a> · <a href="${escapeHtml(manifest.paths.log)}">runner.log</a></span></div>
       </div>
     </section>
 
@@ -839,7 +839,7 @@ function renderSpecSection(spec: RunManifestSpecRecord): string {
         <details>
           <summary>Raw Artifact Links</summary>
           <div class="artifact-list">
-            <div class="artifact-row"><a href="tests/${escapeHtml(spec.specId)}/result.json">result.json</a></div>
+            <div class="artifact-row"><a href="${escapeHtml(spec.resultJsonPath)}">result.json</a></div>
             ${spec.recordingFile
               ? `<div class="artifact-row"><span>Session</span><a href="${escapeHtml(spec.recordingFile)}">recording</a></div>`
               : ''}
