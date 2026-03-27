@@ -137,9 +137,7 @@ test('startOrReuseWorkspaceReportServer reuses an already healthy server without
   const workspace = createWorkspace();
   const originalFetchJson = reportServerManagerDependencies.fetchJson;
   const originalSpawnProcess = reportServerManagerDependencies.spawnProcess;
-  const originalRunCommand = reportServerManagerDependencies.runCommand;
   let spawnCalls = 0;
-  let buildCalls = 0;
 
   try {
     await writeWorkspaceReportServerState(workspace, createServerState(workspace));
@@ -155,10 +153,6 @@ test('startOrReuseWorkspaceReportServer reuses an already healthy server without
       spawnCalls += 1;
       return createSpawnedChild(9001);
     };
-    reportServerManagerDependencies.runCommand = () => {
-      buildCalls += 1;
-      return createSuccessfulCommandResult();
-    };
 
     const result = await startOrReuseWorkspaceReportServer({
       workspace,
@@ -168,11 +162,9 @@ test('startOrReuseWorkspaceReportServer reuses an already healthy server without
     assert.equal(result.reused, true);
     assert.equal(result.url, 'http://127.0.0.1:4173');
     assert.equal(spawnCalls, 0);
-    assert.equal(buildCalls, 0);
   } finally {
     reportServerManagerDependencies.fetchJson = originalFetchJson;
     reportServerManagerDependencies.spawnProcess = originalSpawnProcess;
-    reportServerManagerDependencies.runCommand = originalRunCommand;
     await fsp.rm(workspace.rootDir, { recursive: true, force: true });
   }
 });
@@ -181,18 +173,12 @@ test('startOrReuseWorkspaceReportServer starts a new server, waits for health, a
   const workspace = createWorkspace();
   const originalFetchJson = reportServerManagerDependencies.fetchJson;
   const originalSpawnProcess = reportServerManagerDependencies.spawnProcess;
-  const originalRunCommand = reportServerManagerDependencies.runCommand;
   const originalSleep = reportServerManagerDependencies.sleep;
   let healthChecks = 0;
-  let buildArgs: string[] = [];
   let spawnArgs: string[] = [];
   const requestedPort = await findAvailablePort();
 
   try {
-    reportServerManagerDependencies.runCommand = (_command, args) => {
-      buildArgs = args;
-      return createSuccessfulCommandResult();
-    };
     reportServerManagerDependencies.spawnProcess = (_command, args) => {
       spawnArgs = args;
       return createSpawnedChild(7331);
@@ -222,15 +208,12 @@ test('startOrReuseWorkspaceReportServer starts a new server, waits for health, a
     assert.equal(result.state.pid, 7331);
     assert.equal(result.state.port, requestedPort);
     assert.equal(result.url, `http://127.0.0.1:${requestedPort}`);
-    assert.match(buildArgs[0] ?? '', /next[\\/]dist[\\/]bin[\\/]next/);
-    assert.doesNotMatch(buildArgs[0] ?? '', new RegExp(workspace.rootDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.match(spawnArgs[0] ?? '', /next[\\/]dist[\\/]bin[\\/]next/);
+    assert.match(spawnArgs.join(' '), /internal-report-server/);
     const persisted = await readWorkspaceReportServerState(workspace);
     assert.equal(persisted?.port, requestedPort);
   } finally {
     reportServerManagerDependencies.fetchJson = originalFetchJson;
     reportServerManagerDependencies.spawnProcess = originalSpawnProcess;
-    reportServerManagerDependencies.runCommand = originalRunCommand;
     reportServerManagerDependencies.sleep = originalSleep;
     await fsp.rm(workspace.rootDir, { recursive: true, force: true });
   }

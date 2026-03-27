@@ -266,7 +266,7 @@ export function renderRunIndexHtml(index: RunIndexRecord): string {
             <td>\${run.passedCount}/\${run.specCount} passed</td>
             <td>\${formatDuration(run.durationMs)}</td>
             <td>\${escapeHtml(firstFailure)}</td>
-            <td><a href="\${escapeHtml(run.paths.html)}">report</a> · <a href="\${escapeHtml(run.paths.log)}">log</a> · <a href="\${escapeHtml(run.paths.runJson)}">run.json</a></td>
+            <td><a href="/runs/\${encodeURIComponent(run.runId)}">report</a> · <a href="\${escapeHtml(run.paths.log)}">log</a> · <a href="\${escapeHtml(run.paths.runJson)}">run.json</a></td>
           </tr>
         \`;
       }).join('');

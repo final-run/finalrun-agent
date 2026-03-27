@@ -1,15 +1,13 @@
 import * as fsp from 'node:fs/promises';
 import * as net from 'node:net';
-import { createRequire } from 'node:module';
 import * as path from 'node:path';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import type { ReportServerStateRecord } from '@finalrun/common';
 import type { FinalRunWorkspace } from './workspace.js';
+import { resolveCliLaunchArgs } from './runtimePaths.js';
 
 const DEFAULT_REPORT_SERVER_PORT = 4173;
-const REPORT_WEB_PACKAGE_DIR = path.resolve(__dirname, '../../../report-web');
 const HEALTH_ROUTE = '/health';
-const localRequire = createRequire(__filename);
 
 interface ReportHealthPayload {
   status?: string;
@@ -118,10 +116,6 @@ export async function startOrReuseWorkspaceReportServer(
 
   const port = await findAvailablePort(options.requestedPort ?? DEFAULT_REPORT_SERVER_PORT);
   const mode = options.dev ? 'development' : 'production';
-
-  if (mode === 'production') {
-    await buildReportWebApp();
-  }
 
   const child = startReportWebProcess({
     workspace: options.workspace,
@@ -259,57 +253,34 @@ async function waitForHealthyWorkspaceReportServer(params: {
   throw new Error('Timed out waiting for the FinalRun report server to become healthy.');
 }
 
-async function buildReportWebApp(): Promise<void> {
-  const nextBinary = resolveNextBinary();
-  const build = reportServerManagerDependencies.runCommand(
-    process.execPath,
-    [nextBinary, 'build', '--webpack'],
-    {
-      cwd: REPORT_WEB_PACKAGE_DIR,
-      env: process.env,
-    },
-  );
-  if (build.status !== 0) {
-    const stderr = build.stderr?.toString().trim();
-    const stdout = build.stdout?.toString().trim();
-    throw new Error(
-      `Failed to build the FinalRun report app.${stderr ? ` ${stderr}` : stdout ? ` ${stdout}` : ''}`,
-    );
-  }
-}
-
 function startReportWebProcess(params: {
   workspace: FinalRunWorkspace;
   port: number;
   mode: 'production' | 'development';
 }): ChildProcess {
-  const nextBinary = resolveNextBinary();
-  const command = params.mode === 'development' ? 'dev' : 'start';
-  const args = [nextBinary, command];
-  if (params.mode === 'development') {
-    args.push('--webpack');
-  }
-  args.push('--hostname', '127.0.0.1', '--port', String(params.port));
+  const args = resolveCliLaunchArgs([
+    'internal-report-server',
+    '--workspace-root',
+    params.workspace.rootDir,
+    '--artifacts-dir',
+    params.workspace.artifactsDir,
+    '--port',
+    String(params.port),
+    '--mode',
+    params.mode,
+  ]);
   const child = reportServerManagerDependencies.spawnProcess(
     process.execPath,
     args,
     {
-      cwd: REPORT_WEB_PACKAGE_DIR,
+      cwd: process.cwd(),
       detached: true,
       stdio: 'ignore',
-      env: {
-        ...process.env,
-        FINALRUN_REPORT_WORKSPACE_ROOT: params.workspace.rootDir,
-        FINALRUN_REPORT_ARTIFACTS_DIR: params.workspace.artifactsDir,
-      },
+      env: process.env,
     },
   );
   child.unref();
   return child;
-}
-
-function resolveNextBinary(): string {
-  return localRequire.resolve('next/dist/bin/next');
 }
 
 async function findAvailablePort(startingPort: number): Promise<number> {
