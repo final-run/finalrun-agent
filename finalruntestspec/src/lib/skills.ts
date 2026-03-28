@@ -87,7 +87,7 @@ function renderSkillTemplate(params: {
   return `---
 name: ${params.title}
 description: ${params.description}
-license: MIT
+license: Apache-2.0
 compatibility: Requires the configured frtestspec CLI backend.
 metadata:
   author: finalruntestspec

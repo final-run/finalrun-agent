@@ -12,16 +12,16 @@
 ### Build
 
 ```bash
-cd /Users/tamoyai/Development/finalrun-ts/finalruntestspec
+cd finalruntestspec
 npm install
 npm run build
 ```
 
-### Skill-First Setup For Codex
+### Skill-First Setup For AI Assistants
 
 ```bash
 cd /path/to/your/repo
-node /Users/tamoyai/Development/finalrun-ts/finalruntestspec/bin/frtestspec.js init --tool codex --command "node /Users/tamoyai/Development/finalrun-ts/finalruntestspec/bin/frtestspec.js"
+node /path/to/finalruntestspec/bin/frtestspec.js init --tool <tool> --command "node /path/to/finalruntestspec/bin/frtestspec.js"
 ```
 
 If `frtestspec` is already available on your `PATH`, you can keep the configured backend command simple:
