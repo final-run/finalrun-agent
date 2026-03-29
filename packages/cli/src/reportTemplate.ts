@@ -511,9 +511,10 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     .workspace {
       display: grid;
       grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.05fr);
-      min-height: clamp(560px, 76vh, 860px);
+      height: clamp(520px, calc(100vh - 48px), 760px);
       border-top: 1px solid var(--border-light);
       align-items: stretch;
+      overflow: hidden;
     }
 
     .timeline-panel {
@@ -530,7 +531,10 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     .detail-panel {
       padding: 22px;
       background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
+      display: flex;
+      flex-direction: column;
       min-height: 0;
+      overflow: hidden;
     }
 
     .timeline-scroll {
@@ -646,8 +650,8 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     }
 
     .media-shell {
-      width: min(100%, 360px);
-      margin: 0 auto 16px;
+      width: min(100%, clamp(220px, 16vw, 260px));
+      margin: 0 auto 12px;
       border-radius: 18px;
       overflow: hidden;
       background: #111827;
@@ -679,8 +683,8 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-controls {
-      width: min(100%, 360px);
-      margin: -4px auto 18px;
+      width: min(100%, clamp(220px, 16vw, 260px));
+      margin: -4px auto 12px;
       padding: 12px 14px;
       border: 1px solid var(--border);
       border-radius: 14px;
@@ -744,7 +748,7 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-meta {
-      margin-bottom: 18px;
+      margin-bottom: 0;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
@@ -758,7 +762,7 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     @media (max-width: 980px) {
       .workspace {
         grid-template-columns: 1fr;
-        min-height: auto;
+        height: auto;
       }
 
       .timeline-panel {
