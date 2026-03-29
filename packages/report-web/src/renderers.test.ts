@@ -478,7 +478,7 @@ test('renderRunHtml renders suite overview, run context, spec detail panes, and 
   assert.match(html, /handlePrimaryBack\(event\)/);
   assert.match(html, /data-role="recording-seekbar"/);
   assert.match(html, /data-role="recording-playpause"/);
-  assert.match(html, /data-role="recording-fullscreen"/);
+  assert.doesNotMatch(html, /data-role="recording-fullscreen"/);
   assert.match(html, /<video data-role="recording-video" playsinline preload="metadata"/);
   assert.doesNotMatch(html, /<video data-role="recording-video" controls /);
   assert.match(html, /href="\/"/);

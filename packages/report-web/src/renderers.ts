@@ -962,7 +962,7 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-controls {
-      width: min(100%, 380px);
+      width: min(100%, 420px);
       margin: 0 auto;
       padding: 10px 12px;
       border: 1px solid rgba(224, 229, 242, 0.9);
@@ -972,45 +972,34 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-control-row {
-      display: grid;
-      grid-template-columns: 32px 5ch minmax(0, 1fr) 5ch 56px 28px;
+      display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
     .recording-icon-button {
-      width: 32px;
-      height: 32px;
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid rgba(224, 229, 242, 0.9);
-      border-radius: 10px;
       padding: 0;
-      background: rgba(244, 247, 254, 0.95);
-      color: var(--text);
+      border: 0;
+      background: transparent;
+      color: var(--accent);
       cursor: pointer;
     }
 
     .recording-icon-button.primary {
-      background: rgba(67, 24, 255, 0.08);
-      border-color: rgba(67, 24, 255, 0.14);
       color: var(--accent);
     }
 
     .recording-icon-button svg {
-      width: 14px;
-      height: 14px;
+      width: 18px;
+      height: 18px;
       display: block;
       fill: currentColor;
-    }
-
-    .recording-icon-button[data-role="recording-fullscreen"] {
-      width: 28px;
-      height: 28px;
-      border-color: transparent;
-      background: transparent;
-      color: var(--icon);
     }
 
     .recording-icon-button:disabled,
@@ -1020,7 +1009,8 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-timeline {
-      width: 100%;
+      flex: 1 1 auto;
+      width: auto;
       margin: 0;
       accent-color: var(--accent);
       min-width: 0;
@@ -1036,7 +1026,16 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       white-space: nowrap;
     }
 
+    .recording-time[data-role="recording-current"] {
+      text-align: right;
+    }
+
+    .recording-time[data-role="recording-duration"] {
+      text-align: left;
+    }
+
     .recording-speed {
+      flex: 0 0 56px;
       width: 56px;
       height: 28px;
       border: 1px solid rgba(224, 229, 242, 0.9);
@@ -1279,8 +1278,7 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       const seekbar = container.querySelector('[data-role="recording-seekbar"]');
       const playPause = container.querySelector('[data-role="recording-playpause"]');
       const speed = container.querySelector('[data-role="recording-speed"]');
-      const fullscreen = container.querySelector('[data-role="recording-fullscreen"]');
-      if (!video || !seekbar || !playPause || !fullscreen || video.dataset.seekbarBound === '1') {
+      if (!video || !seekbar || !playPause || video.dataset.seekbarBound === '1') {
         return;
       }
 
@@ -1319,22 +1317,6 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
         syncControls();
       };
 
-      const toggleFullscreen = async () => {
-        const shell = container.querySelector('.recording-shell');
-        const target = shell || video;
-        try {
-          if (document.fullscreenElement) {
-            await document.exitFullscreen();
-          } else if (typeof target.requestFullscreen === 'function') {
-            await target.requestFullscreen();
-          } else if (typeof video.webkitEnterFullscreen === 'function') {
-            video.webkitEnterFullscreen();
-          }
-        } catch {
-          // Ignore fullscreen API failures and keep the local controls responsive.
-        }
-      };
-
       const applyPlaybackRate = () => {
         if (!speed) {
           return;
@@ -1363,7 +1345,6 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
         video.playbackRate = Number(speed.value || 2);
         speed.addEventListener('change', applyPlaybackRate);
       }
-      fullscreen.addEventListener('click', toggleFullscreen);
       video.dataset.seekbarBound = '1';
     }
 
@@ -1373,8 +1354,7 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       const duration = container.querySelector('[data-role="recording-duration"]');
       const playPause = container.querySelector('[data-role="recording-playpause"]');
       const speed = container.querySelector('[data-role="recording-speed"]');
-      const fullscreen = container.querySelector('[data-role="recording-fullscreen"]');
-      if (!seekbar || !current || !duration || !playPause || !fullscreen) {
+      if (!seekbar || !current || !duration || !playPause) {
         return;
       }
 
@@ -1393,9 +1373,6 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       if (speed) {
         speed.disabled = !(video.currentSrc || video.src);
       }
-      fullscreen.innerHTML = '${escapeJs(renderFullscreenIconSvg())}';
-      fullscreen.setAttribute('title', 'Open recording fullscreen');
-      fullscreen.disabled = !(video.currentSrc || video.src);
     }
 
     function syncRecording(container, spec, step) {
@@ -1800,13 +1777,6 @@ function renderSpecDetailSection(
                 <option value="4">4x</option>
                 <option value="8">8x</option>
               </select>
-              <button
-                class="recording-icon-button"
-                data-role="recording-fullscreen"
-                type="button"
-                aria-label="Open recording fullscreen"
-                title="Open recording fullscreen"
-              >${renderFullscreenIconSvg()}</button>
             </div>
           </div>
         </div>
