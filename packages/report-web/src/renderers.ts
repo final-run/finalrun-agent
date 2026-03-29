@@ -1,125 +1,148 @@
 import type {
-  RunIndexRecord,
   RunManifestRecord,
   RunManifestSelectedSpecRecord,
   RunManifestSpecRecord,
   RunManifestStepRecord,
   RunTargetRecord,
 } from '@finalrun/common';
+import type { ReportIndexRunRecord, ReportIndexViewModel } from './artifacts';
 import { buildArtifactRoute, buildRunRoute } from './artifacts';
 
-export function renderRunIndexHtml(index: RunIndexRecord): string {
-  const dataJson = JSON.stringify(index).replace(/</g, '\\u003c');
+const TEST_ICON_SRC =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEYAAABHCAYAAAC6cjEhAAAACXBIWXMAACxLAAAsSwGlPZapAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAARRSURBVHgB7ZxbbtNAFIbPJKroA0J9bMUDWQLdQXpB4g26goYVlK6gzQpoV0BYAelbJdLWrKDZAeYBmjcqARIoTYbzj+M0F9vxZcYek35SldSOlfjz8Zy5nITogfKyuy6Pdjbkj511+WV7Q76lHBBkOSylLomuZjY3LnriAxmkQpbDV64WsLnF0bNPBrFeTH+V2vzgBuwyKsd6MY4rbgdEW5SzHOvFAKcnXCFU5ARhRE4pxCArSUlR2Ui7nDJkpSPOSscxX64tW1kdMRFScPJuwHZtkWOtmCgpHBWNqAYZfR/KiJViFknBEzTIgyrtcWNwO/siKejji6fyOWXAujYmTApnpW7nRmzObq+zgOqQe8aS1qYPoNtKhbY+fRNdSoFVERMl5e6RunXmcPjEByxgLnJY1JCFpY0cayJmkRR09KKO1x05VojJKsVHp5zCxeiS4qNLTqFidEvx0SGnMDGmpPhEyVmRtHnO6T7q+EKykmkpANmKx1eHcztYVJ8nvl6uy1rU8blHTETnzUVv1llwJZOyvS4bfJLvg95vhd8vLHJyFcPztgd8xU4CdhmR4pNGTm5iRoO7VsAuo1J8ksrJRUzRUnySyDEuxhYpPnHlGM1KtkkBlz3R4tH3YcCu2mS2MhYxEVKAy38OZ6fPT3gVoK0hPcfldU2u/fpLV5zKwwaXKnKMiFkgZRqMiiW1+cM0zw1HUAwpPq52MYmkzNMyJSiBFIVWMSHLqWnQLmh3Q14HSeHP26x4j0eT27WJwYTQMGhskh6XU8PhxXfRpoxwFCMLNWa3Qwo3xsd4zhf1mP/fZyNrLKWpRYwBKWMwfOAP36SUxJESRGYxJqVM4OJEkmawtFJAJjE5SbnHm9dVab4iqft4lbqzotDI/u5TbTigA0opxXurlOQuRQNxpYBUYv53KSCxmGWQAhKJwTiiL+i6TFL4DE8vbkTiur3YYpQUr/NWo/IwXtJNSiwxyyYFLBSzjFJApJhllQJCxSyzFBAoZtmlgDkx6FL//MMpeYmlgLk5X5byjkokBauXuqWAKTGj2rUGlYSogqKsTEeMUNFSCnSucwcxFqOmJWPOhxaNaSlgLEZN65WAPKSAyVupTpaTlxSgxIwqG2tkMXlKAUrMUD5ImUWJkXaLcfOWApSYir0TT97if85SgHcrBdTjW0BhFRFAialK68QUKgV46bpKsSumc6BwKUCJ6a8Efu+nCKyQApQYNG48/+BQsVgjBYx7vtwAn1FxWCUF3It5RC0qJjtZJwWMxajbSdIp5YuVUsDUfMzdqqradikfrJUCpsSMGuE3ZB6rpYC5Od9OTzghdbC6sF4KCCyAvrwRJ6hDI/2UQgoIrQzvoGyiQnukqc1BP6ksUsDCtes6L75Vve8XpZv65C4Aoq/DUUglInYZyFiQoFdx6mMwucSvO0OmK2LaICupSs1G608odn7m/1SS9DqHX1E0yMu7TllumTD+AWEyp4L85hdWAAAAAElFTkSuQmCC';
+const TEST_SUITE_ICON_SRC =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEYAAABCCAYAAADqv6CSAAAACXBIWXMAACxLAAAsSwGlPZapAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAQ8SURBVHgB7ZvfVdswFMavVN7rEdwNwgZhAkjTd8gENe8tODAA7gSE97YJE5ROAJ0Ad4MM0Fi9kgXYjhX8R9d1Gv3O4Rwndkz0+eqTdK/CgIjg09cj4PwaDz2gIQbO9qNwtAQCOFDB+RDoRJH4QMgeUMFZBEmy/jQZ+wiipmBMLPAzv3LvJeIhuvhAEi3qX0LHBGffH6Hu0xZiEl2OZ9AhdF1py3HCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGHDCGOhUmCCcD6FJrlamQzumM2FQFB/ztNfQjEFwPr+CDukuYgTIhvnQFCECHXGd0Ikwwdn8HBt2BG1JxFxFXgeQC5M2RIRgBw8Fbtoda0EqjPaVH2ATAUMVgcTQRowA2QAfrCNCar8hE0b7yglQgSMcpd+QCGPZV0z4lH5jXRgUxbPuKyak33z+FgAB9iNmfb4SZ/7sw9gVhd9YLerjFxzIp4h3jfHlQxSO4pJr5E4Hed0AVTxU17fH+l6Zznc7FNEGOkS/QLNuMYIxsYim4xFYgkQY1dhVIiPHB8bfwtMGIpH8lvtaYO9NjE/3oeRzJ60EEuI0uhxHYAErwmS6x7Ge+lfZGLREf1jgN7hBke4K90OB4BBbOnx1kxED2X1QZHaLxzNb3am1MJb22sUo6LRsc5DyLTU0y79ERx5e/4YrQcp8zAathNFT/nuwt9dOCYSNXtR98i9Ri10RRIx+M4EWtBOmybaxqjC4w0b+xGi8A1DdJX4SS4vgwZ/VALujjyPSYTrKZR5QS79pLIxKHGGOJHMn6RlyVGiTkLLJEgU7KDP5KjQSBmebJyhCvvGcTfBLzNR5ykiqR+P5Te2Zr/IVxvLLfgz7Z1GkaP0QReLrFX5takeMIRpk2O6ro3Sd5EOfaOA3tYRJE0Tkq2YKlrpLxVU/ULkrqflKURQ5cjCixaFdPJ0vrjytqCSM8hXOi+WLL9H0/QH6zb6effadQR2/qRYxqDZkfYMptw/1K6/2bwP+FTi9OJ3eHle59FVhdOJ5kHuTqflBGiWpaFuDWK2iKinRjcKkCaCCr0iH1yZWKlr/8ao8TOOolCl9+C9Xs1k0HU30+WFnKUwKGIuwLaem0+aIKaYopa8wmMrDlnXofvBKybdUmNKSauorcXrTlnXovrCh5LsmTJr/KE7iMFeS9RUbdeh+YCz55jymgq8MdP7l/6LEb/IRUyyprvvKVg3NlSnxm2dhSkuqmF/J+ApRHbonFEq+SpjykqryFZXkIa9D94NcyZfpkuo9FLoQroPeyUPdhR5hV9ApCr6pi3Rah+4LacnXYxvSkDGkyeXtWCDaBKNG/lLfN5z2YVfByoM03xgceYSIURhxA448WPDjmJmLtiQ92RHp8oerhBMuEPGd3Y4cmZ6VQ/XFOExfZtDJYh92bySKixWEv9WO6wd2HDlsAAAAAElFTkSuQmCC';
+const LOCAL_ICON_SRC =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIIAAABgCAYAAADRj6p0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAATESURBVHgB7d1PTttYHAfw7zMwsKASs8toNuYETU/QpMxI3RVO0HACOicATjBwAsIJGnZdlOKeoMwJxrMYNcuqtBKUJq+/3y+G2i9OQ6TSEPf7kSIS+9ldvK/fP7uyw4QaNR9HDuvO477+hMMKvHxoehzeOSD1g8/rXzw6L7ounewUN/So5ltS+Cm08unOcw6nfY/9V13XvlH5cQX+qPmGpOxAvsagWaStxO64QIwMwnrsV95fYFu6gGegmSctxN7yInY7qXtXur9s42MZB3x2eO496iMOSvoOR/0ICRaQJiNOTj9GQy7a+XPUpU7qkccTP7r7TheAZtn4YSgIGoJL4ATlXUG7J81MMuFAhH4sHdDPATsYjOlCpWEoBEG7g7NzvMFwCNLeHDaS/90paGZkgRi6qHUgKd1EM99NRPkCOibAcAgOe0t4wBDMHm25te7kcu/kt2uX/2FQ19euW4RseniA4t7O8Vu3AZp5azXfRtBVSH03X3Zdot+j3Mbt4Ni0t4hNUCVIy6CzvzS/zecufAuCtgYIugQZFDY5G6gOrUsd5wWb46zuB0GQJeOtoECbM4PqycZ5h/lt2WoxXDZd/De/U1qDVQahmrKZxFB9R5/kBlJQNmEIqkvrVhcE89vmJQPSK+BhfqPMMY9AldYP6limk/c1CHGhlAfXCypuLiq2CKIhS9PFICwvMQhVd7lQnEbqMyVR+FBJh1PGyhtaFvAaBCIE9xro58UgkGEQyDAIZBgEMgwCGQaBDINAhkEgwyCQYRDIMAhkGAQyDAIZBoEMg0CGQSDDIJBhEMgwCGQYBDIMAhkGgQyDQIZBIMMgkGEQyDAIZBgEMgwCGQaBDINAhkEgwyCQYRDIMAhkGAQyDAIZBoEMg0CGQSDDIJBhEMgwCGQYBDIMAhkGgQyDQIZBIMMgkGEQyDAIZCI4FN74tR77FVClNcI6lgzo6/4KQfh4GbwQlCpn/hz1/G8HpNo1vM5v9H00QJXWd8UgeOC/yLvim1+9xxNQpUVBHetLw13Za+QXgNUXfGN8JT2W+r4M6rsn9R2VvUZeCm6DKimsWyc9gmbApo994DAo3/rzd18HVYq2BvKnld/W99jXv+5qw1rNa3MR58qk95bwgC8NrwZdFjg7xxsEdXzcdav65XpBSRKxGRwby4F/gyrh7AIHKIZAZwu7V99dfsfab35P9m4VzuDQubeITbYMsylrCfSCbhV2OOwfv3XPvv7M0RWnuQucSBjC8UEqM4kmZxKzRcd5/R6eA0OLhGlPuv0kd3G78OBsOnlScrBqSyB2GYi7LZsi6uygVbI7leliMwnq0JWdaEwYVCILUUeyMHG6vIRTdhvTpc2/3hroyaqwGywWNcrK6VTxs8dGUnIhu1Enz7qJnaExA80mGRP0FrGTjLho3bjjH9V8yw2amRg0i3TBcPNl1yXfKjQ2CFc0EJHDlh8eSNIdpKvFulD4quvaNyw/GR0/SCDW5cCH8om9thQefIZhmvSZksHjBDp2+0dWCzsJB/RERET0HUw8WPxe5G7nU/nX9zjQHCuVz47cJTzELZpmEMLb3jSKzArkBtGvuEXT+38Nji3BjQVPmt+GqQVBFqb+wqDZo2+R1iD/3MBt+QKr3Hldh+U7lAAAAABJRU5ErkJggg==';
 
+type SpecOutcomeStatus = 'success' | 'failure' | 'error' | 'not_executed';
+
+interface ReportSpecListItem {
+  input: RunManifestSelectedSpecRecord;
+  executed?: RunManifestSpecRecord;
+  status: SpecOutcomeStatus;
+  durationLabel: string;
+}
+
+interface OutcomeSummary {
+  total: number;
+  success: number;
+  failure: number;
+  error: number;
+  notExecuted: number;
+}
+
+export function renderRunIndexHtml(index: ReportIndexViewModel): string {
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FinalRun Reports</title>
+  ${renderFontLinks()}
   <style>
-    :root {
-      --bg: #f4f7fb;
-      --panel: #ffffff;
-      --panel-alt: #eef3fb;
-      --border: #d7dfeb;
-      --text: #1a2740;
-      --muted: #61728b;
-      --accent: #2563eb;
-      --success: #1f8f5f;
-      --danger: #c24141;
-      --success-soft: #e8f7ef;
-      --danger-soft: #fdeaea;
-      --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-      --radius: 18px;
+    ${renderSharedCss()}
+
+    .history-list-page {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
     }
 
-    * { box-sizing: border-box; }
-    body {
+    .history-page-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .history-page-header h1 {
       margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
-        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: -0.04em;
     }
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .page {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 24px;
+    .history-page-header p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
     }
 
-    .header,
-    .filters,
-    .runs {
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .summary-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 16px;
       box-shadow: var(--shadow);
     }
 
-    .header,
-    .filters {
-      padding: 20px 24px;
-      margin-bottom: 18px;
-    }
-
-    .header h1 {
-      margin: 0 0 8px;
-      font-size: 30px;
-    }
-
-    .header p {
-      margin: 0;
-      color: var(--muted);
-    }
-
-    .stats {
-      margin-top: 18px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 12px;
-    }
-
-    .stat {
-      background: var(--panel-alt);
-      border-radius: 14px;
-      padding: 14px 16px;
-    }
-
-    .stat strong {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-    }
-
-    .stat span {
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    .filters-row {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
+    .summary-card-icon {
+      width: 46px;
+      height: 46px;
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
+      border-radius: 14px;
+      flex: 0 0 auto;
     }
 
-    .filters input,
-    .filters select {
-      padding: 10px 12px;
+    .summary-card-icon svg {
+      width: 22px;
+      height: 22px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .summary-card-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .summary-card-value {
+      margin-top: 4px;
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .runs-shell {
+      background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      font: inherit;
-      min-width: 180px;
-      background: white;
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .runs-shell-header {
+      padding: 24px 26px 18px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .runs-shell-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .runs-shell-header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
     }
 
     table {
@@ -130,498 +153,664 @@ export function renderRunIndexHtml(index: RunIndexRecord): string {
     th,
     td {
       text-align: left;
-      padding: 14px 18px;
-      border-top: 1px solid var(--border);
+      vertical-align: middle;
+      padding: 18px 20px;
+      border-top: 1px solid var(--border-light);
       font-size: 14px;
-      vertical-align: top;
     }
 
     th {
       color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
     }
 
-    .status {
+    .history-row {
+      cursor: pointer;
+      transition: background 0.18s ease;
+    }
+
+    .history-row:hover {
+      background: var(--selected);
+    }
+
+    .run-name-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 260px;
+    }
+
+    .png-icon {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+
+    .run-name-copy {
+      min-width: 0;
+    }
+
+    .run-name-link {
+      color: var(--text);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .run-name-link:hover {
+      text-decoration: underline;
+    }
+
+    .run-secondary {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .app-badge,
+    .run-on-badge {
       display: inline-flex;
       align-items: center;
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
+      gap: 8px;
+      color: var(--text);
+      font-weight: 600;
     }
 
-    .status.success {
-      background: var(--success-soft);
-      color: var(--success);
-    }
-
-    .status.failure {
-      background: var(--danger-soft);
-      color: var(--danger);
-    }
-
-    .muted {
+    .empty-state {
+      padding: 36px 28px;
       color: var(--muted);
+      font-size: 15px;
     }
 
-    .empty {
-      padding: 28px 24px;
-      color: var(--muted);
+    @media (max-width: 1100px) {
+      .runs-shell {
+        overflow-x: auto;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <section class="header">
-      <h1>FinalRun Reports</h1>
-      <p>Browse local test runs and open the detailed per-run report.</p>
-      <div class="stats">
-        <div class="stat"><strong>Runs</strong><span id="stat-runs">0</span></div>
-        <div class="stat"><strong>Passed</strong><span id="stat-passed">0</span></div>
-        <div class="stat"><strong>Failed</strong><span id="stat-failed">0</span></div>
-        <div class="stat"><strong>Specs</strong><span id="stat-specs">0</span></div>
+  <main class="page history-list-page">
+    <section class="history-page-header">
+      <div>
+        <h1>Test Runs</h1>
+        <p>Local FinalRun run history for the current workspace.</p>
       </div>
     </section>
 
-    <section class="filters">
-      <div class="filters-row">
-        <input id="search" type="search" placeholder="Search run id, env, platform, failure..." />
-        <select id="status-filter">
-          <option value="all">All statuses</option>
-          <option value="failure">Failed only</option>
-          <option value="success">Passed only</option>
-        </select>
-      </div>
+    <section class="summary-grid">
+      ${renderSummaryCard('Total Runs', String(index.summary.totalRuns), 'accent', renderPlayCircleIconSvg())}
+      ${renderSummaryCard('Test Success Rate', `${index.summary.totalSuccessRate.toFixed(1)}%`, successRateTone(index.summary.totalSuccessRate), renderCheckCircleIconSvg())}
+      ${renderSummaryCard('Total time saved', formatLongDuration(index.summary.totalDurationMs), 'neutral', renderTimerIconSvg())}
     </section>
 
-    <section class="runs">
+    <section class="runs-shell">
+      <div class="runs-shell-header">
+        <h2>Run history</h2>
+        <p>Open a completed run to inspect the suite or individual test report.</p>
+      </div>
+      ${index.runs.length === 0
+        ? '<div class="empty-state">No FinalRun reports found.</div>'
+        : `
       <table>
         <thead>
           <tr>
-            <th>Status</th>
-            <th>Target</th>
-            <th>Run</th>
-            <th>Env</th>
-            <th>Platform</th>
-            <th>Specs</th>
-            <th>Duration</th>
-            <th>First Failure</th>
-            <th>Links</th>
+            <th>TEST NAME</th>
+            <th>APPS</th>
+            <th>DURATION</th>
+            <th>STATUS</th>
+            <th>RESULT</th>
+            <th>RAN ON</th>
+            <th>Triggered From</th>
           </tr>
         </thead>
-        <tbody id="runs-body"></tbody>
+        <tbody>
+          ${index.runs.map((run) => renderRunIndexRow(run)).join('')}
+        </tbody>
       </table>
-      <div id="runs-empty" class="empty" style="display:none">No runs matched the current filter.</div>
+      `}
     </section>
-  </div>
-
-  <script id="finalrun-runs-data" type="application/json">${dataJson}</script>
-  <script>
-    const payload = JSON.parse(document.getElementById('finalrun-runs-data').textContent);
-    const searchInput = document.getElementById('search');
-    const statusFilter = document.getElementById('status-filter');
-    const tbody = document.getElementById('runs-body');
-    const empty = document.getElementById('runs-empty');
-
-    function formatDuration(durationMs) {
-      const seconds = Number(durationMs || 0) / 1000;
-      return seconds >= 10 ? seconds.toFixed(0) + 's' : seconds.toFixed(1) + 's';
-    }
-
-    function buildRunHref(run) {
-      return '/runs/' + encodeURIComponent(run.runId);
-    }
-
-    function buildArtifactHref(relativePath) {
-      return '/artifacts/' + String(relativePath || '')
-        .replace(/^\\/+/, '')
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/');
-    }
-
-    function render() {
-      const query = String(searchInput.value || '').trim().toLowerCase();
-      const status = String(statusFilter.value || 'all');
-      const filtered = payload.runs.filter((run) => {
-        if (status !== 'all' && run.status !== status) {
-          return false;
-        }
-        if (!query) {
-          return true;
-        }
-        const haystack = [
-          run.runId,
-          run.target?.type,
-          run.target?.suiteName,
-          run.target?.suitePath,
-          run.envName,
-          run.platform,
-          run.modelLabel,
-          run.firstFailure?.message,
-          run.firstFailure?.specName,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(query);
-      });
-
-      tbody.innerHTML = filtered.map((run) => {
-        const firstFailure = run.firstFailure?.message || 'No failure recorded.';
-        return \`
-          <tr>
-            <td><span class="status \${run.status}">\${run.status}</span></td>
-            <td><strong>\${escapeHtml(formatRunTarget(run.target))}</strong>\${
-              run.target?.suiteName
-                ? '<div class="muted">' + escapeHtml(run.target.suiteName) + '</div>'
-                : ''
-            }</td>
-            <td><strong>\${escapeHtml(run.runId)}</strong><div class="muted">\${escapeHtml(run.modelLabel)}</div></td>
-            <td>\${escapeHtml(run.envName)}</td>
-            <td>\${escapeHtml(run.platform)}</td>
-            <td>\${run.passedCount}/\${run.specCount} passed</td>
-            <td>\${formatDuration(run.durationMs)}</td>
-            <td>\${escapeHtml(firstFailure)}</td>
-            <td><a href="\${buildRunHref(run)}">report</a> · <a href="\${buildArtifactHref(run.paths.log)}">log</a> · <a href="\${buildArtifactHref(run.paths.runJson)}">run.json</a></td>
-          </tr>
-        \`;
-      }).join('');
-
-      empty.style.display = filtered.length === 0 ? 'block' : 'none';
-      document.getElementById('stat-runs').textContent = String(payload.runs.length);
-      document.getElementById('stat-passed').textContent = String(payload.runs.filter((run) => run.success).length);
-      document.getElementById('stat-failed').textContent = String(payload.runs.filter((run) => !run.success).length);
-      document.getElementById('stat-specs').textContent = String(payload.runs.reduce((total, run) => total + Number(run.specCount || 0), 0));
-    }
-
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    function formatRunTarget(target) {
-      return target && target.type === 'suite' ? 'Suite' : 'Direct';
-    }
-
-    searchInput.addEventListener('input', render);
-    statusFilter.addEventListener('change', render);
-    render();
-  </script>
+  </main>
 </body>
 </html>`;
 }
 
 export function renderRunHtml(manifest: RunManifestRecord): string {
-  const dataJson = JSON.stringify(toReportViewModel(manifest)).replace(/</g, '\\u003c');
   const view = toReportViewModel(manifest);
   const run = view.run;
-  const specs = view.specs;
-  const target = resolveRunTarget(view);
+  const specItems = buildSpecListItems(view);
+  const isSingleSpec = specItems.length <= 1;
+  const outcomeSummary = summarizeSpecItems(specItems);
+  const initialSpec = specItems[0];
+  const reportTitle = deriveReportTitle(view);
+  const reportPayload = JSON.stringify(view).replace(/</g, '\\u003c');
 
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FinalRun Report</title>
+  <title>${escapeHtml(reportTitle)}</title>
+  ${renderFontLinks()}
   <style>
-    :root {
-      --bg: #f4f7fb;
-      --panel: #ffffff;
-      --panel-alt: #eef3fb;
-      --border: #d7dfeb;
-      --text: #1a2740;
-      --muted: #61728b;
-      --accent: #2563eb;
-      --accent-soft: #dbeafe;
-      --success: #1f8f5f;
-      --success-soft: #e8f7ef;
-      --danger: #c24141;
-      --danger-soft: #fdeaea;
-      --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-      --radius: 18px;
+    ${renderSharedCss()}
+
+    .report-page {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
     }
 
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
-        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .report-header-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .back-button {
+      width: 42px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel);
       color: var(--text);
+      text-decoration: none;
+      box-shadow: var(--shadow);
+      flex: 0 0 auto;
     }
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .page {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 24px;
+    .back-button svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
-    .run-header,
-    .spec-card {
+    .report-eyebrow {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+
+    .report-title {
+      margin: 4px 0 0;
+      color: var(--text);
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+    }
+
+    .report-subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .overview-panel {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 20px;
       box-shadow: var(--shadow);
+      overflow: hidden;
     }
 
-    .run-header {
+    .overview-panel-body {
       padding: 24px;
-      margin-bottom: 20px;
     }
 
-    .run-title {
+    .overview-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .overview-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .segment-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 24px;
+    }
+
+    .segment-shell {
+      flex: 1 1 420px;
+      min-width: 280px;
+    }
+
+    .segment-bar {
+      width: 100%;
+      height: 48px;
+      display: flex;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--panel-alt);
+    }
+
+    .segment {
+      height: 100%;
+    }
+
+    .segment.success { background: var(--success); }
+    .segment.failure { background: var(--failure); }
+    .segment.error { background: var(--warning); }
+    .segment.not-executed { background: var(--icon); }
+
+    .segment-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-top: 14px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .segment-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .segment-legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      flex: 0 0 auto;
+    }
+
+    .metric-cards {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .metric-card {
+      min-width: 160px;
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: white;
+    }
+
+    .metric-value {
+      color: var(--text);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .metric-label {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .run-context-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .context-card {
+      padding: 16px 18px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel-alt);
+    }
+
+    .context-card strong {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .context-card span,
+    .context-card div,
+    .context-card code {
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+
+    .inline-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .inline-code {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid rgba(188, 197, 225, 0.8);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
+      font-size: 12px;
+    }
+
+    .suite-list-shell {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .suite-list-shell h2 {
+      margin: 0;
+      padding: 24px 24px 10px;
+      font-size: 18px;
+    }
+
+    .suite-list-shell p {
+      margin: 0;
+      padding: 0 24px 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .suite-list-shell table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .suite-list-shell th,
+    .suite-list-shell td {
+      padding: 18px 20px;
+      border-top: 1px solid var(--border-light);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 14px;
+    }
+
+    .suite-list-shell th {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .suite-row {
+      cursor: pointer;
+      transition: background 0.18s ease;
+    }
+
+    .suite-row:hover {
+      background: var(--selected);
+    }
+
+    .detail-shell {
+      display: none;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .detail-shell.is-visible {
+      display: block;
+    }
+
+    .detail-header {
       display: flex;
       justify-content: space-between;
       gap: 16px;
       align-items: flex-start;
       flex-wrap: wrap;
+      padding: 24px 24px 0;
     }
 
-    .run-title h1 {
+    .detail-header-main {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      min-width: 0;
+    }
+
+    .detail-header-copy {
+      min-width: 0;
+    }
+
+    .detail-header-copy h2 {
       margin: 0;
-      font-size: 30px;
-      line-height: 1.1;
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
     }
 
-    .run-title p {
+    .detail-header-copy p {
       margin: 8px 0 0;
       color: var(--muted);
-      font-size: 15px;
+      font-size: 14px;
     }
 
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 14px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-    }
-
-    .status-pill.success {
-      background: var(--success-soft);
-      color: var(--success);
-    }
-
-    .status-pill.failure {
-      background: var(--danger-soft);
-      color: var(--danger);
-    }
-
-    .meta-grid {
+    .detail-meta {
+      margin-top: 18px;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 14px;
-      margin-top: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      padding: 0 24px 24px;
     }
 
-    .meta-card {
-      background: var(--panel-alt);
-      border-radius: 14px;
+    .detail-meta-card {
       padding: 14px 16px;
-      min-height: 74px;
-    }
-
-    .meta-card strong {
-      display: block;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-
-    .meta-card span {
-      display: block;
-      font-size: 15px;
-      font-weight: 600;
-    }
-
-    .spec-index {
-      margin-bottom: 20px;
-      background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-
-    .spec-index h2 {
-      margin: 0;
-      padding: 18px 22px 8px;
-      font-size: 18px;
-    }
-
-    .spec-index table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .spec-index th,
-    .spec-index td {
-      text-align: left;
-      padding: 14px 22px;
-      border-top: 1px solid var(--border);
-      font-size: 14px;
-    }
-
-    .spec-index th {
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-
-    .spec-card {
-      margin-bottom: 22px;
-      overflow: hidden;
-    }
-
-    .spec-head {
-      padding: 22px 24px 14px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .spec-head h2 {
-      margin: 0 0 8px;
-      font-size: 22px;
-    }
-
-    .spec-head .subtext {
-      color: var(--muted);
-      font-size: 14px;
-      word-break: break-all;
-    }
-
-    .analysis-banner {
-      margin: 18px 24px 0;
-      border-radius: 16px;
-      border: 1px solid var(--border);
-      padding: 18px 20px;
+      border-radius: 14px;
       background: var(--panel-alt);
     }
 
-    .analysis-banner.success {
-      background: var(--success-soft);
-      border-color: rgba(31, 143, 95, 0.28);
+    .detail-meta-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
-    .analysis-banner.failure {
-      background: var(--danger-soft);
-      border-color: rgba(194, 65, 65, 0.24);
+    .detail-meta-card span {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.45;
     }
 
-    .analysis-banner .label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .goal-shell {
+      padding: 0 24px 24px;
+    }
+
+    .goal-card {
+      padding: 18px 20px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: white;
+    }
+
+    .goal-card strong {
+      display: block;
       margin-bottom: 10px;
-      font-size: 15px;
-      font-weight: 700;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .goal-copy {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.55;
+    }
+
+    .goal-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .goal-chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--panel-alt);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
     }
 
     .workspace {
       display: grid;
-      grid-template-columns: minmax(340px, 44%) minmax(360px, 56%);
+      grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.05fr);
       min-height: 560px;
+      border-top: 1px solid var(--border-light);
     }
 
     .timeline-panel {
-      border-right: 1px solid var(--border);
-      padding: 20px 18px 24px 24px;
-      overflow: auto;
+      padding: 22px;
+      border-right: 1px solid var(--border-light);
+      background: white;
     }
 
-    .timeline-panel h3,
-    .detail-panel h3 {
+    .detail-panel {
+      padding: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
+    }
+
+    .section-label {
       margin: 0 0 14px;
-      font-size: 15px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
       color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
     .step-button {
       width: 100%;
-      text-align: left;
+      margin: 0 0 12px;
+      padding: 14px;
       border: 1px solid transparent;
-      background: transparent;
       border-radius: 14px;
-      padding: 12px 14px;
-      margin-bottom: 10px;
+      background: transparent;
+      text-align: left;
       cursor: pointer;
-      transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+      transition: border-color 0.18s ease, background 0.18s ease;
     }
 
     .step-button:hover {
-      background: rgba(37, 99, 235, 0.05);
-      border-color: rgba(37, 99, 235, 0.14);
-      transform: translateX(2px);
+      background: var(--selected);
+      border-color: rgba(67, 24, 255, 0.14);
     }
 
     .step-button.is-selected {
-      background: rgba(37, 99, 235, 0.08);
-      border-color: rgba(37, 99, 235, 0.32);
+      background: var(--selected);
+      border-color: rgba(67, 24, 255, 0.24);
     }
 
     .step-row {
-      display: flex;
-      align-items: flex-start;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
       gap: 12px;
+      align-items: start;
     }
 
     .step-icon {
       width: 28px;
       height: 28px;
-      border-radius: 50%;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
+      border-radius: 50%;
       color: white;
-      flex: 0 0 auto;
+      font-size: 14px;
+      font-weight: 700;
     }
 
     .step-icon.success { background: var(--success); }
-    .step-icon.failure { background: var(--danger); }
-    .step-title { font-weight: 600; margin-bottom: 4px; }
-    .step-meta {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
+    .step-icon.failure { background: var(--failure); }
+    .step-icon.error { background: var(--warning); }
+
+    .step-title {
+      color: var(--text);
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .step-reason {
+      margin-top: 4px;
       color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .step-meta {
+      margin-top: 6px;
+      color: var(--icon);
       font-size: 12px;
     }
 
     .duration-chip {
-      margin-left: auto;
-      background: var(--panel-alt);
-      border-radius: 999px;
       padding: 6px 10px;
-      font-size: 12px;
+      border-radius: 999px;
+      background: var(--panel-alt);
       color: var(--muted);
-      flex: 0 0 auto;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
     }
 
-    .detail-panel {
+    .empty-panel {
       padding: 24px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(238,243,251,0.82) 100%);
+      border: 1px dashed rgba(188, 197, 225, 0.9);
+      border-radius: 16px;
+      background: rgba(244, 247, 254, 0.9);
+      color: var(--muted);
+      line-height: 1.6;
     }
 
     .media-shell {
@@ -629,11 +818,10 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       margin: 0 auto 16px;
       border-radius: 18px;
       overflow: hidden;
-      background: #0f172a;
-      min-height: 0;
+      background: #111827;
       display: grid;
       place-items: center;
-      border: 1px solid rgba(148, 163, 184, 0.24);
+      border: 1px solid rgba(148, 163, 184, 0.28);
       box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
     }
 
@@ -655,16 +843,11 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
     }
 
     .empty-shot {
-      color: #cbd5e1;
-      font-size: 14px;
       padding: 18px;
+      color: #d9e0ef;
       text-align: center;
-    }
-
-    .recording-meta {
-      margin-bottom: 18px;
-      color: var(--muted);
-      font-size: 13px;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
     .recording-controls {
@@ -673,7 +856,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       padding: 12px 14px;
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: rgba(255, 255, 255, 0.9);
+      background: white;
     }
 
     .recording-control-row {
@@ -692,7 +875,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 0;
-      background: #ffffff;
+      background: white;
       color: var(--text);
       cursor: pointer;
     }
@@ -700,7 +883,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
     .recording-icon-button.primary {
       background: var(--accent);
       border-color: var(--accent);
-      color: #ffffff;
+      color: white;
     }
 
     .recording-icon-button svg {
@@ -710,7 +893,8 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       fill: currentColor;
     }
 
-    .recording-icon-button:disabled {
+    .recording-icon-button:disabled,
+    .recording-timeline:disabled {
       opacity: 0.45;
       cursor: default;
     }
@@ -719,10 +903,6 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       width: 100%;
       margin: 0;
       accent-color: var(--accent);
-    }
-
-    .recording-timeline:disabled {
-      opacity: 0.45;
     }
 
     .recording-times {
@@ -735,6 +915,14 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       font-variant-numeric: tabular-nums;
     }
 
+    .recording-meta {
+      margin-bottom: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
     .detail-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -742,186 +930,148 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
     }
 
     .detail-card {
-      background: rgba(255, 255, 255, 0.88);
+      padding: 14px 16px;
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 14px 16px;
+      background: white;
     }
 
     .detail-card h4 {
       margin: 0 0 10px;
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
       color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .detail-card p,
     .detail-card ul {
       margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
       padding-left: 18px;
-      line-height: 1.5;
     }
 
-    .detail-card ul {
-      list-style: disc;
+    .detail-card p {
+      padding-left: 0;
     }
 
     .trace-list {
       display: flex;
       flex-direction: column;
       gap: 6px;
-      padding-left: 18px;
       margin: 0;
+      padding-left: 18px;
     }
 
-    .raw-links {
+    .raw-links-shell {
       padding: 0 24px 24px;
+    }
+
+    .raw-links-shell details {
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: white;
+    }
+
+    .raw-links-shell summary {
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 700;
     }
 
     .artifact-list {
       display: flex;
       flex-wrap: wrap;
       gap: 10px 14px;
+      margin-top: 14px;
       font-size: 14px;
     }
 
-    .artifact-row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
+    .artifact-list a {
+      color: var(--accent);
     }
 
-    .muted {
-      color: var(--muted);
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
-    @media (max-width: 1080px) {
+    @media (max-width: 980px) {
       .workspace {
         grid-template-columns: 1fr;
       }
 
       .timeline-panel {
         border-right: 0;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border-light);
       }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <section class="run-header">
-      <div class="run-title">
+  <main class="page report-page">
+    <section class="report-header">
+      <div class="report-header-main">
+        <a class="back-button" href="/" aria-label="Back to run history" title="Back to run history">
+          ${renderBackArrowIconSvg()}
+        </a>
         <div>
-          <h1>FinalRun Local Report</h1>
-          <p>Run ID: ${escapeHtml(run.runId)}</p>
-        </div>
-        <div class="status-pill ${run.success ? 'success' : 'failure'}">
-          ${run.success ? 'Passed' : 'Failed'}
+          <div class="report-eyebrow">Run history</div>
+          <h1 class="report-title">${escapeHtml(reportTitle)}</h1>
+          <p class="report-subtitle">${escapeHtml(run.runId)} · Completed ${escapeHtml(formatRelativeTime(run.completedAt))} ago</p>
         </div>
       </div>
-      <div class="meta-grid">
-        <div class="meta-card"><strong>Environment</strong><span>${escapeHtml(run.envName)}</span></div>
-        <div class="meta-card"><strong>Platform</strong><span>${escapeHtml(run.platform)}</span></div>
-        <div class="meta-card"><strong>Model</strong><span>${escapeHtml(run.model.label)}</span></div>
-        <div class="meta-card"><strong>Run Target</strong><span>${escapeHtml(formatRunTarget(target))}</span></div>
-        ${target.type === 'suite' && target.suiteName
-          ? `<div class="meta-card"><strong>Suite</strong><span>${escapeHtml(target.suiteName)}</span></div>`
-          : ''}
-        ${target.type === 'suite' && target.suitePath
-          ? `<div class="meta-card"><strong>Suite Path</strong><span>${escapeHtml(target.suitePath)}</span></div>`
-          : ''}
-        <div class="meta-card"><strong>Started</strong><span>${escapeHtml(run.startedAt)}</span></div>
-        <div class="meta-card"><strong>Duration</strong><span>${formatDuration(run.durationMs)}</span></div>
-        <div class="meta-card"><strong>Specs</strong><span>${run.counts.specs.passed}/${run.counts.specs.total} passed</span></div>
-        <div class="meta-card"><strong>Steps</strong><span>${run.counts.steps.failed} failed of ${run.counts.steps.total}</span></div>
-        <div class="meta-card"><strong>Artifacts</strong><span><a href="${escapeHtml(view.paths.runJson)}">run.json</a> · <a href="${escapeHtml(view.paths.summaryJson)}">summary.json</a> · <a href="${escapeHtml(view.paths.log)}">runner.log</a></span></div>
-      </div>
+      ${renderStatusPill(run.success ? 'success' : 'failure')}
     </section>
 
-    <section class="spec-index">
-      <h2>Run Context</h2>
-      <table>
-        <tbody>
-          <tr>
-            <th>Run Target</th>
-            <td>${escapeHtml(formatRunTarget(target))}</td>
-          </tr>
-          ${target.type === 'suite'
-            ? `
-          <tr>
-            <th>Suite</th>
-            <td>${escapeHtml(target.suiteName ?? 'Unknown suite')}</td>
-          </tr>
-          <tr>
-            <th>Suite Manifest</th>
-            <td>${renderSuiteManifestLink(view)}</td>
-          </tr>
-          <tr>
-            <th>Suite Tests</th>
-            <td>${renderSuiteTests(view)}</td>
-          </tr>
-          `
-            : `
-          <tr>
-            <th>Selectors</th>
-            <td>${run.selectors.length > 0 ? run.selectors.map((selector) => escapeHtml(selector)).join(', ') : '<span class="muted">No selectors recorded.</span>'}</td>
-          </tr>
-          `}
-          <tr>
-            <th>Variables</th>
-            <td>${renderVariables(view)}</td>
-          </tr>
-          <tr>
-            <th>Secrets</th>
-            <td>${renderSecretReferences(view)}</td>
-          </tr>
-          <tr>
-            <th>Spec Snapshots</th>
-            <td>${view.input.specs.length > 0 ? view.input.specs.map((spec) => `<a href="${escapeHtml(spec.snapshotYamlPath)}">${escapeHtml(spec.relativePath)}</a>`).join(' · ') : '<span class="muted">No spec snapshots recorded.</span>'}</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+    ${isSingleSpec
+      ? renderSingleSpecPage(view, initialSpec)
+      : renderSuiteRunPage(view, specItems, outcomeSummary)}
+  </main>
 
-    <section class="spec-index">
-      <h2>Spec Index</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Spec</th>
-            <th>Status</th>
-            <th>Duration</th>
-            <th>Path</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${specs.map((spec, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td><a href="#spec-${escapeHtml(spec.specId)}">${escapeHtml(spec.specName)}</a></td>
-              <td>${spec.success ? 'Passed' : 'Failed'}</td>
-              <td>${formatDuration(spec.durationMs)}</td>
-              <td>${escapeHtml(spec.relativePath)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </section>
-
-    ${specs.map((spec) => renderSpecSection(spec)).join('')}
-  </div>
-
-  <script id="finalrun-report-data" type="application/json">${dataJson}</script>
+  <script id="finalrun-report-data" type="application/json">${reportPayload}</script>
   <script>
     const reportPayload = JSON.parse(document.getElementById('finalrun-report-data').textContent);
     const specMap = Object.fromEntries(reportPayload.specs.map((spec) => [spec.specId, spec]));
 
+    function clearSpecSelection() {
+      const overview = document.getElementById('suite-overview');
+      if (overview) {
+        overview.style.display = 'block';
+      }
+      for (const panel of document.querySelectorAll('[data-spec-panel]')) {
+        panel.classList.remove('is-visible');
+      }
+    }
+
+    function selectSpec(specId) {
+      const overview = document.getElementById('suite-overview');
+      if (overview) {
+        overview.style.display = 'none';
+      }
+      for (const panel of document.querySelectorAll('[data-spec-panel]')) {
+        panel.classList.toggle('is-visible', panel.dataset.specPanel === specId);
+      }
+      if (specMap[specId] && specMap[specId].steps.length > 0) {
+        selectStep(specId, 0);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
     function selectStep(specId, stepIndex) {
       const spec = specMap[specId];
-      const step = spec.steps[stepIndex];
-      const container = document.querySelector('[data-spec-detail="' + specId + '"]');
+      const step = spec?.steps?.[stepIndex];
+      const container = document.querySelector('[data-step-detail="' + specId + '"]');
       if (!container || !step) {
         return;
       }
@@ -951,7 +1101,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       container.querySelector('[data-role="reason"]').textContent = step.reason || 'No reasoning recorded.';
       container.querySelector('[data-role="analysis"]').textContent = step.analysis || 'No step analysis recorded.';
       container.querySelector('[data-role="status"]').textContent = step.success ? 'Success' : 'Failure';
-      container.querySelector('[data-role="duration"]').textContent = formatDuration(step.durationMs || step.trace?.totalMs || 0);
+      container.querySelector('[data-role="duration"]').textContent = formatStepDuration(step.durationMs || step.trace?.totalMs || 0);
       container.querySelector('[data-role="timestamp"]').textContent = step.timestamp || 'Unknown';
       container.querySelector('[data-role="error"]').textContent = step.errorMessage || 'No error recorded.';
 
@@ -980,7 +1130,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
         for (const span of spans) {
           const li = document.createElement('li');
           const detail = span.detail ? ' - ' + span.detail : '';
-          li.textContent = span.name + ': ' + formatDuration(span.durationMs) + ' (' + span.status + ')' + detail;
+          li.textContent = span.name + ': ' + formatStepDuration(span.durationMs) + ' (' + span.status + ')' + detail;
           traceList.appendChild(li);
         }
       }
@@ -1004,7 +1154,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       }
     }
 
-    function formatDuration(durationMs) {
+    function formatStepDuration(durationMs) {
       const ms = Number(durationMs || 0);
       const seconds = ms / 1000;
       return seconds >= 10 ? seconds.toFixed(0) + 's' : seconds.toFixed(1) + 's';
@@ -1022,15 +1172,10 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       if (!shell) {
         return;
       }
-
       if (video.videoWidth > 0 && video.videoHeight > 0) {
-        shell.style.setProperty(
-          '--recording-aspect-ratio',
-          String(video.videoWidth) + ' / ' + String(video.videoHeight),
-        );
+        shell.style.setProperty('--recording-aspect-ratio', String(video.videoWidth) + ' / ' + String(video.videoHeight));
         return;
       }
-
       shell.style.removeProperty('--recording-aspect-ratio');
     }
 
@@ -1124,14 +1269,8 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       playPause.innerHTML = video.paused || video.ended
         ? '${escapeJs(renderPlayIconSvg())}'
         : '${escapeJs(renderPauseIconSvg())}';
-      playPause.setAttribute(
-        'aria-label',
-        video.paused || video.ended ? 'Play recording' : 'Pause recording',
-      );
-      playPause.setAttribute(
-        'title',
-        video.paused || video.ended ? 'Play recording' : 'Pause recording',
-      );
+      playPause.setAttribute('aria-label', video.paused || video.ended ? 'Play recording' : 'Pause recording');
+      playPause.setAttribute('title', video.paused || video.ended ? 'Play recording' : 'Pause recording');
       fullscreen.innerHTML = '${escapeJs(renderFullscreenIconSvg())}';
       fullscreen.setAttribute('title', 'Open recording fullscreen');
       fullscreen.disabled = !(video.currentSrc || video.src);
@@ -1213,6 +1352,448 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
 </html>`;
 }
 
+function renderSingleSpecPage(
+  manifest: RunManifestRecord,
+  item: ReportSpecListItem | undefined,
+): string {
+  if (!item) {
+    return `
+      <section class="overview-panel">
+        <div class="overview-panel-body">
+          <div class="empty-panel">No spec details were recorded for this run.</div>
+        </div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="overview-grid">
+      ${renderRunContextPanel(manifest)}
+      ${renderSpecDetailSection(item, true, 'home')}
+    </section>
+  `;
+}
+
+function renderSuiteRunPage(
+  manifest: RunManifestRecord,
+  items: ReportSpecListItem[],
+  summary: OutcomeSummary,
+): string {
+  return `
+    <section id="suite-overview" class="overview-grid">
+      <section class="overview-panel">
+        <div class="overview-panel-body">
+          <h2 class="overview-title">Run summary</h2>
+          <p class="overview-subtitle">Completed suite-level view based on the locally captured report artifacts.</p>
+          <div class="segment-summary">
+            <div class="segment-shell">
+              ${renderSummarySegments(summary)}
+            </div>
+            <div class="metric-cards">
+              <div class="metric-card">
+                <div class="metric-value">${summary.success}/${summary.total}</div>
+                <div class="metric-label">Tests passed</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-value">${formatLongDuration(manifest.run.durationMs)}</div>
+                <div class="metric-label">Run duration</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      ${renderRunContextPanel(manifest)}
+      <section class="suite-list-shell">
+        <h2>Executed tests</h2>
+        <p>Select a test to inspect the detailed step-by-step report.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>TEST NAME</th>
+              <th>APPS</th>
+              <th>DURATION</th>
+              <th>STATUS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item) => renderSuiteRow(item, manifest.run.app.label)).join('')}
+          </tbody>
+        </table>
+      </section>
+    </section>
+    ${items.map((item) => renderSpecDetailSection(item, false, 'suite')).join('')}
+  `;
+}
+
+function renderRunContextPanel(manifest: RunManifestRecord): string {
+  const target = resolveRunTarget(manifest);
+  const artifacts = [
+    `<a href="${escapeHtml(manifest.paths.runJson)}">run.json</a>`,
+    `<a href="${escapeHtml(manifest.paths.summaryJson)}">summary.json</a>`,
+    `<a href="${escapeHtml(manifest.paths.log)}">runner.log</a>`,
+  ];
+  if (manifest.paths.runContextJson) {
+    artifacts.push(`<a href="${escapeHtml(manifest.paths.runContextJson)}">run-context.json</a>`);
+  }
+
+  return `
+    <section class="overview-panel">
+      <div class="overview-panel-body">
+        <h2 class="overview-title">Run Context</h2>
+        <p class="overview-subtitle">Inputs and environment captured for this report.</p>
+        <div class="run-context-grid">
+          ${renderContextCard('Environment', escapeHtml(manifest.input.environment.envName))}
+          ${renderContextCard('Platform', escapeHtml(manifest.run.platform))}
+          ${renderContextCard('Model', escapeHtml(manifest.run.model.label))}
+          ${renderContextCard('App', escapeHtml(manifest.run.app.label))}
+          ${renderContextCard('Run Target', escapeHtml(formatRunTarget(target)))}
+          ${target.type === 'suite'
+            ? renderContextCard(
+              'Suite',
+              target.suitePath && target.suiteName
+                ? `<div>${escapeHtml(target.suiteName)}</div><div class="muted">${escapeHtml(target.suitePath)}</div>`
+                : escapeHtml(target.suiteName || target.suitePath || 'Suite run'),
+            )
+            : renderContextCard(
+              'Selectors',
+              manifest.run.selectors.length > 0
+                ? renderInlineCodeList(manifest.run.selectors)
+                : '<span class="muted">No selectors recorded.</span>',
+            )}
+          ${renderContextCard('Variables', renderVariableList(manifest))}
+          ${renderContextCard('Secrets', renderSecretList(manifest))}
+          ${renderContextCard('Artifacts', `<div class="inline-list">${artifacts.join(' · ')}</div>`)}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderContextCard(label: string, content: string): string {
+  return `
+    <div class="context-card">
+      <strong>${escapeHtml(label)}</strong>
+      <div>${content}</div>
+    </div>
+  `;
+}
+
+function renderSummarySegments(summary: OutcomeSummary): string {
+  const segments = [
+    { label: 'Success', className: 'success', count: summary.success },
+    { label: 'Failure', className: 'failure', count: summary.failure },
+    { label: 'Error', className: 'error', count: summary.error },
+    { label: 'Not Executed', className: 'not-executed', count: summary.notExecuted },
+  ];
+
+  return `
+    <div class="segment-bar">
+      ${segments
+        .filter((segment) => segment.count > 0)
+        .map((segment) => {
+          const width = summary.total === 0 ? 0 : (segment.count / summary.total) * 100;
+          return `<div class="segment ${segment.className}" style="width:${width.toFixed(2)}%"></div>`;
+        })
+        .join('')}
+    </div>
+    <div class="segment-legend">
+      ${segments.map((segment) => {
+        const percent = summary.total === 0 ? 0 : Math.round((segment.count / summary.total) * 100);
+        return `
+          <span class="segment-legend-item">
+            <span class="segment-legend-dot ${segment.className}" style="background:${segment.className === 'success'
+              ? 'var(--success)'
+              : segment.className === 'failure'
+                ? 'var(--failure)'
+                : segment.className === 'error'
+                  ? 'var(--warning)'
+                  : 'var(--icon)'}"></span>
+            <span>${segment.label} - ${percent}%</span>
+          </span>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderRunIndexRow(run: ReportIndexRunRecord): string {
+  const resultLabel = run.passedCount + run.failedCount === 0
+    ? 'NA'
+    : `${run.passedCount} / ${run.selectedSpecCount}`;
+  const href = buildRunRoute(run.runId);
+
+  return `
+    <tr class="history-row" onclick="window.location.href='${escapeJs(href)}'">
+      <td>
+        <div class="run-name-cell">
+          <img class="png-icon" src="${run.displayKind === 'suite' ? TEST_SUITE_ICON_SRC : TEST_ICON_SRC}" alt="" />
+          <div class="run-name-copy">
+            <a class="run-name-link" href="${escapeHtml(href)}">${escapeHtml(run.displayName)}</a>
+            <div class="run-secondary">${escapeHtml(run.runId)}</div>
+          </div>
+        </div>
+      </td>
+      <td>${escapeHtml(run.appLabel)}</td>
+      <td>${run.durationMs > 0 ? escapeHtml(formatLongDuration(run.durationMs)) : 'NA'}</td>
+      <td>${renderStatusPill(run.success ? 'success' : 'failure')}</td>
+      <td>${escapeHtml(resultLabel)}</td>
+      <td>
+        <span class="run-on-badge">
+          <img class="png-icon" src="${LOCAL_ICON_SRC}" alt="" />
+          <span>Local</span>
+        </span>
+      </td>
+      <td>${escapeHtml(run.triggeredFrom)}</td>
+    </tr>
+  `;
+}
+
+function renderSuiteRow(item: ReportSpecListItem, appLabel: string): string {
+  return `
+    <tr class="suite-row" onclick="selectSpec('${escapeJs(item.input.specId)}')">
+      <td>
+        <div class="run-name-cell">
+          <img class="png-icon" src="${TEST_ICON_SRC}" alt="" />
+          <div class="run-name-copy">
+            <span class="run-name-link">${escapeHtml(item.input.specName)}</span>
+            <div class="run-secondary">${escapeHtml(item.input.relativePath)}</div>
+          </div>
+        </div>
+      </td>
+      <td>${escapeHtml(appLabel)}</td>
+      <td>${escapeHtml(item.durationLabel)}</td>
+      <td>${renderStatusPill(item.status)}</td>
+    </tr>
+  `;
+}
+
+function renderSpecDetailSection(
+  item: ReportSpecListItem,
+  visible: boolean,
+  backMode: 'suite' | 'home',
+): string {
+  const detailClass = visible ? 'detail-shell is-visible' : 'detail-shell';
+  const backButton = backMode === 'suite'
+    ? `<button class="back-button" type="button" onclick="clearSpecSelection()" aria-label="Back to suite list" title="Back to suite list">${renderBackArrowIconSvg()}</button>`
+    : `<a class="back-button" href="/" aria-label="Back to run history" title="Back to run history">${renderBackArrowIconSvg()}</a>`;
+
+  if (!item.executed) {
+    return `
+      <section class="${detailClass}" data-spec-panel="${escapeHtml(item.input.specId)}">
+        <div class="detail-header">
+          <div class="detail-header-main">
+            ${backButton}
+            <div class="detail-header-copy">
+              <div class="report-eyebrow">Run history</div>
+              <h2>${escapeHtml(item.input.specName)}</h2>
+              <p>${escapeHtml(item.input.relativePath)}</p>
+            </div>
+          </div>
+          ${renderStatusPill('not_executed')}
+        </div>
+        <div class="detail-meta">
+          <div class="detail-meta-card"><strong>Status</strong><span>Not executed</span></div>
+          <div class="detail-meta-card"><strong>Duration</strong><span>NA</span></div>
+          <div class="detail-meta-card"><strong>Path</strong><span>${escapeHtml(item.input.relativePath)}</span></div>
+        </div>
+        <div class="goal-shell">
+          <div class="empty-panel">
+            This spec was selected for the run, but it never started. The batch ended before this spec could execute, so there are no step artifacts for it.
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  const spec = item.executed;
+  const initialStep = spec.steps[0];
+  const statusText = item.status === 'error' ? 'Error' : item.status === 'failure' ? 'Failed' : 'Passed';
+  const goalText = spec.effectiveGoal || deriveGoalFallback(spec);
+  const analysisText = spec.analysis || spec.message || 'No overall analysis recorded.';
+
+  return `
+    <section class="${detailClass}" data-spec-panel="${escapeHtml(spec.specId)}">
+      <div class="detail-header">
+        <div class="detail-header-main">
+          ${backButton}
+          <div class="detail-header-copy">
+            <div class="report-eyebrow">Run history</div>
+            <h2>${escapeHtml(item.input.specName)}</h2>
+            <p>${escapeHtml(item.input.relativePath)}</p>
+          </div>
+        </div>
+        ${renderStatusPill(item.status)}
+      </div>
+
+      <div class="detail-meta">
+        <div class="detail-meta-card"><strong>Status</strong><span>${escapeHtml(statusText)}</span></div>
+        <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(formatLongDuration(spec.durationMs))}</span></div>
+        <div class="detail-meta-card"><strong>Steps</strong><span>${spec.steps.length} recorded</span></div>
+        <div class="detail-meta-card"><strong>Analysis</strong><span>${escapeHtml(analysisText)}</span></div>
+      </div>
+
+      <div class="goal-shell">
+        <div class="goal-card">
+          <strong>Goal</strong>
+          <div class="goal-copy">${escapeHtml(goalText)}</div>
+          <div class="goal-chip-row">
+            <span class="goal-chip">${spec.authored.steps.length} authored steps</span>
+            <span class="goal-chip">${spec.authored.assertions.length} assertions</span>
+            <span class="goal-chip">${spec.recordingFile ? 'Recording available' : 'No recording'}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace">
+        <div class="timeline-panel">
+          <p class="section-label">Agent Actions</p>
+          ${spec.steps.length > 0
+            ? spec.steps.map((step, index) => renderStepButton(spec.specId, step, index)).join('')
+            : '<div class="empty-panel">No steps were recorded for this spec.</div>'}
+        </div>
+
+        <div class="detail-panel" data-step-detail="${escapeHtml(spec.specId)}">
+          <p class="section-label">Session Recording</p>
+          <div class="media-shell recording-shell">
+            ${spec.recordingFile
+              ? `<video data-role="recording-video" playsinline preload="metadata" src="${escapeHtml(spec.recordingFile)}"></video>`
+              : '<div class="empty-shot" data-role="empty-recording">No session recording was captured for this spec.</div>'}
+            ${spec.recordingFile
+              ? '<div class="empty-shot" data-role="empty-recording" style="display:none">No session recording was captured for this spec.</div>'
+              : ''}
+          </div>
+          <div class="recording-controls" data-role="recording-controls" style="display:${spec.recordingFile ? 'block' : 'none'}">
+            <div class="recording-control-row">
+              <button
+                class="recording-icon-button primary"
+                data-role="recording-playpause"
+                type="button"
+                aria-label="Play recording"
+                title="Play recording"
+              >${renderPlayIconSvg()}</button>
+              <input
+                class="recording-timeline"
+                data-role="recording-seekbar"
+                type="range"
+                min="0"
+                max="0"
+                step="0.1"
+                value="${initialStep?.videoOffsetMs !== undefined ? String(Math.max(0, initialStep.videoOffsetMs / 1000)) : '0'}"
+                aria-label="Seek recording timeline"
+              />
+              <button
+                class="recording-icon-button"
+                data-role="recording-fullscreen"
+                type="button"
+                aria-label="Open recording fullscreen"
+                title="Open recording fullscreen"
+              >${renderFullscreenIconSvg()}</button>
+            </div>
+            <div class="recording-times">
+              <span data-role="recording-current">${formatVideoTimestamp(initialStep?.videoOffsetMs)}</span>
+              <span data-role="recording-duration">--:--.-</span>
+            </div>
+          </div>
+          <div class="recording-meta" data-role="recording-caption">
+            ${spec.recordingFile
+              ? `Paused at ${formatVideoTimestamp(initialStep?.videoOffsetMs)} for the selected step.`
+              : 'No session recording was captured for this spec.'}
+          </div>
+
+          <p class="section-label">Selected Step</p>
+          <div class="media-shell screenshot-shell">
+            <img data-role="screenshot" src="${escapeHtml(initialStep?.screenshotFile || '')}" alt="${escapeHtml(initialStep?.naturalLanguageAction || '')}" style="display:${initialStep?.screenshotFile ? 'block' : 'none'}" />
+            <div class="empty-shot" data-role="empty-shot" style="display:${initialStep?.screenshotFile ? 'none' : 'block'}">
+              No screenshot recorded for the selected step.
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail-card">
+              <h4>Action</h4>
+              <p data-role="action-title">${escapeHtml(initialStep?.naturalLanguageAction || 'No step selected')}</p>
+            </div>
+            <div class="detail-card">
+              <h4>Reasoning</h4>
+              <p data-role="reason">${escapeHtml(initialStep?.reason || 'No reasoning recorded.')}</p>
+            </div>
+            <div class="detail-card">
+              <h4>Planner Thought</h4>
+              <ul class="trace-list" data-role="thought-list"></ul>
+            </div>
+            <div class="detail-card">
+              <h4>Analysis</h4>
+              <p data-role="analysis">${escapeHtml(initialStep?.analysis || 'No step analysis recorded.')}</p>
+            </div>
+            <div class="detail-card">
+              <h4>Trace</h4>
+              <ul class="trace-list" data-role="trace-list"></ul>
+            </div>
+            <div class="detail-card">
+              <h4>Meta</h4>
+              <ul>
+                <li>Status: <span data-role="status">${initialStep?.success ? 'Success' : 'Failure'}</span></li>
+                <li>Duration: <span data-role="duration">${escapeHtml(formatStepDuration(initialStep?.durationMs || 0))}</span></li>
+                <li>Timestamp: <span data-role="timestamp">${escapeHtml(initialStep?.timestamp || 'Unknown')}</span></li>
+                <li>Error: <span data-role="error">${escapeHtml(initialStep?.errorMessage || 'No error recorded.')}</span></li>
+              </ul>
+            </div>
+            <div class="detail-card">
+              <h4>Raw Artifacts</h4>
+              <div class="artifact-list" data-role="raw-links"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="raw-links-shell">
+        <details>
+          <summary>Raw Artifact Links</summary>
+          <div class="artifact-list">
+            <a href="${escapeHtml(spec.resultJsonPath)}">result.json</a>
+            <a href="${escapeHtml(spec.snapshotYamlPath)}">snapshot.yaml</a>
+            <a href="${escapeHtml(spec.snapshotJsonPath)}">snapshot.json</a>
+            ${spec.recordingFile ? `<a href="${escapeHtml(spec.recordingFile)}">recording</a>` : ''}
+            ${spec.steps
+              .map((step) => {
+                const links = [
+                  step.stepJsonFile ? `<a href="${escapeHtml(step.stepJsonFile)}">step ${step.stepNumber}.json</a>` : '',
+                  step.screenshotFile ? `<a href="${escapeHtml(step.screenshotFile)}">step ${step.stepNumber} screenshot</a>` : '',
+                ].filter(Boolean);
+                return links.join(' · ');
+              })
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
+        </details>
+      </div>
+    </section>
+  `;
+}
+
+function renderStepButton(specId: string, step: RunManifestStepRecord, index: number): string {
+  const statusClass = step.success ? 'success' : step.actionType === 'run_failure' ? 'error' : 'failure';
+  return `
+    <button
+      class="step-button ${index === 0 ? 'is-selected' : ''}"
+      data-spec-id="${escapeHtml(specId)}"
+      data-step-index="${index}"
+      onclick="selectStep('${escapeJs(specId)}', ${index})"
+      type="button"
+    >
+      <div class="step-row">
+        <span class="step-icon ${statusClass}">${statusClass === 'success' ? '✓' : '!'}</span>
+        <div>
+          <div class="step-title">${escapeHtml(step.naturalLanguageAction || step.actionType)}</div>
+          <div class="step-reason">${escapeHtml(step.reason || 'No rationale recorded.')}</div>
+          <div class="step-meta">${escapeHtml(step.timestamp || 'Unknown time')}</div>
+        </div>
+        <div class="duration-chip">${escapeHtml(formatStepDuration(step.durationMs || step.trace?.totalMs || 0))}</div>
+      </div>
+    </button>
+  `;
+}
+
 function toReportViewModel(manifest: RunManifestRecord): RunManifestRecord {
   const runId = manifest.run.runId;
   return {
@@ -1291,167 +1872,220 @@ function buildRunScopedArtifactPath(runId: string, relativePath: string): string
   return buildArtifactRoute(`${runId}/${relativePath}`);
 }
 
-function renderSpecSection(spec: RunManifestSpecRecord): string {
-  const analysisText = escapeHtml(spec.analysis || spec.message || 'No overall analysis recorded.');
-  const initialStep = spec.steps[0];
+function buildSpecListItems(manifest: RunManifestRecord): ReportSpecListItem[] {
+  const executedById = new Map(manifest.specs.map((spec) => [spec.specId, spec]));
+  const selectedSpecs = manifest.input.specs;
+  if (selectedSpecs.length === 0) {
+    return manifest.specs.map((spec) => ({
+      input: {
+        specId: spec.specId,
+        specName: spec.specName,
+        relativePath: spec.relativePath,
+        workspaceSourcePath: spec.workspaceSourcePath,
+        snapshotYamlPath: spec.snapshotYamlPath,
+        snapshotJsonPath: spec.snapshotJsonPath,
+        bindingReferences: spec.bindingReferences,
+      },
+      executed: spec,
+      status: classifySpecStatus(spec),
+      durationLabel: formatLongDuration(spec.durationMs),
+    }));
+  }
 
+  return selectedSpecs.map((selected) => {
+    const executed = executedById.get(selected.specId);
+    return {
+      input: selected,
+      executed,
+      status: executed ? classifySpecStatus(executed) : 'not_executed',
+      durationLabel: executed ? formatLongDuration(executed.durationMs) : 'NA',
+    };
+  });
+}
+
+function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
+  return items.reduce<OutcomeSummary>(
+    (summary, item) => {
+      summary.total += 1;
+      if (item.status === 'success') {
+        summary.success += 1;
+      } else if (item.status === 'failure') {
+        summary.failure += 1;
+      } else if (item.status === 'error') {
+        summary.error += 1;
+      } else {
+        summary.notExecuted += 1;
+      }
+      return summary;
+    },
+    {
+      total: 0,
+      success: 0,
+      failure: 0,
+      error: 0,
+      notExecuted: 0,
+    },
+  );
+}
+
+function classifySpecStatus(spec: RunManifestSpecRecord): SpecOutcomeStatus {
+  if (spec.success) {
+    return 'success';
+  }
+  if (spec.steps[0]?.actionType === 'run_failure') {
+    return 'error';
+  }
+  return 'failure';
+}
+
+function deriveReportTitle(manifest: RunManifestRecord): string {
+  const target = resolveRunTarget(manifest);
+  if (target.type === 'suite' && target.suiteName) {
+    return target.suiteName;
+  }
+
+  if (manifest.input.specs.length === 1) {
+    return manifest.input.specs[0]?.specName || manifest.run.runId;
+  }
+
+  if (manifest.input.specs.length > 1) {
+    const first = manifest.input.specs[0];
+    return `${first?.specName || 'Selected specs'} +${manifest.input.specs.length - 1} more`;
+  }
+
+  return manifest.run.runId;
+}
+
+function deriveGoalFallback(spec: RunManifestSpecRecord): string {
+  const parts = [
+    ...spec.authored.preconditions,
+    ...spec.authored.setup,
+    ...spec.authored.steps,
+    ...spec.authored.assertions.map((assertion) => `Assert: ${assertion}`),
+  ].filter((part) => part.trim().length > 0);
+  return parts.length > 0 ? parts.join(' ') : spec.message;
+}
+
+function renderStatusPill(status: SpecOutcomeStatus | 'success' | 'failure'): string {
+  const label = status === 'success'
+    ? 'Passed'
+    : status === 'failure'
+      ? 'Failed'
+      : status === 'error'
+        ? 'Error'
+        : 'Not Executed';
+  return `<span class="status-pill ${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+}
+
+function renderSummaryCard(label: string, value: string, tone: 'accent' | 'success' | 'warning' | 'danger' | 'neutral', iconSvg: string): string {
+  const iconStyle = tone === 'accent'
+    ? 'color: var(--accent); background: rgba(67, 24, 255, 0.1);'
+    : tone === 'success'
+      ? 'color: var(--success); background: rgba(5, 205, 153, 0.12);'
+      : tone === 'warning'
+        ? 'color: var(--warning); background: rgba(255, 146, 12, 0.12);'
+        : tone === 'danger'
+          ? 'color: var(--failure); background: rgba(238, 93, 80, 0.12);'
+          : 'color: var(--text); background: var(--panel-alt);';
   return `
-    <section class="spec-card" id="spec-${escapeHtml(spec.specId)}">
-      <div class="spec-head">
-        <h2>${escapeHtml(spec.specName)}</h2>
-        <div class="subtext">${escapeHtml(spec.relativePath)}</div>
-      </div>
-      <div class="analysis-banner ${spec.success ? 'success' : 'failure'}">
-        <div class="label">Analysis · ${spec.success ? 'Success' : 'Failure'}</div>
-        <p>${analysisText}</p>
-      </div>
-      <div class="workspace">
-        <div class="timeline-panel">
-          <h3>Agent Actions</h3>
-          ${spec.steps.length > 0
-            ? spec.steps.map((step, index) => renderStepButton(spec.specId, step, index)).join('')
-            : '<p class="muted">No steps were recorded for this spec.</p>'}
-        </div>
-        <div class="detail-panel" data-spec-detail="${escapeHtml(spec.specId)}">
-          <h3>Session Recording</h3>
-          <div class="media-shell recording-shell">
-            ${spec.recordingFile
-              ? `<video data-role="recording-video" playsinline preload="metadata" src="${escapeHtml(spec.recordingFile)}"></video>`
-              : '<div class="empty-shot" data-role="empty-recording">No session recording was captured for this spec.</div>'}
-            ${spec.recordingFile
-              ? '<div class="empty-shot" data-role="empty-recording" style="display:none">No session recording was captured for this spec.</div>'
-              : ''}
-          </div>
-          <div class="recording-controls" data-role="recording-controls" style="display:${spec.recordingFile ? 'block' : 'none'}">
-            <div class="recording-control-row">
-              <button
-                class="recording-icon-button primary"
-                data-role="recording-playpause"
-                type="button"
-                aria-label="Play recording"
-                title="Play recording"
-              >${renderPlayIconSvg()}</button>
-              <input
-                class="recording-timeline"
-                data-role="recording-seekbar"
-                type="range"
-                min="0"
-                max="0"
-                step="0.1"
-                value="${initialStep?.videoOffsetMs !== undefined ? String(Math.max(0, initialStep.videoOffsetMs / 1000)) : '0'}"
-                aria-label="Seek recording timeline"
-              />
-              <button
-                class="recording-icon-button"
-                data-role="recording-fullscreen"
-                type="button"
-                aria-label="Open recording fullscreen"
-                title="Open recording fullscreen"
-              >${renderFullscreenIconSvg()}</button>
-            </div>
-            <div class="recording-times">
-              <span data-role="recording-current">${formatVideoTimestamp(initialStep?.videoOffsetMs)}</span>
-              <span data-role="recording-duration">--:--.-</span>
-            </div>
-          </div>
-          <div class="recording-meta" data-role="recording-caption">
-            ${spec.recordingFile
-              ? `Paused at ${formatVideoTimestamp(initialStep?.videoOffsetMs)} for the selected step.`
-              : 'No session recording was captured for this spec.'}
-          </div>
-          <h3>Selected Step</h3>
-          <div class="media-shell screenshot-shell">
-            <img data-role="screenshot" alt="" style="display:${initialStep?.screenshotFile ? 'block' : 'none'}" />
-            <div class="empty-shot" data-role="empty-shot" style="display:${initialStep?.screenshotFile ? 'none' : 'block'}">
-              No screenshot recorded for the selected step.
-            </div>
-          </div>
-          <div class="detail-grid">
-            <div class="detail-card">
-              <h4>Action</h4>
-              <p data-role="action-title">${escapeHtml(initialStep?.naturalLanguageAction || 'No step selected')}</p>
-            </div>
-            <div class="detail-card">
-              <h4>Reasoning</h4>
-              <p data-role="reason">${escapeHtml(initialStep?.reason || 'No reasoning recorded.')}</p>
-            </div>
-            <div class="detail-card">
-              <h4>Planner Thought</h4>
-              <ul class="trace-list" data-role="thought-list"></ul>
-            </div>
-            <div class="detail-card">
-              <h4>Analysis</h4>
-              <p data-role="analysis">${escapeHtml(initialStep?.analysis || 'No step analysis recorded.')}</p>
-            </div>
-            <div class="detail-card">
-              <h4>Trace</h4>
-              <ul class="trace-list" data-role="trace-list"></ul>
-            </div>
-            <div class="detail-card">
-              <h4>Meta</h4>
-              <ul>
-                <li>Status: <span data-role="status">${initialStep?.success ? 'Success' : 'Failure'}</span></li>
-                <li>Duration: <span data-role="duration">${formatDuration(initialStep?.durationMs || 0)}</span></li>
-                <li>Timestamp: <span data-role="timestamp">${escapeHtml(initialStep?.timestamp || 'Unknown')}</span></li>
-                <li>Error: <span data-role="error">${escapeHtml(initialStep?.errorMessage || 'No error recorded.')}</span></li>
-              </ul>
-            </div>
-            <div class="detail-card">
-              <h4>Raw Artifacts</h4>
-              <div class="artifact-list" data-role="raw-links"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="raw-links">
-        <details>
-          <summary>Raw Artifact Links</summary>
-          <div class="artifact-list">
-            <div class="artifact-row"><a href="${escapeHtml(spec.resultJsonPath)}">result.json</a></div>
-            ${spec.recordingFile
-              ? `<div class="artifact-row"><span>Session</span><a href="${escapeHtml(spec.recordingFile)}">recording</a></div>`
-              : ''}
-            ${spec.steps.map((step) => `
-              <div class="artifact-row">
-                <span>Step ${step.stepNumber}</span>
-                <a href="${escapeHtml(step.stepJsonFile || '#')}">step.json</a>
-                ${step.screenshotFile ? `<a href="${escapeHtml(step.screenshotFile)}">screenshot</a>` : '<span class="muted">no screenshot</span>'}
-              </div>
-            `).join('')}
-          </div>
-        </details>
-      </div>
-    </section>
+    <div class="summary-card">
+      <span class="summary-card-icon" style="${iconStyle}">${iconSvg}</span>
+      <span>
+        <div class="summary-card-label">${escapeHtml(label)}</div>
+        <div class="summary-card-value">${escapeHtml(value)}</div>
+      </span>
+    </div>
   `;
 }
 
-function renderStepButton(specId: string, step: RunManifestStepRecord, index: number): string {
-  const isFailure = !step.success;
-  return `
-    <button
-      class="step-button ${index === 0 ? 'is-selected' : ''}"
-      data-spec-id="${escapeHtml(specId)}"
-      data-step-index="${index}"
-      onclick="selectStep('${escapeJs(specId)}', ${index})"
-      type="button"
-    >
-      <div class="step-row">
-        <div class="step-icon ${isFailure ? 'failure' : 'success'}">${isFailure ? '!' : '✓'}</div>
-        <div>
-          <div class="step-title">${escapeHtml(step.naturalLanguageAction || step.actionType)}</div>
-          <div class="step-meta">
-            <span>${escapeHtml(step.actionType)}</span>
-            <span>${escapeHtml(step.timestamp || 'Unknown time')}</span>
-          </div>
-        </div>
-        <div class="duration-chip">${formatDuration(step.durationMs || step.trace?.totalMs || 0)}</div>
-      </div>
-    </button>
-  `;
+function renderVariableList(manifest: RunManifestRecord): string {
+  const entries = Object.entries(manifest.input.environment.variables);
+  if (entries.length === 0) {
+    return '<span class="muted">No variables recorded.</span>';
+  }
+  return renderInlineCodeList(entries.map(([key, value]) => `${key}=${String(value)}`));
 }
 
-function escapeHtml(value: string): string {
-  return value
+function renderSecretList(manifest: RunManifestRecord): string {
+  const references = manifest.input.environment.secretReferences;
+  if (references.length === 0) {
+    return '<span class="muted">No secrets recorded.</span>';
+  }
+  return renderInlineCodeList(references.map((reference) => `${reference.key} ← ${reference.envVar}`));
+}
+
+function renderInlineCodeList(values: string[]): string {
+  return `<span class="inline-list">${values
+    .map((value) => `<code class="inline-code">${escapeHtml(value)}</code>`)
+    .join('')}</span>`;
+}
+
+function resolveRunTarget(manifest: RunManifestRecord): RunTargetRecord {
+  return manifest.run.target ?? { type: 'direct' };
+}
+
+function formatRunTarget(target: RunTargetRecord): string {
+  return target.type === 'suite' ? 'Suite' : 'Direct';
+}
+
+function formatLongDuration(durationMs: number | undefined): string {
+  const ms = Number(durationMs || 0);
+  if (ms <= 0) {
+    return '0s';
+  }
+
+  const duration = Math.round(ms / 1000);
+  const hours = Math.floor(duration / 3600);
+  const minutes = Math.floor((duration % 3600) / 60);
+  const seconds = duration % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+function formatStepDuration(durationMs: number | undefined): string {
+  const seconds = Number(durationMs || 0) / 1000;
+  return seconds >= 10 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`;
+}
+
+function formatRelativeTime(timestamp: string): string {
+  const deltaMs = Math.max(0, Date.now() - new Date(timestamp).getTime());
+  const totalMinutes = Math.floor(deltaMs / 60000);
+  if (totalMinutes < 1) {
+    return 'just now';
+  }
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m`;
+  }
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    return `${totalHours}h`;
+  }
+  const totalDays = Math.floor(totalHours / 24);
+  if (totalDays < 7) {
+    return `${totalDays}d`;
+  }
+  const totalWeeks = Math.floor(totalDays / 7);
+  return `${totalWeeks}w`;
+}
+
+function formatVideoTimestamp(videoOffsetMs: number | undefined): string {
+  if (videoOffsetMs === undefined) {
+    return '00:00.0';
+  }
+  const totalSeconds = Math.max(0, videoOffsetMs / 1000);
+  const minutesPart = Math.floor(totalSeconds / 60);
+  const secondsPart = totalSeconds - minutesPart * 60;
+  return `${String(minutesPart).padStart(2, '0')}:${secondsPart.toFixed(1).padStart(4, '0')}`;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -1463,66 +2097,135 @@ function escapeJs(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-function formatDuration(durationMs: number): string {
-  const seconds = durationMs / 1000;
-  return seconds >= 10 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`;
-}
-
-function renderVariables(manifest: RunManifestRecord): string {
-  const entries = Object.entries(manifest.input.environment.variables);
-  if (entries.length === 0) {
-    return '<span class="muted">No variables recorded.</span>';
+function successRateTone(rate: number): 'success' | 'warning' | 'danger' {
+  if (rate >= 80) {
+    return 'success';
   }
-  return entries
-    .map(([key, value]) => `<code>${escapeHtml(key)}=${escapeHtml(String(value))}</code>`)
-    .join(' · ');
-}
-
-function renderSecretReferences(manifest: RunManifestRecord): string {
-  const references = manifest.input.environment.secretReferences;
-  if (references.length === 0) {
-    return '<span class="muted">No secrets recorded.</span>';
+  if (rate >= 50) {
+    return 'warning';
   }
-  return references
-    .map((reference) => `<code>${escapeHtml(reference.key)} ← ${escapeHtml(reference.envVar)}</code>`)
-    .join(' · ');
+  return 'danger';
 }
 
-function resolveRunTarget(manifest: RunManifestRecord): RunTargetRecord {
-  return manifest.run.target ?? { type: 'direct' };
+function renderFontLinks(): string {
+  return `
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  `;
 }
 
-function formatRunTarget(target: RunTargetRecord): string {
-  return target.type === 'suite' ? 'Suite' : 'Direct';
+function renderSharedCss(): string {
+  return `
+    :root {
+      --bg: #F4F7FE;
+      --panel: #FFFFFF;
+      --panel-alt: #F4F7FE;
+      --text: #2B3674;
+      --muted: #707EAE;
+      --icon: #8E9AB9;
+      --accent: #4318FF;
+      --accent-soft: rgba(67, 24, 255, 0.1);
+      --success: #05CD99;
+      --warning: #FF920C;
+      --failure: #EE5D50;
+      --border: #E0E5F2;
+      --border-light: #E9EDF7;
+      --selected: #F0F2F7;
+      --shadow: 0 18px 40px rgba(112, 126, 174, 0.12);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at top right, rgba(67, 24, 255, 0.08), transparent 32%),
+        linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .status-pill.success {
+      background: rgba(5, 205, 153, 0.14);
+      color: var(--success);
+    }
+
+    .status-pill.failure {
+      background: rgba(238, 93, 80, 0.14);
+      color: var(--failure);
+    }
+
+    .status-pill.error {
+      background: rgba(255, 146, 12, 0.14);
+      color: var(--warning);
+    }
+
+    .status-pill.not_executed {
+      background: rgba(112, 126, 174, 0.14);
+      color: var(--muted);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .page {
+        padding: 20px;
+      }
+    }
+  `;
 }
 
-function renderSuiteManifestLink(manifest: RunManifestRecord): string {
-  if (!manifest.input.suite?.snapshotYamlPath) {
-    return '<span class="muted">No suite manifest snapshot recorded.</span>';
-  }
-
-  const label = manifest.run.target?.suitePath ?? manifest.input.suite.snapshotYamlPath;
-  return `<a href="${escapeHtml(manifest.input.suite.snapshotYamlPath)}">${escapeHtml(label)}</a>`;
+function renderPlayCircleIconSvg(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M10.4 8.8l5.2 3.2-5.2 3.2z" fill="currentColor" stroke="none"></path></svg>';
 }
 
-function renderSuiteTests(manifest: RunManifestRecord): string {
-  const tests = manifest.input.suite?.tests ?? [];
-  if (tests.length === 0) {
-    return '<span class="muted">No suite tests recorded.</span>';
-  }
-
-  return tests.map((entry) => `<code>${escapeHtml(entry)}</code>`).join(' · ');
+function renderCheckCircleIconSvg(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M8.8 12.2l2.1 2.1 4.3-4.6"></path></svg>';
 }
 
-function formatVideoTimestamp(videoOffsetMs: number | undefined): string {
-  if (videoOffsetMs === undefined) {
-    return '00:00.0';
-  }
+function renderTimerIconSvg(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7"></circle><path d="M12 13V9.5"></path><path d="M15 5h-6"></path></svg>';
+}
 
-  const totalSeconds = Math.max(0, videoOffsetMs / 1000);
-  const minutesPart = Math.floor(totalSeconds / 60);
-  const secondsPart = totalSeconds - minutesPart * 60;
-  return `${String(minutesPart).padStart(2, '0')}:${secondsPart.toFixed(1).padStart(4, '0')}`;
+function renderBackArrowIconSvg(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"></path></svg>';
 }
 
 function renderPlayIconSvg(): string {
@@ -1544,12 +2247,43 @@ export function renderRunNotFoundHtml(runId: string): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Run Not Found</title>
+  ${renderFontLinks()}
+  <style>
+    ${renderSharedCss()}
+
+    .not-found-shell {
+      max-width: 720px;
+      margin: 80px auto;
+      padding: 0 24px;
+    }
+
+    .not-found-card {
+      padding: 28px 32px;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .not-found-card h1 {
+      margin: 0 0 12px;
+      font-size: 28px;
+    }
+
+    .not-found-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+  </style>
 </head>
 <body>
-  <main>
-    <h1>Run Not Found</h1>
-    <p>No run manifest was found for <code>${escapeHtml(runId)}</code>.</p>
-    <p><a href="${buildRunRoute('..')}">Back to reports</a></p>
+  <main class="not-found-shell">
+    <section class="not-found-card">
+      <h1>Run Not Found</h1>
+      <p>No run manifest was found for <code>${escapeHtml(runId)}</code>.</p>
+      <p style="margin-top:16px;"><a href="/">Back to reports</a></p>
+    </section>
   </main>
 </body>
 </html>`;

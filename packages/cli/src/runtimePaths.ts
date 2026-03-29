@@ -83,8 +83,10 @@ export function resolveCliLaunchArgs(
   const sourceBinPath = sourceBinCandidates.find((candidate) => fs.existsSync(candidate));
   const tsxCliPath = tsxCliCandidates.find((candidate) => fs.existsSync(candidate));
   const tsconfigPath = tsconfigCandidates.find((candidate) => fs.existsSync(candidate));
-  if (sourceBinPath && tsxCliPath && tsconfigPath) {
-    return [tsxCliPath, '--tsconfig', tsconfigPath, sourceBinPath, ...args];
+  if (sourceBinPath && tsxCliPath) {
+    return tsconfigPath
+      ? [tsxCliPath, '--tsconfig', tsconfigPath, sourceBinPath, ...args]
+      : [tsxCliPath, sourceBinPath, ...args];
   }
 
   throw new Error('Could not resolve a FinalRun CLI entrypoint for background report server startup.');

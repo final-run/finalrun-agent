@@ -10,7 +10,11 @@ import type {
   RunManifestSpecRecord,
 } from '@finalrun/common';
 import { loadRunIndex } from './runIndex.js';
-import { renderRunIndexHtml } from './reportIndexTemplate.js';
+import {
+  renderRunIndexHtml,
+  type ReportIndexRunRecord,
+  type ReportIndexViewModel,
+} from './reportIndexTemplate.js';
 import { renderHtmlReport } from './reportTemplate.js';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -52,7 +56,7 @@ export async function serveReportWorkspace(params: {
       if (requestPath === '/') {
         const index = await loadRunIndex(rootDir);
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end(renderRunIndexHtml(toRunIndexViewModel(index)));
+        response.end(renderRunIndexHtml(await buildReportIndexViewModel(index, rootDir)));
         return;
       }
 
@@ -255,17 +259,23 @@ function buildArtifactRoute(relativePath: string): string {
     .join('/')}`;
 }
 
-function toRunIndexViewModel(index: RunIndexRecord): RunIndexRecord {
+export async function buildReportIndexViewModel(
+  index: RunIndexRecord,
+  artifactsDir: string,
+): Promise<ReportIndexViewModel> {
+  const runs = await Promise.all(
+    index.runs.map(async (run) => await enrichRunIndexEntry(run, artifactsDir)),
+  );
+  const passedRuns = runs.filter((run) => run.success).length;
+
   return {
-    ...index,
-    runs: index.runs.map((run) => ({
-      ...run,
-      paths: {
-        ...run.paths,
-        log: buildArtifactRoute(run.paths.log),
-        runJson: buildArtifactRoute(run.paths.runJson),
-      },
-    })),
+    generatedAt: index.generatedAt,
+    summary: {
+      totalRuns: runs.length,
+      totalSuccessRate: runs.length === 0 ? 0 : (passedRuns / runs.length) * 100,
+      totalDurationMs: runs.reduce((total, run) => total + Number(run.durationMs || 0), 0),
+    },
+    runs,
   };
 }
 
@@ -345,4 +355,65 @@ function toSpecViewModel(runId: string, spec: RunManifestSpecRecord): RunManifes
 
 function buildRunScopedArtifactPath(runId: string, relativePath: string): string {
   return buildArtifactRoute(`${runId}/${relativePath}`);
+}
+
+async function enrichRunIndexEntry(
+  run: RunIndexEntryRecord,
+  artifactsDir: string,
+): Promise<ReportIndexRunRecord> {
+  const manifest = await loadRunManifest(artifactsDir, run.runId);
+  const selectedSpecs = manifest?.input.specs ?? [];
+
+  return {
+    ...run,
+    displayName: deriveRunDisplayName(run, manifest),
+    displayKind: deriveRunDisplayKind(run, manifest),
+    triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
+    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.specCount,
+    paths: {
+      ...run.paths,
+      log: buildArtifactRoute(run.paths.log),
+      runJson: buildArtifactRoute(run.paths.runJson),
+    },
+  };
+}
+
+function deriveRunDisplayName(
+  run: RunIndexEntryRecord,
+  manifest: RunManifestRecord | undefined,
+): string {
+  if (run.target?.type === 'suite' && run.target.suiteName) {
+    return run.target.suiteName;
+  }
+
+  const selectedSpecs = manifest?.input.specs ?? [];
+  if (selectedSpecs.length === 1) {
+    return selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || run.runId;
+  }
+  if (selectedSpecs.length > 1) {
+    const firstLabel =
+      selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || 'Selected specs';
+    return `${firstLabel} +${selectedSpecs.length - 1} more`;
+  }
+
+  return run.runId;
+}
+
+function deriveRunDisplayKind(
+  run: RunIndexEntryRecord,
+  manifest: RunManifestRecord | undefined,
+): ReportIndexRunRecord['displayKind'] {
+  if (run.target?.type === 'suite') {
+    return 'suite';
+  }
+
+  const selectedCount = manifest?.input.specs.length ?? run.specCount;
+  if (selectedCount === 1) {
+    return 'single_spec';
+  }
+  if (selectedCount > 1) {
+    return 'multi_spec';
+  }
+
+  return 'fallback';
 }

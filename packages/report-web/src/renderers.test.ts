@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { RunIndexRecord, RunManifestRecord } from '@finalrun/common';
+import type { RunManifestRecord } from '@finalrun/common';
+import type { ReportIndexViewModel } from './artifacts';
 import { renderRunHtml, renderRunIndexHtml } from './renderers';
 
-function createRunIndex(): RunIndexRecord {
+function createRunIndexViewModel(): ReportIndexViewModel {
   return {
-    schemaVersion: 1,
     generatedAt: '2026-03-24T18:00:00.000Z',
+    summary: {
+      totalRuns: 2,
+      totalSuccessRate: 50,
+      totalDurationMs: 22000,
+    },
     runs: [
       {
         runId: '2026-03-24T18-00-00.000Z-dev-android',
@@ -38,18 +43,50 @@ function createRunIndex(): RunIndexRecord {
           runJson: '2026-03-24T18-00-00.000Z-dev-android/run.json',
           log: '2026-03-24T18-00-00.000Z-dev-android/runner.log',
         },
+        displayName: 'login suite',
+        displayKind: 'suite',
+        triggeredFrom: 'Suite',
+        selectedSpecCount: 2,
+      },
+      {
+        runId: '2026-03-24T19-00-00.000Z-dev-android',
+        success: true,
+        status: 'success',
+        startedAt: '2026-03-24T19:00:00.000Z',
+        completedAt: '2026-03-24T19:00:12.000Z',
+        durationMs: 12000,
+        envName: 'dev',
+        platform: 'android',
+        modelLabel: 'openai/gpt-4o',
+        appLabel: 'repo app',
+        target: {
+          type: 'direct',
+        },
+        specCount: 3,
+        passedCount: 3,
+        failedCount: 0,
+        stepCount: 6,
+        paths: {
+          runJson: '2026-03-24T19-00-00.000Z-dev-android/run.json',
+          log: '2026-03-24T19-00-00.000Z-dev-android/runner.log',
+        },
+        displayName: 'valid login +2 more',
+        displayKind: 'multi_spec',
+        triggeredFrom: 'Direct',
+        selectedSpecCount: 3,
       },
     ],
   };
 }
 
-function createRunManifest(): RunManifestRecord {
+function createSuiteRunManifest(): RunManifestRecord {
   return {
     schemaVersion: 1,
     run: {
       runId: '2026-03-24T18-00-00.000Z-dev-android',
       success: false,
       status: 'failure',
+      failurePhase: 'execution',
       startedAt: '2026-03-24T18:00:00.000Z',
       completedAt: '2026-03-24T18:00:10.000Z',
       durationMs: 10000,
@@ -73,7 +110,7 @@ function createRunManifest(): RunManifestRecord {
       },
       counts: {
         specs: {
-          total: 1,
+          total: 2,
           passed: 0,
           failed: 1,
         },
@@ -109,8 +146,8 @@ function createRunManifest(): RunManifestRecord {
         workspaceSourcePath: '.finalrun/suites/login_suite.yaml',
         snapshotYamlPath: 'input/suite.snapshot.yaml',
         snapshotJsonPath: 'input/suite.json',
-        tests: ['login/valid_login.yaml', 'dashboard/**'],
-        resolvedSpecIds: ['login'],
+        tests: ['login/valid_login.yaml', 'checkout/guest_checkout.yaml'],
+        resolvedSpecIds: ['login', 'checkout'],
       },
       specs: [
         {
@@ -123,6 +160,18 @@ function createRunManifest(): RunManifestRecord {
           bindingReferences: {
             variables: [],
             secrets: ['email'],
+          },
+        },
+        {
+          specId: 'checkout',
+          specName: 'guest checkout',
+          relativePath: 'checkout/guest_checkout.yaml',
+          workspaceSourcePath: '.finalrun/tests/checkout/guest_checkout.yaml',
+          snapshotYamlPath: 'input/specs/checkout.yaml',
+          snapshotJsonPath: 'input/specs/checkout.json',
+          bindingReferences: {
+            variables: [],
+            secrets: [],
           },
         },
       ],
@@ -161,6 +210,25 @@ function createRunManifest(): RunManifestRecord {
             timestamp: '2026-03-24T18:00:05.000Z',
             screenshotFile: 'tests/login/screenshots/001.jpg',
             stepJsonFile: 'tests/login/steps/001.json',
+            videoOffsetMs: 3200,
+            analysis: 'The login button was not visible.',
+            thought: {
+              plan: 'Open the login form.',
+            },
+            trace: {
+              step: 1,
+              action: 'tap',
+              status: 'failure',
+              totalMs: 1000,
+              spans: [
+                {
+                  name: 'locate_element',
+                  durationMs: 420,
+                  startMs: 0,
+                  status: 'failure',
+                },
+              ],
+            },
           },
         ],
         workspaceSourcePath: '/repo/.finalrun/tests/login/valid_login.yaml',
@@ -205,36 +273,110 @@ function createRunManifest(): RunManifestRecord {
   };
 }
 
-test('renderRunIndexHtml links dynamic run routes and artifact files from persisted runs.json data', () => {
-  const html = renderRunIndexHtml(createRunIndex());
+function createSingleSpecManifest(): RunManifestRecord {
+  const suiteManifest = createSuiteRunManifest();
+  return {
+    ...suiteManifest,
+    run: {
+      ...suiteManifest.run,
+      runId: '2026-03-24T20-00-00.000Z-dev-android',
+      success: true,
+      status: 'success',
+      target: {
+        type: 'direct',
+      },
+      counts: {
+        specs: {
+          total: 1,
+          passed: 1,
+          failed: 0,
+        },
+        steps: {
+          total: 1,
+          passed: 1,
+          failed: 0,
+        },
+      },
+      firstFailure: undefined,
+    },
+    input: {
+      ...suiteManifest.input,
+      suite: undefined,
+      specs: [suiteManifest.input.specs[0]],
+      cli: {
+        command: 'finalrun test login/valid_login.yaml',
+        selectors: ['login/valid_login.yaml'],
+        debug: false,
+      },
+    },
+    specs: [
+      {
+        ...suiteManifest.specs[0],
+        success: true,
+        message: 'All assertions passed',
+        analysis: 'Goal completed successfully.',
+        durationMs: 4500,
+        steps: [
+          {
+            ...suiteManifest.specs[0].steps[0],
+            success: true,
+            status: 'success',
+            errorMessage: undefined,
+          },
+        ],
+      },
+    ],
+  };
+}
 
-  assert.match(html, /FinalRun Reports/);
+test('renderRunIndexHtml renders the Flutter-style history table with derived display metadata', () => {
+  const html = renderRunIndexHtml(createRunIndexViewModel());
+
+  assert.match(html, /<h1>Test Runs<\/h1>/);
+  assert.match(html, /Run history/);
+  assert.match(html, /Test Success Rate/);
+  assert.match(html, /Triggered From/);
   assert.match(html, /login suite/);
-  assert.match(html, /return '\/runs\/' \+ encodeURIComponent\(run\.runId\)/);
-  assert.match(html, /run\.paths\.runJson/);
-  assert.match(html, /run\.paths\.log/);
+  assert.match(html, /valid login \+2 more/);
+  assert.match(html, /Local/);
+  assert.match(html, /Suite/);
+  assert.match(html, /Direct/);
+  assert.match(html, /\/runs\/2026-03-24T18-00-00\.000Z-dev-android/);
 });
 
-test('renderRunHtml rewrites run-scoped artifact links for the local report server', () => {
-  const html = renderRunHtml(createRunManifest());
+test('renderRunHtml renders suite overview, run context, spec detail panes, and rewritten artifact links', () => {
+  const html = renderRunHtml(createSuiteRunManifest());
 
-  assert.match(html, /FinalRun Local Report/);
-  assert.match(html, /Run Target/);
-  assert.match(html, /Suite Tests/);
-  assert.match(html, /login suite/);
-  assert.match(html, /\.media-shell \{\s+width: min\(100%, 360px\)/);
-  assert.match(html, /\.recording-shell \{\s+aspect-ratio: var\(--recording-aspect-ratio, 9 \/ 19\.5\)/);
-  assert.match(html, /\.screenshot-shell \{\s+aspect-ratio: 9 \/ 19\.5/);
-  assert.match(html, /<div class="media-shell screenshot-shell">/);
-  assert.match(html, /class="recording-icon-button primary"/);
+  assert.match(html, /<h1 class="report-title">login suite<\/h1>/);
+  assert.match(html, /id="suite-overview"/);
+  assert.match(html, /Run summary/);
+  assert.match(html, /Run Context/);
+  assert.match(html, /Executed tests/);
+  assert.match(html, /Tests passed/);
+  assert.match(html, /Not Executed/);
+  assert.match(html, /selectSpec\('checkout'\)/);
+  assert.match(html, /data-spec-panel="login"/);
+  assert.match(html, /data-spec-panel="checkout"/);
   assert.match(html, /data-role="recording-seekbar"/);
   assert.match(html, /data-role="recording-playpause"/);
   assert.match(html, /data-role="recording-fullscreen"/);
   assert.match(html, /<video data-role="recording-video" playsinline preload="metadata"/);
   assert.doesNotMatch(html, /<video data-role="recording-video" controls /);
-  assert.match(html, /--recording-aspect-ratio/);
+  assert.match(html, /href="\/"/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/run\.json/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/input\/suite\.snapshot\.yaml/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/steps\/001\.json/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
+});
+
+test('renderRunHtml opens directly into the single-spec layout for direct one-spec runs', () => {
+  const html = renderRunHtml(createSingleSpecManifest());
+
+  assert.match(html, /<h1 class="report-title">valid login<\/h1>/);
+  assert.doesNotMatch(html, /id="suite-overview"/);
+  assert.doesNotMatch(html, /Executed tests/);
+  assert.match(html, /Goal/);
+  assert.match(html, /Agent Actions/);
+  assert.match(html, /Session Recording/);
+  assert.match(html, /\/artifacts\/2026-03-24T20-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
 });
