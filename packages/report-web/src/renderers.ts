@@ -796,8 +796,9 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     .detail-panel {
       padding: 22px;
       background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 12px;
       min-height: 0;
       overflow: hidden;
     }
@@ -930,6 +931,19 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       aspect-ratio: var(--recording-aspect-ratio, 9 / 19.5);
     }
 
+    .detail-panel .section-label {
+      margin: 0;
+    }
+
+    .detail-panel .media-shell {
+      width: auto;
+      height: 100%;
+      max-width: min(100%, 320px);
+      max-height: 100%;
+      margin: 0 auto;
+      align-self: center;
+    }
+
     .media-shell img,
     .recording-shell video {
       width: 100%;
@@ -949,7 +963,7 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
 
     .recording-controls {
       width: min(100%, 380px);
-      margin: -4px auto 12px;
+      margin: 0 auto;
       padding: 10px 12px;
       border: 1px solid rgba(224, 229, 242, 0.9);
       border-radius: 16px;
@@ -1063,6 +1077,28 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
         border-right: 0;
         border-bottom: 1px solid var(--border-light);
         overflow: visible;
+      }
+
+      .detail-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+
+      .detail-panel .section-label {
+        margin: 0 0 14px;
+      }
+
+      .detail-panel .media-shell {
+        width: min(100%, clamp(220px, 16vw, 260px));
+        height: auto;
+        max-width: 100%;
+        max-height: none;
+        margin: 0 auto 12px;
+      }
+
+      .detail-panel .recording-controls {
+        margin: -4px auto 12px;
       }
 
       .timeline-scroll {
