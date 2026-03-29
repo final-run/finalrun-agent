@@ -360,6 +360,9 @@ test('renderRunIndexHtml renders the Flutter-style history table with derived di
   assert.match(html, /Local/);
   assert.match(html, /Suite/);
   assert.match(html, /Direct/);
+  assert.match(html, /class="tinted-png-icon"/);
+  assert.match(html, /background-color: #707EAE/);
+  assert.match(html, /<img class="png-icon" src="data:image\/png;base64/);
   assert.match(html, /\/runs\/2026-03-24T18-00-00\.000Z-dev-android/);
 });
 
@@ -388,6 +391,7 @@ test('renderRunHtml renders suite overview, run context, spec detail panes, and 
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/run\.json/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/input\/suite\.snapshot\.yaml/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
+  assert.match(html, /class="tinted-png-icon"/);
   assert.equal((html.match(/Run history/g) || []).length, 1);
   assertSimplifiedSpecDetailHtml(html);
 });

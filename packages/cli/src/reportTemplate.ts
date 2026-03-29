@@ -1215,7 +1215,7 @@ function renderSuiteRow(item: ReportSpecListItem, appLabel: string): string {
     <tr class="suite-row" onclick="selectSpec('${escapeJs(item.input.specId)}')">
       <td>
         <div class="run-name-cell">
-          <img class="png-icon" src="${TEST_ICON_SRC}" alt="" />
+          ${renderTintedPngIcon(TEST_ICON_SRC)}
           <div class="run-name-copy">
             <span class="run-name-link">${escapeHtml(item.input.specName)}</span>
             <div class="run-secondary">${escapeHtml(item.input.relativePath)}</div>
@@ -1698,6 +1698,22 @@ function renderSharedCss(): string {
       flex: 0 0 auto;
     }
 
+    .tinted-png-icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      display: inline-block;
+      background-color: #707EAE;
+      -webkit-mask-image: var(--icon-mask);
+      mask-image: var(--icon-mask);
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-position: center;
+      mask-position: center;
+      -webkit-mask-size: contain;
+      mask-size: contain;
+    }
+
     .run-name-copy {
       min-width: 0;
     }
@@ -1739,4 +1755,8 @@ function renderPauseIconSvg(): string {
 
 function renderFullscreenIconSvg(): string {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V6h3V4H4v5zm9-5v2h3v3h2V4zm3 11v3h-3v2h5v-5zM6 15H4v5h5v-2H6z"></path></svg>';
+}
+
+function renderTintedPngIcon(src: string): string {
+  return `<span class="tinted-png-icon" style="--icon-mask:url('${escapeHtml(src)}');" aria-hidden="true"></span>`;
 }
