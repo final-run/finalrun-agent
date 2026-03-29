@@ -425,6 +425,26 @@ function assertSimplifiedSpecDetailHtml(html: string): void {
   assert.doesNotMatch(html, />Goal<\/strong>/);
 }
 
+function assertCompactRunContextHtml(html: string): void {
+  assert.match(html, /class="run-context-summary"/);
+  assert.match(html, /class="context-summary-label">Environment<\/span>/);
+  assert.match(html, /class="context-summary-label">Platform<\/span>/);
+  assert.match(html, /class="context-summary-label">Model<\/span>/);
+  assert.match(html, /class="context-summary-label">App<\/span>/);
+  assert.doesNotMatch(html, /class="run-context-grid"/);
+  assert.doesNotMatch(html, /class="context-card"/);
+  assert.doesNotMatch(html, /<strong>Run Target<\/strong>/);
+  assert.doesNotMatch(html, /<strong>Suite<\/strong>/);
+  assert.doesNotMatch(html, /<strong>Selectors<\/strong>/);
+  assert.doesNotMatch(html, /<strong>Variables<\/strong>/);
+  assert.doesNotMatch(html, /<strong>Secrets<\/strong>/);
+  assert.doesNotMatch(html, /<strong>Artifacts<\/strong>/);
+  assert.doesNotMatch(html, />run\.json<\/a>/);
+  assert.doesNotMatch(html, />summary\.json<\/a>/);
+  assert.doesNotMatch(html, />runner\.log<\/a>/);
+  assert.doesNotMatch(html, />run-context\.json<\/a>/);
+}
+
 test('renderRunIndexHtml renders the Flutter-style history table on the live CLI server path', () => {
   const html = renderRunIndexHtml(createRunIndexViewModel());
 
@@ -465,14 +485,18 @@ test('renderHtmlReport renders the new suite report layout on the live CLI serve
   assert.doesNotMatch(html, /<video data-role="recording-video" controls /);
   assert.match(html, /href="\/"/);
   assert.match(html, /login suite · login\/valid_login\.yaml/);
-  assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/run\.json/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/input\/suite\.snapshot\.yaml/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
   assert.equal((html.match(/Run history/g) || []).length, 1);
+  assert.match(html, /class="context-summary-value">dev<\/div>/);
+  assert.match(html, /class="context-summary-value">android<\/div>/);
+  assert.match(html, /class="context-summary-value">openai\/gpt-4o<\/div>/);
+  assert.match(html, /class="context-summary-value">repo app<\/div>/);
   assert.match(html, /name: valid login/);
   assert.match(html, /name: guest checkout/);
   assertSpecDetailSectionOrder(html, 'login');
   assertSpecDetailSectionOrder(html, 'checkout');
+  assertCompactRunContextHtml(html);
   assert.match(html, /class="tinted-png-icon"/);
   assertSimplifiedSpecDetailHtml(html);
 });
@@ -489,6 +513,7 @@ test('renderHtmlReport opens directly into the single-spec layout for one-spec d
   assert.match(html, /\/artifacts\/2026-03-24T20-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
   assertSpecDetailSectionOrder(html, 'login');
   assert.equal((html.match(/Run history/g) || []).length, 1);
+  assertCompactRunContextHtml(html);
   assertSimplifiedSpecDetailHtml(html);
 });
 

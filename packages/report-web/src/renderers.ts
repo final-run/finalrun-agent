@@ -508,55 +508,33 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       font-weight: 500;
     }
 
-    .run-context-grid {
+    .run-context-summary {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px 24px;
     }
 
-    .context-card {
-      padding: 16px 18px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: var(--panel-alt);
+    .context-summary-item {
+      min-width: 0;
+      padding: 2px 0;
     }
 
-    .context-card strong {
+    .context-summary-label {
       display: block;
       color: var(--muted);
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
 
-    .context-card span,
-    .context-card div,
-    .context-card code {
+    .context-summary-value {
       color: var(--text);
-      font-size: 14px;
-      line-height: 1.55;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.5;
       word-break: break-word;
-    }
-
-    .inline-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .inline-code {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: white;
-      border: 1px solid rgba(188, 197, 225, 0.8);
-      color: var(--text);
-      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
-      font-size: 12px;
     }
 
     .suite-list-shell {
@@ -1486,53 +1464,26 @@ function renderRunContextContent(
   return `
     <h2 class="${titleClass}">Run Context</h2>
     <p class="${subtitleClass}">Inputs and environment captured for this report.</p>
-    <div class="run-context-grid">
-      ${renderRunContextCards(manifest)}
+    <div class="run-context-summary">
+      ${renderRunContextSummary(manifest)}
     </div>
   `;
 }
 
-function renderRunContextCards(manifest: ReportRunManifestRecord): string {
-  const target = resolveRunTarget(manifest);
-  const artifacts = [
-    `<a href="${escapeHtml(manifest.paths.runJson)}">run.json</a>`,
-    `<a href="${escapeHtml(manifest.paths.summaryJson)}">summary.json</a>`,
-    `<a href="${escapeHtml(manifest.paths.log)}">runner.log</a>`,
-  ];
-  if (manifest.paths.runContextJson) {
-    artifacts.push(`<a href="${escapeHtml(manifest.paths.runContextJson)}">run-context.json</a>`);
-  }
-
+function renderRunContextSummary(manifest: ReportRunManifestRecord): string {
   return [
-    renderContextCard('Environment', escapeHtml(manifest.input.environment.envName)),
-    renderContextCard('Platform', escapeHtml(manifest.run.platform)),
-    renderContextCard('Model', escapeHtml(manifest.run.model.label)),
-    renderContextCard('App', escapeHtml(manifest.run.app.label)),
-    renderContextCard('Run Target', escapeHtml(formatRunTarget(target))),
-    target.type === 'suite'
-      ? renderContextCard(
-        'Suite',
-        target.suitePath && target.suiteName
-          ? `<div>${escapeHtml(target.suiteName)}</div><div class="muted">${escapeHtml(target.suitePath)}</div>`
-          : escapeHtml(target.suiteName || target.suitePath || 'Suite run'),
-      )
-      : renderContextCard(
-        'Selectors',
-        manifest.run.selectors.length > 0
-          ? renderInlineCodeList(manifest.run.selectors)
-          : '<span class="muted">No selectors recorded.</span>',
-      ),
-    renderContextCard('Variables', renderVariableList(manifest)),
-    renderContextCard('Secrets', renderSecretList(manifest)),
-    renderContextCard('Artifacts', `<div class="inline-list">${artifacts.join(' · ')}</div>`),
+    renderContextSummaryItem('Environment', manifest.input.environment.envName),
+    renderContextSummaryItem('Platform', manifest.run.platform),
+    renderContextSummaryItem('Model', manifest.run.model.label),
+    renderContextSummaryItem('App', manifest.run.app.label),
   ].join('');
 }
 
-function renderContextCard(label: string, content: string): string {
+function renderContextSummaryItem(label: string, value: string): string {
   return `
-    <div class="context-card">
-      <strong>${escapeHtml(label)}</strong>
-      <div>${content}</div>
+    <div class="context-summary-item">
+      <span class="context-summary-label">${escapeHtml(label)}</span>
+      <div class="context-summary-value">${escapeHtml(value)}</div>
     </div>
   `;
 }
@@ -1762,7 +1713,7 @@ function renderRunContextSection(manifest: ReportRunManifestRecord): string {
   return renderDetailSectionCard({
     title: 'Run Context',
     subtitle: 'Inputs and environment captured for this report.',
-    content: `<div class="run-context-grid">${renderRunContextCards(manifest)}</div>`,
+    content: `<div class="run-context-summary">${renderRunContextSummary(manifest)}</div>`,
   });
 }
 
@@ -2017,28 +1968,6 @@ function renderSummaryCard(label: string, value: string, tone: 'accent' | 'succe
   `;
 }
 
-function renderVariableList(manifest: ReportRunManifestRecord): string {
-  const entries = Object.entries(manifest.input.environment.variables);
-  if (entries.length === 0) {
-    return '<span class="muted">No variables recorded.</span>';
-  }
-  return renderInlineCodeList(entries.map(([key, value]) => `${key}=${String(value)}`));
-}
-
-function renderSecretList(manifest: ReportRunManifestRecord): string {
-  const references = manifest.input.environment.secretReferences;
-  if (references.length === 0) {
-    return '<span class="muted">No secrets recorded.</span>';
-  }
-  return renderInlineCodeList(references.map((reference) => `${reference.key} ← ${reference.envVar}`));
-}
-
-function renderInlineCodeList(values: string[]): string {
-  return `<span class="inline-list">${values
-    .map((value) => `<code class="inline-code">${escapeHtml(value)}</code>`)
-    .join('')}</span>`;
-}
-
 function resolveRunTarget(manifest: ReportRunManifestRecord): RunTargetRecord {
   return manifest.run.target ?? { type: 'direct' };
 }
@@ -2052,10 +1981,6 @@ function stripSnapshotYamlText(manifest: ReportRunManifestRecord): SharedRunMani
     },
     specs: manifest.specs.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
   };
-}
-
-function formatRunTarget(target: RunTargetRecord): string {
-  return target.type === 'suite' ? 'Suite' : 'Direct';
 }
 
 function formatLongDuration(durationMs: number | undefined): string {
