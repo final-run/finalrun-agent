@@ -979,8 +979,8 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
 
     .recording-icon-button {
       flex: 0 0 auto;
-      width: 18px;
-      height: 18px;
+      width: 24px;
+      height: 24px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -996,8 +996,8 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-icon-button svg {
-      width: 18px;
-      height: 18px;
+      width: 24px;
+      height: 24px;
       display: block;
       fill: currentColor;
     }
