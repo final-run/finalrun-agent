@@ -67,7 +67,9 @@ function runCli(args: string[], cwd: string) {
   const tsconfigPath = path.resolve(__dirname, '../../../tsconfig.dev.json');
   const commandArgs = fs.existsSync(compiledBinPath)
     ? [compiledBinPath, ...args]
-    : [tsxCliPath, '--tsconfig', tsconfigPath, sourceBinPath, ...args];
+    : fs.existsSync(tsconfigPath)
+      ? [tsxCliPath, '--tsconfig', tsconfigPath, sourceBinPath, ...args]
+      : [tsxCliPath, sourceBinPath, ...args];
   return spawnSync(process.execPath, commandArgs, {
     cwd,
     env: process.env,

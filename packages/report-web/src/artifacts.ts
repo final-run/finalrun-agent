@@ -2,7 +2,13 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import type { RunIndexRecord, RunManifestRecord } from '@finalrun/common';
+import type {
+  RunIndexEntryRecord,
+  RunIndexRecord,
+  RunManifestRecord as SharedRunManifestRecord,
+  RunManifestSelectedSpecRecord,
+  RunManifestSpecRecord,
+} from '@finalrun/common';
 import { REPORT_CONTENT_TYPES } from './contentTypes';
 
 const MISSING_WORKSPACE_CONFIG_ERROR =
@@ -11,6 +17,38 @@ const MISSING_WORKSPACE_CONFIG_ERROR =
 export interface ReportWorkspaceContext {
   workspaceRoot: string;
   artifactsDir: string;
+}
+
+export interface ReportIndexRunRecord extends RunIndexEntryRecord {
+  displayName: string;
+  displayKind: 'suite' | 'single_spec' | 'multi_spec' | 'fallback';
+  triggeredFrom: 'Suite' | 'Direct';
+  selectedSpecCount: number;
+}
+
+export interface ReportIndexViewModel {
+  generatedAt: string;
+  summary: {
+    totalRuns: number;
+    totalSuccessRate: number;
+    totalDurationMs: number;
+  };
+  runs: ReportIndexRunRecord[];
+}
+
+export interface ReportManifestSelectedSpecRecord extends RunManifestSelectedSpecRecord {
+  snapshotYamlText?: string;
+}
+
+export interface ReportManifestSpecRecord extends RunManifestSpecRecord {
+  snapshotYamlText?: string;
+}
+
+export interface ReportRunManifestRecord extends Omit<SharedRunManifestRecord, 'input' | 'specs'> {
+  input: Omit<SharedRunManifestRecord['input'], 'specs'> & {
+    specs: ReportManifestSelectedSpecRecord[];
+  };
+  specs: ReportManifestSpecRecord[];
 }
 
 export class ArtifactRangeNotSatisfiableError extends Error {
@@ -52,13 +90,40 @@ export async function loadRunIndexRecord(
   }
 }
 
+export async function loadReportIndexViewModel(
+  context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
+): Promise<ReportIndexViewModel> {
+  const index = await loadRunIndexRecord(context);
+  const runs = await Promise.all(
+    index.runs.map(async (run) => await enrichRunIndexEntry(run, context)),
+  );
+  const passedRuns = runs.filter((run) => run.success).length;
+
+  return {
+    generatedAt: index.generatedAt,
+    summary: {
+      totalRuns: runs.length,
+      totalSuccessRate: runs.length === 0 ? 0 : (passedRuns / runs.length) * 100,
+      totalDurationMs: runs.reduce((total, run) => total + Number(run.durationMs || 0), 0),
+    },
+    runs,
+  };
+}
+
 export async function loadRunManifestRecord(
   runId: string,
   context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
-): Promise<RunManifestRecord> {
+): Promise<SharedRunManifestRecord> {
   const runJsonPath = path.join(context.artifactsDir, runId, 'run.json');
   const raw = await fsp.readFile(runJsonPath, 'utf-8');
-  return JSON.parse(raw) as RunManifestRecord;
+  return JSON.parse(raw) as SharedRunManifestRecord;
+}
+
+export async function loadReportRunManifestViewModel(
+  runId: string,
+  context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
+): Promise<ReportRunManifestRecord> {
+  return await enrichRunManifestRecord(await loadRunManifestRecord(runId, context), context);
 }
 
 export function buildRunRoute(runId: string): string {
@@ -197,6 +262,132 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+async function enrichRunManifestRecord(
+  manifest: SharedRunManifestRecord,
+  context: ReportWorkspaceContext,
+): Promise<ReportRunManifestRecord> {
+  const runId = manifest.run.runId;
+  const snapshotCache = new Map<string, Promise<string | undefined>>();
+  const readSnapshotYamlText = async (snapshotYamlPath: string): Promise<string | undefined> => {
+    let cached = snapshotCache.get(snapshotYamlPath);
+    if (!cached) {
+      cached = readRunArtifactText(context, runId, snapshotYamlPath);
+      snapshotCache.set(snapshotYamlPath, cached);
+    }
+    return await cached;
+  };
+
+  return {
+    ...manifest,
+    input: {
+      ...manifest.input,
+      specs: await Promise.all(
+        manifest.input.specs.map(async (spec) => ({
+          ...spec,
+          snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+        })),
+      ),
+    },
+    specs: await Promise.all(
+      manifest.specs.map(async (spec) => ({
+        ...spec,
+        snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+      })),
+    ),
+  };
+}
+
+async function readRunArtifactText(
+  context: ReportWorkspaceContext,
+  runId: string,
+  artifactPath: string,
+): Promise<string | undefined> {
+  const normalizedPath = normalizeRunArtifactPath(runId, artifactPath);
+  if (!normalizedPath) {
+    return undefined;
+  }
+
+  try {
+    return await fsp.readFile(path.join(context.artifactsDir, runId, normalizedPath), 'utf-8');
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeRunArtifactPath(runId: string, artifactPath: string): string | undefined {
+  const normalized = artifactPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  if (!normalized.startsWith('artifacts/')) {
+    return normalized;
+  }
+
+  const withoutArtifactsPrefix = normalized.slice('artifacts/'.length);
+  if (withoutArtifactsPrefix.startsWith(`${runId}/`)) {
+    return withoutArtifactsPrefix.slice(runId.length + 1);
+  }
+
+  return undefined;
+}
+
+async function enrichRunIndexEntry(
+  run: RunIndexEntryRecord,
+  context: ReportWorkspaceContext,
+): Promise<ReportIndexRunRecord> {
+  const manifest = await loadRunManifestRecord(run.runId, context).catch(() => null);
+  const selectedSpecs = manifest?.input.specs ?? [];
+
+  return {
+    ...run,
+    displayName: deriveRunDisplayName(run, manifest),
+    displayKind: deriveRunDisplayKind(run, manifest),
+    triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
+    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.specCount,
+  };
+}
+
+function deriveRunDisplayName(
+  run: RunIndexEntryRecord,
+  manifest: SharedRunManifestRecord | null,
+): string {
+  if (run.target?.type === 'suite' && run.target.suiteName) {
+    return run.target.suiteName;
+  }
+
+  const selectedSpecs = manifest?.input.specs ?? [];
+  if (selectedSpecs.length === 1) {
+    return selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || run.runId;
+  }
+  if (selectedSpecs.length > 1) {
+    const firstLabel =
+      selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || 'Selected specs';
+    return `${firstLabel} +${selectedSpecs.length - 1} more`;
+  }
+
+  return run.runId;
+}
+
+function deriveRunDisplayKind(
+  run: RunIndexEntryRecord,
+  manifest: SharedRunManifestRecord | null,
+): ReportIndexRunRecord['displayKind'] {
+  if (run.target?.type === 'suite') {
+    return 'suite';
+  }
+
+  const selectedCount = manifest?.input.specs.length ?? run.specCount;
+  if (selectedCount === 1) {
+    return 'single_spec';
+  }
+  if (selectedCount > 1) {
+    return 'multi_spec';
+  }
+
+  return 'fallback';
 }
 
 function parseByteRange(
