@@ -459,7 +459,7 @@ test('renderRunIndexHtml renders the Flutter-style history table on the live CLI
   assert.match(html, /Direct/);
   assert.match(html, /class="tinted-png-icon"/);
   assert.match(html, /background-color: #707EAE/);
-  assert.match(html, /<img class="png-icon" src="data:image\/png;base64/);
+  assert.match(html, /<img class="png-icon" src="data:image\/svg\+xml,/);
   assert.match(html, /\/runs\/2026-03-24T18-00-00\.000Z-dev-android/);
 });
 
