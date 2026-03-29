@@ -948,46 +948,55 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     }
 
     .recording-controls {
-      width: min(100%, clamp(220px, 16vw, 260px));
+      width: min(100%, 380px);
       margin: -4px auto 12px;
-      padding: 12px 14px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: white;
+      padding: 10px 12px;
+      border: 1px solid rgba(224, 229, 242, 0.9);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
     }
 
     .recording-control-row {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-columns: 32px 5ch minmax(0, 1fr) 5ch 56px 28px;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .recording-icon-button {
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border: 1px solid rgba(224, 229, 242, 0.9);
+      border-radius: 10px;
       padding: 0;
-      background: white;
+      background: rgba(244, 247, 254, 0.95);
       color: var(--text);
       cursor: pointer;
     }
 
     .recording-icon-button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: white;
+      background: rgba(67, 24, 255, 0.08);
+      border-color: rgba(67, 24, 255, 0.14);
+      color: var(--accent);
     }
 
     .recording-icon-button svg {
-      width: 18px;
-      height: 18px;
+      width: 14px;
+      height: 14px;
       display: block;
       fill: currentColor;
+    }
+
+    .recording-icon-button[data-role="recording-fullscreen"] {
+      width: 28px;
+      height: 28px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--icon);
     }
 
     .recording-icon-button:disabled,
@@ -1000,24 +1009,36 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       width: 100%;
       margin: 0;
       accent-color: var(--accent);
+      min-width: 0;
     }
 
-    .recording-times {
-      margin-top: 8px;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
+    .recording-time {
+      width: 5ch;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
+      font-weight: 600;
       font-variant-numeric: tabular-nums;
+      text-align: center;
+      white-space: nowrap;
     }
 
-    .recording-meta {
-      margin-bottom: 0;
+    .recording-speed {
+      width: 56px;
+      height: 28px;
+      border: 1px solid rgba(224, 229, 242, 0.9);
+      border-radius: 9px;
+      padding: 0 8px;
+      background: rgba(244, 247, 254, 0.95);
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-      text-align: center;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .recording-speed:disabled {
+      opacity: 0.45;
+      cursor: default;
     }
 
     .visually-hidden {
@@ -1199,10 +1220,10 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
     }
 
     function formatVideoClock(totalSeconds) {
-      const seconds = Math.max(0, Number(totalSeconds || 0));
-      const minutesPart = Math.floor(seconds / 60);
-      const secondsPart = seconds - (minutesPart * 60);
-      return String(minutesPart).padStart(2, '0') + ':' + secondsPart.toFixed(1).padStart(4, '0');
+      const wholeSeconds = Math.floor(Math.max(0, Number(totalSeconds || 0)));
+      const minutesPart = Math.floor(wholeSeconds / 60);
+      const secondsPart = wholeSeconds % 60;
+      return String(minutesPart).padStart(2, '0') + ':' + String(secondsPart).padStart(2, '0');
     }
 
     function syncRecordingShell(container, video) {
@@ -1221,6 +1242,7 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       const video = container.querySelector('[data-role="recording-video"]');
       const seekbar = container.querySelector('[data-role="recording-seekbar"]');
       const playPause = container.querySelector('[data-role="recording-playpause"]');
+      const speed = container.querySelector('[data-role="recording-speed"]');
       const fullscreen = container.querySelector('[data-role="recording-fullscreen"]');
       if (!video || !seekbar || !playPause || !fullscreen || video.dataset.seekbarBound === '1') {
         return;
@@ -1277,6 +1299,18 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
         }
       };
 
+      const applyPlaybackRate = () => {
+        if (!speed) {
+          return;
+        }
+        const nextRate = Number(speed.value || 2);
+        if (!Number.isFinite(nextRate) || nextRate <= 0) {
+          return;
+        }
+        video.playbackRate = nextRate;
+        syncControls();
+      };
+
       video.addEventListener('loadedmetadata', syncControls);
       video.addEventListener('durationchange', syncControls);
       video.addEventListener('timeupdate', syncControls);
@@ -1284,9 +1318,15 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       video.addEventListener('pause', syncControls);
       video.addEventListener('ended', syncControls);
       video.addEventListener('emptied', syncControls);
+      video.addEventListener('ratechange', syncControls);
       seekbar.addEventListener('input', applySeek);
       seekbar.addEventListener('change', applySeek);
       playPause.addEventListener('click', togglePlayback);
+      if (speed) {
+        speed.value = speed.value || '2';
+        video.playbackRate = Number(speed.value || 2);
+        speed.addEventListener('change', applyPlaybackRate);
+      }
       fullscreen.addEventListener('click', toggleFullscreen);
       video.dataset.seekbarBound = '1';
     }
@@ -1296,6 +1336,7 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       const current = container.querySelector('[data-role="recording-current"]');
       const duration = container.querySelector('[data-role="recording-duration"]');
       const playPause = container.querySelector('[data-role="recording-playpause"]');
+      const speed = container.querySelector('[data-role="recording-speed"]');
       const fullscreen = container.querySelector('[data-role="recording-fullscreen"]');
       if (!seekbar || !current || !duration || !playPause || !fullscreen) {
         return;
@@ -1307,12 +1348,15 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       seekbar.value = String(Math.min(currentSeconds, totalSeconds || currentSeconds));
       seekbar.disabled = totalSeconds <= 0;
       current.textContent = formatVideoClock(currentSeconds);
-      duration.textContent = totalSeconds > 0 ? formatVideoClock(totalSeconds) : '--:--.-';
+      duration.textContent = totalSeconds > 0 ? formatVideoClock(totalSeconds) : '--:--';
       playPause.innerHTML = video.paused || video.ended
         ? '${escapeJs(renderPlayIconSvg())}'
         : '${escapeJs(renderPauseIconSvg())}';
       playPause.setAttribute('aria-label', video.paused || video.ended ? 'Play recording' : 'Pause recording');
       playPause.setAttribute('title', video.paused || video.ended ? 'Play recording' : 'Pause recording');
+      if (speed) {
+        speed.disabled = !(video.currentSrc || video.src);
+      }
       fullscreen.innerHTML = '${escapeJs(renderFullscreenIconSvg())}';
       fullscreen.setAttribute('title', 'Open recording fullscreen');
       fullscreen.disabled = !(video.currentSrc || video.src);
@@ -1642,6 +1686,7 @@ function renderSpecDetailSection(
   const snapshotYamlText = spec?.snapshotYamlText ?? item.input.snapshotYamlText;
   const snapshotYamlPath = spec?.snapshotYamlPath ?? item.input.snapshotYamlPath;
   const stepCount = spec?.steps.length ?? 0;
+  const recordingSpeedId = `recording-speed-${item.input.specId}`;
 
   return `
     <section class="${detailClass}" data-spec-panel="${escapeHtml(item.input.specId)}">
@@ -1695,6 +1740,7 @@ function renderSpecDetailSection(
                 aria-label="Play recording"
                 title="Play recording"
               >${renderPlayIconSvg()}</button>
+              <span class="recording-time" data-role="recording-current">${formatVideoTimestamp(initialStep?.videoOffsetMs)}</span>
               <input
                 class="recording-timeline"
                 data-role="recording-seekbar"
@@ -1705,6 +1751,19 @@ function renderSpecDetailSection(
                 value="${initialStep?.videoOffsetMs !== undefined ? String(Math.max(0, initialStep.videoOffsetMs / 1000)) : '0'}"
                 aria-label="Seek recording timeline"
               />
+              <span class="recording-time" data-role="recording-duration">--:--</span>
+              <label class="visually-hidden" for="${escapeHtml(recordingSpeedId)}">Playback speed</label>
+              <select
+                class="recording-speed"
+                data-role="recording-speed"
+                id="${escapeHtml(recordingSpeedId)}"
+                aria-label="Playback speed"
+              >
+                <option value="1">1x</option>
+                <option value="2" selected>2x</option>
+                <option value="4">4x</option>
+                <option value="8">8x</option>
+              </select>
               <button
                 class="recording-icon-button"
                 data-role="recording-fullscreen"
@@ -1713,19 +1772,6 @@ function renderSpecDetailSection(
                 title="Open recording fullscreen"
               >${renderFullscreenIconSvg()}</button>
             </div>
-            <div class="recording-times">
-              <span data-role="recording-current">${formatVideoTimestamp(initialStep?.videoOffsetMs)}</span>
-              <span data-role="recording-duration">--:--.-</span>
-            </div>
-          </div>
-          <div class="recording-meta" data-role="recording-caption">
-            ${!spec?.recordingFile
-              ? 'No session recording was captured for this spec.'
-              : !initialStep
-                ? 'No recorded actions are available for this spec.'
-                : initialStep.videoOffsetMs === undefined || initialStep.videoOffsetMs === null
-                  ? 'No synced recording timestamp is available for the selected step.'
-                  : `Paused at ${formatVideoTimestamp(initialStep.videoOffsetMs)} for the selected step.`}
           </div>
         </div>
       </div>
@@ -2092,12 +2138,12 @@ function formatRelativeTime(timestamp: string): string {
 
 function formatVideoTimestamp(videoOffsetMs: number | undefined): string {
   if (videoOffsetMs === undefined) {
-    return '00:00.0';
+    return '00:00';
   }
-  const totalSeconds = Math.max(0, videoOffsetMs / 1000);
-  const minutesPart = Math.floor(totalSeconds / 60);
-  const secondsPart = totalSeconds - minutesPart * 60;
-  return `${String(minutesPart).padStart(2, '0')}:${secondsPart.toFixed(1).padStart(4, '0')}`;
+  const wholeSeconds = Math.floor(Math.max(0, videoOffsetMs / 1000));
+  const minutesPart = Math.floor(wholeSeconds / 60);
+  const secondsPart = wholeSeconds % 60;
+  return `${String(minutesPart).padStart(2, '0')}:${String(secondsPart).padStart(2, '0')}`;
 }
 
 function escapeHtml(value: unknown): string {
