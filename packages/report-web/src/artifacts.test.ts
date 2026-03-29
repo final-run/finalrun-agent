@@ -8,6 +8,7 @@ import {
   ArtifactRangeNotSatisfiableError,
   loadArtifactResponse,
   loadReportIndexViewModel,
+  loadReportRunManifestViewModel,
   type ReportWorkspaceContext,
 } from './artifacts';
 
@@ -197,6 +198,36 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
         },
       ],
     );
+  } finally {
+    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('loadReportRunManifestViewModel inlines snapshot YAML text for spec detail rendering', async () => {
+  const context = createWorkspaceContext();
+
+  try {
+    await writeRunManifest(context, {
+      runId: 'yaml-run',
+      target: {
+        type: 'direct',
+      },
+      selectedSpecs: [
+        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
+      ],
+    });
+    await fsp.mkdir(path.join(context.artifactsDir, 'yaml-run', 'input', 'specs'), { recursive: true });
+    await fsp.writeFile(
+      path.join(context.artifactsDir, 'yaml-run', 'input', 'specs', 'login.yaml'),
+      ['name: valid login', 'steps:', '  - Tap login'].join('\n'),
+      'utf-8',
+    );
+
+    const manifest = await loadReportRunManifestViewModel('yaml-run', context);
+
+    assert.equal(manifest.input.specs[0]?.snapshotYamlPath, 'input/specs/login.yaml');
+    assert.equal(manifest.input.specs[0]?.snapshotYamlText, ['name: valid login', 'steps:', '  - Tap login'].join('\n'));
+    assert.equal(manifest.specs.length, 0);
   } finally {
     await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
   }

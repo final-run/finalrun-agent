@@ -1,5 +1,5 @@
 import type {
-  RunManifestRecord,
+  RunManifestRecord as SharedRunManifestRecord,
   RunManifestSelectedSpecRecord,
   RunManifestSpecRecord,
   RunManifestStepRecord,
@@ -11,9 +11,24 @@ const TEST_ICON_SRC =
 
 type SpecOutcomeStatus = 'success' | 'failure' | 'error' | 'not_executed';
 
+export interface ReportManifestSelectedSpecRecord extends RunManifestSelectedSpecRecord {
+  snapshotYamlText?: string;
+}
+
+export interface ReportManifestSpecRecord extends RunManifestSpecRecord {
+  snapshotYamlText?: string;
+}
+
+export interface ReportRunManifestRecord extends Omit<SharedRunManifestRecord, 'input' | 'specs'> {
+  input: Omit<SharedRunManifestRecord['input'], 'specs'> & {
+    specs: ReportManifestSelectedSpecRecord[];
+  };
+  specs: ReportManifestSpecRecord[];
+}
+
 interface ReportSpecListItem {
-  input: RunManifestSelectedSpecRecord;
-  executed?: RunManifestSpecRecord;
+  input: ReportManifestSelectedSpecRecord;
+  executed?: ReportManifestSpecRecord;
   status: SpecOutcomeStatus;
   durationLabel: string;
 }
@@ -26,14 +41,14 @@ interface OutcomeSummary {
   notExecuted: number;
 }
 
-export function renderHtmlReport(manifest: RunManifestRecord): string {
+export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
   const run = manifest.run;
   const specItems = buildSpecListItems(manifest);
   const isSingleSpec = specItems.length <= 1;
   const outcomeSummary = summarizeSpecItems(specItems);
   const initialSpec = specItems[0];
   const reportTitle = deriveReportTitle(manifest);
-  const reportPayload = JSON.stringify(manifest).replace(/</g, '\\u003c');
+  const reportPayload = JSON.stringify(stripSnapshotYamlText(manifest)).replace(/</g, '\\u003c');
 
   return `<!doctype html>
 <html lang="en">
@@ -404,47 +419,110 @@ export function renderHtmlReport(manifest: RunManifestRecord): string {
       line-height: 1.45;
     }
 
-    .goal-shell {
+    .detail-section-shell {
       padding: 0 24px 24px;
     }
 
-    .goal-card {
+    .detail-section-card {
       padding: 18px 20px;
       border: 1px solid var(--border);
       border-radius: 16px;
       background: white;
     }
 
-    .goal-card strong {
-      display: block;
-      margin-bottom: 10px;
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+    .detail-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
     }
 
-    .goal-copy {
+    .detail-section-copy {
+      min-width: 0;
+    }
+
+    .detail-section-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .detail-section-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .detail-section-link {
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .yaml-shell {
+      padding: 16px;
+      border: 1px solid var(--border-light);
+      border-radius: 14px;
+      background: var(--panel-alt);
+    }
+
+    .yaml-block {
+      margin: 0;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+    }
+
+    .analysis-card.success {
+      background: rgba(5, 205, 153, 0.08);
+      border-color: rgba(5, 205, 153, 0.22);
+    }
+
+    .analysis-card.failure {
+      background: rgba(238, 93, 80, 0.08);
+      border-color: rgba(238, 93, 80, 0.22);
+    }
+
+    .analysis-card.error {
+      background: rgba(255, 146, 12, 0.10);
+      border-color: rgba(255, 146, 12, 0.24);
+    }
+
+    .analysis-card.not_executed {
+      background: rgba(112, 126, 174, 0.08);
+      border-color: rgba(112, 126, 174, 0.2);
+    }
+
+    .analysis-card.success .detail-section-title {
+      color: var(--success);
+    }
+
+    .analysis-card.failure .detail-section-title {
+      color: var(--failure);
+    }
+
+    .analysis-card.error .detail-section-title {
+      color: var(--warning);
+    }
+
+    .analysis-card.not_executed .detail-section-title {
+      color: var(--muted);
+    }
+
+    .analysis-copy {
       color: var(--text);
       font-size: 14px;
-      font-weight: 600;
-      line-height: 1.55;
-    }
-
-    .goal-chip-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .goal-chip {
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: var(--panel-alt);
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 600;
+      line-height: 1.65;
+      white-space: pre-wrap;
     }
 
     .workspace {
@@ -1046,7 +1124,7 @@ export function renderHtmlReport(manifest: RunManifestRecord): string {
 }
 
 function renderSingleSpecPage(
-  manifest: RunManifestRecord,
+  manifest: ReportRunManifestRecord,
   item: ReportSpecListItem | undefined,
 ): string {
   if (!item) {
@@ -1059,16 +1137,11 @@ function renderSingleSpecPage(
     `;
   }
 
-  return `
-    <section class="overview-grid">
-      ${renderRunContextPanel(manifest)}
-      ${renderSpecDetailSection(item, true)}
-    </section>
-  `;
+  return renderSpecDetailSection(item, true, undefined, manifest);
 }
 
 function renderSuiteRunPage(
-  manifest: RunManifestRecord,
+  manifest: ReportRunManifestRecord,
   items: ReportSpecListItem[],
   summary: OutcomeSummary,
 ): string {
@@ -1115,11 +1188,35 @@ function renderSuiteRunPage(
         </table>
       </section>
     </section>
-    ${items.map((item) => renderSpecDetailSection(item, false, suiteLabel)).join('')}
+    ${items.map((item) => renderSpecDetailSection(item, false, suiteLabel, manifest)).join('')}
   `;
 }
 
-function renderRunContextPanel(manifest: RunManifestRecord): string {
+function renderRunContextPanel(manifest: ReportRunManifestRecord): string {
+  return `
+    <section class="overview-panel">
+      <div class="overview-panel-body">
+        ${renderRunContextContent(manifest, 'overview-title', 'overview-subtitle')}
+      </div>
+    </section>
+  `;
+}
+
+function renderRunContextContent(
+  manifest: ReportRunManifestRecord,
+  titleClass: string,
+  subtitleClass: string,
+): string {
+  return `
+    <h2 class="${titleClass}">Run Context</h2>
+    <p class="${subtitleClass}">Inputs and environment captured for this report.</p>
+    <div class="run-context-grid">
+      ${renderRunContextCards(manifest)}
+    </div>
+  `;
+}
+
+function renderRunContextCards(manifest: ReportRunManifestRecord): string {
   const target = resolveRunTarget(manifest);
   const artifacts = [
     `<a href="${escapeHtml(manifest.paths.runJson)}">run.json</a>`,
@@ -1130,37 +1227,29 @@ function renderRunContextPanel(manifest: RunManifestRecord): string {
     artifacts.push(`<a href="${escapeHtml(manifest.paths.runContextJson)}">run-context.json</a>`);
   }
 
-  return `
-    <section class="overview-panel">
-      <div class="overview-panel-body">
-        <h2 class="overview-title">Run Context</h2>
-        <p class="overview-subtitle">Inputs and environment captured for this report.</p>
-        <div class="run-context-grid">
-          ${renderContextCard('Environment', escapeHtml(manifest.input.environment.envName))}
-          ${renderContextCard('Platform', escapeHtml(manifest.run.platform))}
-          ${renderContextCard('Model', escapeHtml(manifest.run.model.label))}
-          ${renderContextCard('App', escapeHtml(manifest.run.app.label))}
-          ${renderContextCard('Run Target', escapeHtml(formatRunTarget(target)))}
-          ${target.type === 'suite'
-            ? renderContextCard(
-              'Suite',
-              target.suitePath && target.suiteName
-                ? `<div>${escapeHtml(target.suiteName)}</div><div class="muted">${escapeHtml(target.suitePath)}</div>`
-                : escapeHtml(target.suiteName || target.suitePath || 'Suite run'),
-            )
-            : renderContextCard(
-              'Selectors',
-              manifest.run.selectors.length > 0
-                ? renderInlineCodeList(manifest.run.selectors)
-                : '<span class="muted">No selectors recorded.</span>',
-            )}
-          ${renderContextCard('Variables', renderVariableList(manifest))}
-          ${renderContextCard('Secrets', renderSecretList(manifest))}
-          ${renderContextCard('Artifacts', `<div class="inline-list">${artifacts.join(' · ')}</div>`)}
-        </div>
-      </div>
-    </section>
-  `;
+  return [
+    renderContextCard('Environment', escapeHtml(manifest.input.environment.envName)),
+    renderContextCard('Platform', escapeHtml(manifest.run.platform)),
+    renderContextCard('Model', escapeHtml(manifest.run.model.label)),
+    renderContextCard('App', escapeHtml(manifest.run.app.label)),
+    renderContextCard('Run Target', escapeHtml(formatRunTarget(target))),
+    target.type === 'suite'
+      ? renderContextCard(
+        'Suite',
+        target.suitePath && target.suiteName
+          ? `<div>${escapeHtml(target.suiteName)}</div><div class="muted">${escapeHtml(target.suitePath)}</div>`
+          : escapeHtml(target.suiteName || target.suitePath || 'Suite run'),
+      )
+      : renderContextCard(
+        'Selectors',
+        manifest.run.selectors.length > 0
+          ? renderInlineCodeList(manifest.run.selectors)
+          : '<span class="muted">No selectors recorded.</span>',
+      ),
+    renderContextCard('Variables', renderVariableList(manifest)),
+    renderContextCard('Secrets', renderSecretList(manifest)),
+    renderContextCard('Artifacts', `<div class="inline-list">${artifacts.join(' · ')}</div>`),
+  ].join('');
 }
 
 function renderContextCard(label: string, content: string): string {
@@ -1233,46 +1322,30 @@ function renderSpecDetailSection(
   item: ReportSpecListItem,
   visible: boolean,
   parentLabel?: string,
+  manifest?: ReportRunManifestRecord,
 ): string {
   const detailClass = visible ? 'detail-shell is-visible' : 'detail-shell';
   const detailSubtitle = parentLabel
     ? `${parentLabel} · ${item.input.relativePath}`
     : item.input.relativePath;
-
-  if (!item.executed) {
-    return `
-      <section class="${detailClass}" data-spec-panel="${escapeHtml(item.input.specId)}">
-        <div class="detail-header">
-          <div class="detail-header-main">
-            <div class="detail-header-copy">
-              <h2>${escapeHtml(item.input.specName)}</h2>
-              <p>${escapeHtml(detailSubtitle)}</p>
-            </div>
-          </div>
-          ${renderStatusPill('not_executed')}
-        </div>
-        <div class="detail-meta">
-          <div class="detail-meta-card"><strong>Status</strong><span>Not executed</span></div>
-          <div class="detail-meta-card"><strong>Duration</strong><span>NA</span></div>
-          <div class="detail-meta-card"><strong>Path</strong><span>${escapeHtml(item.input.relativePath)}</span></div>
-        </div>
-        <div class="goal-shell">
-          <div class="empty-panel">
-            This spec was selected for the run, but it never started. The batch ended before this spec could execute, so there are no step artifacts for it.
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
   const spec = item.executed;
-  const initialStep = spec.steps[0];
-  const statusText = item.status === 'error' ? 'Error' : item.status === 'failure' ? 'Failed' : 'Passed';
-  const goalText = spec.effectiveGoal || deriveGoalFallback(spec);
-  const analysisText = spec.analysis || spec.message || 'No overall analysis recorded.';
+  const initialStep = spec?.steps[0];
+  const statusText = item.status === 'error'
+    ? 'Error'
+    : item.status === 'failure'
+      ? 'Failed'
+      : item.status === 'not_executed'
+        ? 'Not executed'
+        : 'Passed';
+  const analysisText = spec
+    ? spec.analysis || spec.message || 'No overall analysis recorded.'
+    : 'This spec was selected for the run, but it never started. The batch ended before this spec could execute.';
+  const snapshotYamlText = spec?.snapshotYamlText ?? item.input.snapshotYamlText;
+  const snapshotYamlPath = spec?.snapshotYamlPath ?? item.input.snapshotYamlPath;
+  const stepCount = spec?.steps.length ?? 0;
 
   return `
-    <section class="${detailClass}" data-spec-panel="${escapeHtml(spec.specId)}">
+    <section class="${detailClass}" data-spec-panel="${escapeHtml(item.input.specId)}">
       <div class="detail-header">
         <div class="detail-header-main">
           <div class="detail-header-copy">
@@ -1285,42 +1358,34 @@ function renderSpecDetailSection(
 
       <div class="detail-meta">
         <div class="detail-meta-card"><strong>Status</strong><span>${escapeHtml(statusText)}</span></div>
-        <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(formatLongDuration(spec.durationMs))}</span></div>
-        <div class="detail-meta-card"><strong>Steps</strong><span>${spec.steps.length} recorded</span></div>
-        <div class="detail-meta-card"><strong>Analysis</strong><span>${escapeHtml(analysisText)}</span></div>
+        <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(spec ? formatLongDuration(spec.durationMs) : 'NA')}</span></div>
+        <div class="detail-meta-card"><strong>Steps</strong><span>${stepCount} recorded</span></div>
+        <div class="detail-meta-card"><strong>Path</strong><span>${escapeHtml(item.input.relativePath)}</span></div>
       </div>
 
-      <div class="goal-shell">
-        <div class="goal-card">
-          <strong>Goal</strong>
-          <div class="goal-copy">${escapeHtml(goalText)}</div>
-          <div class="goal-chip-row">
-            <span class="goal-chip">${spec.authored.steps.length} authored steps</span>
-            <span class="goal-chip">${spec.authored.assertions.length} assertions</span>
-            <span class="goal-chip">${spec.recordingFile ? 'Recording available' : 'No recording'}</span>
-          </div>
-        </div>
-      </div>
+      ${renderSpecTestSection(snapshotYamlPath, snapshotYamlText)}
+      ${manifest ? renderRunContextSection(manifest) : ''}
+      ${renderSpecAnalysisSection(item.status, analysisText)}
 
       <div class="workspace">
         <div class="timeline-panel">
           <p class="section-label">Agent Actions</p>
-          ${spec.steps.length > 0
+          ${spec && spec.steps.length > 0
             ? spec.steps.map((step, index) => renderStepButton(spec.specId, step, index)).join('')
             : '<div class="empty-panel">No steps were recorded for this spec.</div>'}
         </div>
 
-        <div class="detail-panel" data-step-detail="${escapeHtml(spec.specId)}">
+        <div class="detail-panel" data-step-detail="${escapeHtml(item.input.specId)}">
           <p class="section-label">Session Recording</p>
           <div class="media-shell recording-shell">
-            ${spec.recordingFile
+            ${spec?.recordingFile
               ? `<video data-role="recording-video" playsinline preload="metadata" src="${escapeHtml(spec.recordingFile)}"></video>`
               : '<div class="empty-shot" data-role="empty-recording">No session recording was captured for this spec.</div>'}
-            ${spec.recordingFile
+            ${spec?.recordingFile
               ? '<div class="empty-shot" data-role="empty-recording" style="display:none">No session recording was captured for this spec.</div>'
               : ''}
           </div>
-          <div class="recording-controls" data-role="recording-controls" style="display:${spec.recordingFile ? 'block' : 'none'}">
+          <div class="recording-controls" data-role="recording-controls" style="display:${spec?.recordingFile ? 'block' : 'none'}">
             <div class="recording-control-row">
               <button
                 class="recording-icon-button primary"
@@ -1353,7 +1418,7 @@ function renderSpecDetailSection(
             </div>
           </div>
           <div class="recording-meta" data-role="recording-caption">
-            ${!spec.recordingFile
+            ${!spec?.recordingFile
               ? 'No session recording was captured for this spec.'
               : !initialStep
                 ? 'No recorded actions are available for this spec.'
@@ -1364,6 +1429,65 @@ function renderSpecDetailSection(
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderSpecTestSection(
+  snapshotYamlPath: string | undefined,
+  snapshotYamlText: string | undefined,
+): string {
+  const content = snapshotYamlText
+    ? `<div class="yaml-shell"><pre class="yaml-block"><code>${escapeHtml(snapshotYamlText)}</code></pre></div>`
+    : '<div class="empty-panel">Snapshot YAML was not available for this report.</div>';
+  const action = snapshotYamlPath
+    ? `<a class="detail-section-link" href="${escapeHtml(snapshotYamlPath)}">Open raw YAML</a>`
+    : '';
+  return renderDetailSectionCard({
+    title: 'Test',
+    subtitle: 'Captured YAML snapshot for this spec.',
+    action,
+    content,
+  });
+}
+
+function renderRunContextSection(manifest: ReportRunManifestRecord): string {
+  return renderDetailSectionCard({
+    title: 'Run Context',
+    subtitle: 'Inputs and environment captured for this report.',
+    content: `<div class="run-context-grid">${renderRunContextCards(manifest)}</div>`,
+  });
+}
+
+function renderSpecAnalysisSection(status: SpecOutcomeStatus, analysisText: string): string {
+  return renderDetailSectionCard({
+    title: 'Analysis',
+    subtitle: 'Overall result commentary captured for this spec.',
+    action: renderStatusPill(status),
+    cardClass: `analysis-card ${status}`,
+    content: `<div class="analysis-copy">${escapeHtml(analysisText)}</div>`,
+  });
+}
+
+function renderDetailSectionCard(params: {
+  title: string;
+  subtitle: string;
+  content: string;
+  action?: string;
+  cardClass?: string;
+}): string {
+  return `
+    <div class="detail-section-shell">
+      <div class="detail-section-card ${params.cardClass ?? ''}">
+        <div class="detail-section-header">
+          <div class="detail-section-copy">
+            <h3 class="detail-section-title">${escapeHtml(params.title)}</h3>
+            <p class="detail-section-subtitle">${escapeHtml(params.subtitle)}</p>
+          </div>
+          ${params.action ?? ''}
+        </div>
+        ${params.content}
+      </div>
+    </div>
   `;
 }
 
@@ -1390,7 +1514,7 @@ function renderStepButton(specId: string, step: RunManifestStepRecord, index: nu
   `;
 }
 
-function buildSpecListItems(manifest: RunManifestRecord): ReportSpecListItem[] {
+function buildSpecListItems(manifest: ReportRunManifestRecord): ReportSpecListItem[] {
   const executedById = new Map(manifest.specs.map((spec) => [spec.specId, spec]));
   const selectedSpecs = manifest.input.specs;
   if (selectedSpecs.length === 0) {
@@ -1402,6 +1526,7 @@ function buildSpecListItems(manifest: RunManifestRecord): ReportSpecListItem[] {
         workspaceSourcePath: spec.workspaceSourcePath,
         snapshotYamlPath: spec.snapshotYamlPath,
         snapshotJsonPath: spec.snapshotJsonPath,
+        snapshotYamlText: spec.snapshotYamlText,
         bindingReferences: spec.bindingReferences,
       },
       executed: spec,
@@ -1446,7 +1571,7 @@ function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
   );
 }
 
-function classifySpecStatus(spec: RunManifestSpecRecord): SpecOutcomeStatus {
+function classifySpecStatus(spec: ReportManifestSpecRecord): SpecOutcomeStatus {
   if (spec.success) {
     return 'success';
   }
@@ -1456,7 +1581,7 @@ function classifySpecStatus(spec: RunManifestSpecRecord): SpecOutcomeStatus {
   return 'failure';
 }
 
-function deriveReportTitle(manifest: RunManifestRecord): string {
+function deriveReportTitle(manifest: ReportRunManifestRecord): string {
   const target = resolveRunTarget(manifest);
   if (target.type === 'suite' && target.suiteName) {
     return target.suiteName;
@@ -1474,16 +1599,6 @@ function deriveReportTitle(manifest: RunManifestRecord): string {
   return manifest.run.runId;
 }
 
-function deriveGoalFallback(spec: RunManifestSpecRecord): string {
-  const parts = [
-    ...spec.authored.preconditions,
-    ...spec.authored.setup,
-    ...spec.authored.steps,
-    ...spec.authored.assertions.map((assertion) => `Assert: ${assertion}`),
-  ].filter((part) => part.trim().length > 0);
-  return parts.length > 0 ? parts.join(' ') : spec.message;
-}
-
 function renderStatusPill(status: SpecOutcomeStatus | 'success' | 'failure'): string {
   const label = status === 'success'
     ? 'Passed'
@@ -1495,7 +1610,7 @@ function renderStatusPill(status: SpecOutcomeStatus | 'success' | 'failure'): st
   return `<span class="status-pill ${escapeHtml(status)}">${escapeHtml(label)}</span>`;
 }
 
-function renderVariableList(manifest: RunManifestRecord): string {
+function renderVariableList(manifest: ReportRunManifestRecord): string {
   const entries = Object.entries(manifest.input.environment.variables);
   if (entries.length === 0) {
     return '<span class="muted">No variables recorded.</span>';
@@ -1503,7 +1618,7 @@ function renderVariableList(manifest: RunManifestRecord): string {
   return renderInlineCodeList(entries.map(([key, value]) => `${key}=${String(value)}`));
 }
 
-function renderSecretList(manifest: RunManifestRecord): string {
+function renderSecretList(manifest: ReportRunManifestRecord): string {
   const references = manifest.input.environment.secretReferences;
   if (references.length === 0) {
     return '<span class="muted">No secrets recorded.</span>';
@@ -1517,8 +1632,19 @@ function renderInlineCodeList(values: string[]): string {
     .join('')}</span>`;
 }
 
-function resolveRunTarget(manifest: RunManifestRecord): RunTargetRecord {
+function resolveRunTarget(manifest: ReportRunManifestRecord): RunTargetRecord {
   return manifest.run.target ?? { type: 'direct' };
+}
+
+function stripSnapshotYamlText(manifest: ReportRunManifestRecord): SharedRunManifestRecord {
+  return {
+    ...manifest,
+    input: {
+      ...manifest.input,
+      specs: manifest.input.specs.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
+    },
+    specs: manifest.specs.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
+  };
 }
 
 function formatRunTarget(target: RunTargetRecord): string {

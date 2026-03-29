@@ -15,7 +15,12 @@ import {
   type ReportIndexRunRecord,
   type ReportIndexViewModel,
 } from './reportIndexTemplate.js';
-import { renderHtmlReport } from './reportTemplate.js';
+import {
+  renderHtmlReport,
+  type ReportManifestSelectedSpecRecord,
+  type ReportManifestSpecRecord,
+  type ReportRunManifestRecord,
+} from './reportTemplate.js';
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -71,7 +76,7 @@ export async function serveReportWorkspace(params: {
         }
 
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end(renderHtmlReport(toRunManifestViewModel(manifest)));
+        response.end(renderHtmlReport(await buildReportRunManifestViewModel(manifest, rootDir)));
         return;
       }
 
@@ -279,8 +284,21 @@ export async function buildReportIndexViewModel(
   };
 }
 
-function toRunManifestViewModel(manifest: RunManifestRecord): RunManifestRecord {
+export async function buildReportRunManifestViewModel(
+  manifest: RunManifestRecord,
+  artifactsDir: string,
+): Promise<ReportRunManifestRecord> {
   const runId = manifest.run.runId;
+  const snapshotCache = new Map<string, Promise<string | undefined>>();
+  const readSnapshotYamlText = async (snapshotYamlPath: string): Promise<string | undefined> => {
+    let cached = snapshotCache.get(snapshotYamlPath);
+    if (!cached) {
+      cached = readRunArtifactText(artifactsDir, runId, snapshotYamlPath);
+      snapshotCache.set(snapshotYamlPath, cached);
+    }
+    return await cached;
+  };
+
   return {
     ...manifest,
     input: {
@@ -292,9 +310,13 @@ function toRunManifestViewModel(manifest: RunManifestRecord): RunManifestRecord 
             snapshotJsonPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath),
           }
         : undefined,
-      specs: manifest.input.specs.map((spec) => toSelectedSpecViewModel(runId, spec)),
+      specs: await Promise.all(
+        manifest.input.specs.map(async (spec) => await toSelectedSpecViewModel(runId, spec, readSnapshotYamlText)),
+      ),
     },
-    specs: manifest.specs.map((spec) => toSpecViewModel(runId, spec)),
+    specs: await Promise.all(
+      manifest.specs.map(async (spec) => await toSpecViewModel(runId, spec, readSnapshotYamlText)),
+    ),
     paths: {
       ...manifest.paths,
       runJson: buildRunScopedArtifactPath(runId, manifest.paths.runJson),
@@ -307,22 +329,29 @@ function toRunManifestViewModel(manifest: RunManifestRecord): RunManifestRecord 
   };
 }
 
-function toSelectedSpecViewModel(
+async function toSelectedSpecViewModel(
   runId: string,
   spec: RunManifestSelectedSpecRecord,
-): RunManifestSelectedSpecRecord {
+  readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
+): Promise<ReportManifestSelectedSpecRecord> {
   return {
     ...spec,
     snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath),
     snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath),
+    snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
   };
 }
 
-function toSpecViewModel(runId: string, spec: RunManifestSpecRecord): RunManifestSpecRecord {
+async function toSpecViewModel(
+  runId: string,
+  spec: RunManifestSpecRecord,
+  readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
+): Promise<ReportManifestSpecRecord> {
   return {
     ...spec,
     snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath),
     snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath),
+    snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
     previewScreenshotPath: spec.previewScreenshotPath
       ? buildRunScopedArtifactPath(runId, spec.previewScreenshotPath)
       : undefined,
@@ -355,6 +384,41 @@ function toSpecViewModel(runId: string, spec: RunManifestSpecRecord): RunManifes
 
 function buildRunScopedArtifactPath(runId: string, relativePath: string): string {
   return buildArtifactRoute(`${runId}/${relativePath}`);
+}
+
+async function readRunArtifactText(
+  artifactsDir: string,
+  runId: string,
+  artifactPath: string,
+): Promise<string | undefined> {
+  const normalizedPath = normalizeRunArtifactPath(runId, artifactPath);
+  if (!normalizedPath) {
+    return undefined;
+  }
+
+  try {
+    return await fsp.readFile(path.join(artifactsDir, runId, normalizedPath), 'utf-8');
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeRunArtifactPath(runId: string, artifactPath: string): string | undefined {
+  const normalized = artifactPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  if (!normalized.startsWith('artifacts/')) {
+    return normalized;
+  }
+
+  const withoutArtifactsPrefix = normalized.slice('artifacts/'.length);
+  if (withoutArtifactsPrefix.startsWith(`${runId}/`)) {
+    return withoutArtifactsPrefix.slice(runId.length + 1);
+  }
+
+  return undefined;
 }
 
 async function enrichRunIndexEntry(

@@ -80,7 +80,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
 }
 
 function createSuiteRunManifest(): RunManifestRecord {
-  return {
+  return withSnapshotYamlText({
     schemaVersion: 1,
     run: {
       runId: '2026-03-24T18-00-00.000Z-dev-android',
@@ -270,12 +270,12 @@ function createSuiteRunManifest(): RunManifestRecord {
       log: 'runner.log',
       runContextJson: 'input/run-context.json',
     },
-  };
+  });
 }
 
 function createSingleSpecManifest(): RunManifestRecord {
   const suiteManifest = createSuiteRunManifest();
-  return {
+  return withSnapshotYamlText({
     ...suiteManifest,
     run: {
       ...suiteManifest.run,
@@ -326,10 +326,68 @@ function createSingleSpecManifest(): RunManifestRecord {
         ],
       },
     ],
-  };
+  });
+}
+
+function withSnapshotYamlText(manifest: RunManifestRecord): RunManifestRecord {
+  const snapshotBySpecId = new Map<string, string>([
+    ['login', [
+      'name: valid login',
+      'steps:',
+      '  - Tap login',
+      'assertions:',
+      '  - Dashboard is visible',
+    ].join('\n')],
+    ['checkout', [
+      'name: guest checkout',
+      'steps:',
+      '  - Open checkout',
+      'assertions:',
+      '  - Checkout page is visible',
+    ].join('\n')],
+  ]);
+
+  for (const spec of manifest.input.specs) {
+    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.specId);
+  }
+  for (const spec of manifest.specs) {
+    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.specId);
+  }
+
+  return manifest;
+}
+
+function extractSpecDetailPanel(html: string, specId: string): string {
+  const marker = `data-spec-panel="${specId}"`;
+  const start = html.indexOf(marker);
+  assert.notEqual(start, -1, `Expected spec detail panel for ${specId}.`);
+  const sectionStart = html.lastIndexOf('<section', start);
+  const sectionEnd = html.indexOf('</section>', start);
+  assert.notEqual(sectionStart, -1);
+  assert.notEqual(sectionEnd, -1);
+  return html.slice(sectionStart, sectionEnd + '</section>'.length);
+}
+
+function assertSpecDetailSectionOrder(html: string, specId: string): void {
+  const panel = extractSpecDetailPanel(html, specId);
+  const testIndex = panel.indexOf('>Test<');
+  const runContextIndex = panel.indexOf('>Run Context<');
+  const analysisIndex = panel.indexOf('>Analysis<');
+  const actionsIndex = panel.indexOf('Agent Actions');
+  const recordingIndex = panel.indexOf('Session Recording');
+
+  assert.ok(testIndex >= 0);
+  assert.ok(runContextIndex > testIndex);
+  assert.ok(analysisIndex > runContextIndex);
+  assert.ok(actionsIndex > analysisIndex);
+  assert.ok(recordingIndex > actionsIndex);
 }
 
 function assertSimplifiedSpecDetailHtml(html: string): void {
+  assert.match(html, />Test<\/h3>/);
+  assert.match(html, /Open raw YAML/);
+  assert.match(html, />Run Context<\/h3>/);
+  assert.match(html, />Analysis<\/h3>/);
   assert.match(html, /Agent Actions/);
   assert.match(html, /Session Recording/);
   assert.match(html, /function selectNearestStepForTime/);
@@ -346,6 +404,7 @@ function assertSimplifiedSpecDetailHtml(html: string): void {
   assert.doesNotMatch(html, /data-role="screenshot"/);
   assert.doesNotMatch(html, /Back to suite list/);
   assert.doesNotMatch(html, /onclick="clearSpecSelection\(\)"/);
+  assert.doesNotMatch(html, />Goal<\/strong>/);
 }
 
 test('renderRunIndexHtml renders the Flutter-style history table with derived display metadata', () => {
@@ -393,6 +452,10 @@ test('renderRunHtml renders suite overview, run context, spec detail panes, and 
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
   assert.match(html, /class="tinted-png-icon"/);
   assert.equal((html.match(/Run history/g) || []).length, 1);
+  assert.match(html, /name: valid login/);
+  assert.match(html, /name: guest checkout/);
+  assertSpecDetailSectionOrder(html, 'login');
+  assertSpecDetailSectionOrder(html, 'checkout');
   assertSimplifiedSpecDetailHtml(html);
 });
 
@@ -402,9 +465,11 @@ test('renderRunHtml opens directly into the single-spec layout for direct one-sp
   assert.match(html, /<h1 class="report-title">valid login<\/h1>/);
   assert.doesNotMatch(html, /id="suite-overview"/);
   assert.doesNotMatch(html, /Executed tests/);
-  assert.match(html, /Goal/);
+  assert.doesNotMatch(html, /class="overview-grid"/);
+  assert.match(html, /name: valid login/);
   assert.match(html, /id="report-back-button"/);
   assert.match(html, /\/artifacts\/2026-03-24T20-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
+  assertSpecDetailSectionOrder(html, 'login');
   assert.equal((html.match(/Run history/g) || []).length, 1);
   assertSimplifiedSpecDetailHtml(html);
 });

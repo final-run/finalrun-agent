@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loadRunManifestRecord, renderHtmlErrorPage } from '../../../src/artifacts';
+import { loadReportRunManifestViewModel, renderHtmlErrorPage } from '../../../src/artifacts';
 import { renderRunHtml } from '../../../src/renderers';
 
 export const runtime = 'nodejs';
@@ -10,7 +10,7 @@ export async function GET(
 ): Promise<NextResponse> {
   try {
     const { runId } = await context.params;
-    const manifest = await loadRunManifestRecord(runId);
+    const manifest = await loadReportRunManifestViewModel(runId);
     return new NextResponse(renderRunHtml(manifest), {
       headers: {
         'content-type': 'text/html; charset=utf-8',
