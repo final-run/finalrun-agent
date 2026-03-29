@@ -829,10 +829,6 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       aspect-ratio: var(--recording-aspect-ratio, 9 / 19.5);
     }
 
-    .screenshot-shell {
-      aspect-ratio: 9 / 19.5;
-    }
-
     .media-shell img,
     .recording-shell video {
       width: 100%;
@@ -923,77 +919,6 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       text-align: center;
     }
 
-    .detail-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 14px;
-    }
-
-    .detail-card {
-      padding: 14px 16px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: white;
-    }
-
-    .detail-card h4 {
-      margin: 0 0 10px;
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .detail-card p,
-    .detail-card ul {
-      margin: 0;
-      color: var(--text);
-      font-size: 14px;
-      line-height: 1.55;
-      padding-left: 18px;
-    }
-
-    .detail-card p {
-      padding-left: 0;
-    }
-
-    .trace-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin: 0;
-      padding-left: 18px;
-    }
-
-    .raw-links-shell {
-      padding: 0 24px 24px;
-    }
-
-    .raw-links-shell details {
-      padding: 12px 16px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: white;
-    }
-
-    .raw-links-shell summary {
-      cursor: pointer;
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    .artifact-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 14px;
-      margin-top: 14px;
-      font-size: 14px;
-    }
-
-    .artifact-list a {
-      color: var(--accent);
-    }
-
     .visually-hidden {
       position: absolute;
       width: 1px;
@@ -1022,7 +947,14 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
   <main class="page report-page">
     <section class="report-header">
       <div class="report-header-main">
-        <a class="back-button" href="/" aria-label="Back to run history" title="Back to run history">
+        <a
+          class="back-button"
+          id="${isSingleSpec ? 'report-back-button' : 'primary-back-button'}"
+          href="/"
+          aria-label="Back to run history"
+          title="Back to run history"
+          ${isSingleSpec ? '' : 'onclick="return handlePrimaryBack(event)"'}
+        >
           ${renderBackArrowIconSvg()}
         </a>
         <div>
@@ -1052,6 +984,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       for (const panel of document.querySelectorAll('[data-spec-panel]')) {
         panel.classList.remove('is-visible');
       }
+      updatePrimaryBackButton();
     }
 
     function selectSpec(specId) {
@@ -1065,7 +998,37 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       if (specMap[specId] && specMap[specId].steps.length > 0) {
         selectStep(specId, 0);
       }
+      updatePrimaryBackButton();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function hasVisibleSpecPanel() {
+      for (const panel of document.querySelectorAll('[data-spec-panel]')) {
+        if (panel.classList.contains('is-visible')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function updatePrimaryBackButton() {
+      const button = document.getElementById('primary-back-button');
+      if (!button) {
+        return;
+      }
+      const label = hasVisibleSpecPanel() ? 'Back to suite overview' : 'Back to run history';
+      button.setAttribute('aria-label', label);
+      button.setAttribute('title', label);
+    }
+
+    function handlePrimaryBack(event) {
+      if (!hasVisibleSpecPanel()) {
+        return true;
+      }
+      event.preventDefault();
+      clearSpecSelection();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return false;
     }
 
     function selectStep(specId, stepIndex) {
@@ -1076,88 +1039,55 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
         return;
       }
 
+      setSelectedStep(specId, stepIndex);
+      syncRecording(container, spec, step);
+    }
+
+    function setSelectedStep(specId, stepIndex) {
       for (const button of document.querySelectorAll('[data-spec-id="' + specId + '"][data-step-index]')) {
         button.classList.toggle('is-selected', Number(button.dataset.stepIndex) === stepIndex);
       }
-
-      const img = container.querySelector('[data-role="screenshot"]');
-      const empty = container.querySelector('[data-role="empty-shot"]');
-      if (img) {
-        if (step.screenshotFile) {
-          img.src = step.screenshotFile;
-          img.alt = step.naturalLanguageAction || step.actionType;
-          img.style.display = 'block';
-          if (empty) empty.style.display = 'none';
-        } else {
-          img.removeAttribute('src');
-          img.style.display = 'none';
-          if (empty) empty.style.display = 'block';
-        }
-      }
-
-      syncRecording(container, spec, step);
-
-      container.querySelector('[data-role="action-title"]').textContent = step.naturalLanguageAction || step.actionType;
-      container.querySelector('[data-role="reason"]').textContent = step.reason || 'No reasoning recorded.';
-      container.querySelector('[data-role="analysis"]').textContent = step.analysis || 'No step analysis recorded.';
-      container.querySelector('[data-role="status"]').textContent = step.success ? 'Success' : 'Failure';
-      container.querySelector('[data-role="duration"]').textContent = formatStepDuration(step.durationMs || step.trace?.totalMs || 0);
-      container.querySelector('[data-role="timestamp"]').textContent = step.timestamp || 'Unknown';
-      container.querySelector('[data-role="error"]').textContent = step.errorMessage || 'No error recorded.';
-
-      const thoughtList = container.querySelector('[data-role="thought-list"]');
-      thoughtList.innerHTML = '';
-      const thoughtItems = [];
-      if (step.thought?.plan) thoughtItems.push(['Plan', step.thought.plan]);
-      if (step.thought?.think) thoughtItems.push(['Think', step.thought.think]);
-      if (step.thought?.act) thoughtItems.push(['Act', step.thought.act]);
-      if (thoughtItems.length === 0) {
-        thoughtList.innerHTML = '<li class="muted">No expanded planner thought recorded.</li>';
-      } else {
-        for (const [label, value] of thoughtItems) {
-          const li = document.createElement('li');
-          li.textContent = label + ': ' + value;
-          thoughtList.appendChild(li);
-        }
-      }
-
-      const traceList = container.querySelector('[data-role="trace-list"]');
-      traceList.innerHTML = '';
-      const spans = step.trace?.spans || [];
-      if (spans.length === 0) {
-        traceList.innerHTML = '<li class="muted">No timing trace recorded.</li>';
-      } else {
-        for (const span of spans) {
-          const li = document.createElement('li');
-          const detail = span.detail ? ' - ' + span.detail : '';
-          li.textContent = span.name + ': ' + formatStepDuration(span.durationMs) + ' (' + span.status + ')' + detail;
-          traceList.appendChild(li);
-        }
-      }
-
-      const rawLinks = container.querySelector('[data-role="raw-links"]');
-      rawLinks.innerHTML = '';
-      const links = [
-        step.stepJsonFile ? ['step.json', step.stepJsonFile] : null,
-        step.screenshotFile ? ['screenshot', step.screenshotFile] : null,
-        spec.recordingFile ? ['recording', spec.recordingFile] : null,
-      ].filter(Boolean);
-      if (links.length === 0) {
-        rawLinks.innerHTML = '<span class="muted">No step artifact links recorded.</span>';
-      } else {
-        for (const [label, href] of links) {
-          const anchor = document.createElement('a');
-          anchor.href = href;
-          anchor.textContent = label;
-          rawLinks.appendChild(anchor);
-        }
-      }
     }
 
-    function formatStepDuration(durationMs) {
-      const ms = Number(durationMs || 0);
-      const seconds = ms / 1000;
-      return seconds >= 10 ? seconds.toFixed(0) + 's' : seconds.toFixed(1) + 's';
+    function selectNearestStepForTime(specId, targetSeconds) {
+      const spec = specMap[specId];
+      if (!spec) {
+        return;
+      }
+
+      const nearestStepIndex = findNearestStepIndex(spec, targetSeconds);
+      if (nearestStepIndex === null) {
+        return;
+      }
+
+      const step = spec.steps[nearestStepIndex];
+      const container = document.querySelector('[data-step-detail="' + specId + '"]');
+      if (!container || !step) {
+        return;
+      }
+
+      setSelectedStep(specId, nearestStepIndex);
+      updateRecordingCaption(container, spec, step, targetSeconds);
+    }
+
+    function findNearestStepIndex(spec, targetSeconds) {
+      let nearestIndex = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      for (const [index, step] of spec.steps.entries()) {
+        if (typeof step.videoOffsetMs !== 'number') {
+          continue;
+        }
+
+        const stepSeconds = Math.max(0, step.videoOffsetMs / 1000);
+        const distance = Math.abs(stepSeconds - targetSeconds);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = index;
+        }
+      }
+
+      return nearestIndex;
     }
 
     function formatVideoClock(totalSeconds) {
@@ -1204,6 +1134,10 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
           video.currentTime = nextTime;
         }
         syncControls();
+        const specId = container.getAttribute('data-step-detail');
+        if (specId) {
+          selectNearestStepForTime(specId, nextTime);
+        }
       };
 
       const togglePlayback = async () => {
@@ -1279,7 +1213,6 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
     function syncRecording(container, spec, step) {
       const video = container.querySelector('[data-role="recording-video"]');
       const empty = container.querySelector('[data-role="empty-recording"]');
-      const label = container.querySelector('[data-role="recording-caption"]');
       const controls = container.querySelector('[data-role="recording-controls"]');
 
       if (!video) {
@@ -1293,7 +1226,7 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
         video.style.display = 'none';
         if (controls) controls.style.display = 'none';
         syncRecordingShell(container, video);
-        if (label) label.textContent = 'No session recording was captured for this spec.';
+        updateRecordingCaption(container, spec);
         return;
       }
 
@@ -1304,14 +1237,12 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       if (step.videoOffsetMs === undefined || step.videoOffsetMs === null) {
         video.pause();
         updateRecordingControls(container, video);
-        if (label) label.textContent = 'No synced recording timestamp is available for the selected step.';
+        updateRecordingCaption(container, spec, step);
         return;
       }
 
       const seekSeconds = Math.max(0, step.videoOffsetMs / 1000);
-      if (label) {
-        label.textContent = 'Paused at ' + formatVideoClock(seekSeconds) + ' for the selected step.';
-      }
+      updateRecordingCaption(container, spec, step);
 
       const applySeek = () => {
         const duration = Number.isFinite(video.duration) ? video.duration : undefined;
@@ -1342,6 +1273,32 @@ export function renderRunHtml(manifest: RunManifestRecord): string {
       video.load();
     }
 
+    function updateRecordingCaption(container, spec, step, currentSeconds) {
+      const label = container.querySelector('[data-role="recording-caption"]');
+      if (!label) {
+        return;
+      }
+      if (!spec.recordingFile) {
+        label.textContent = 'No session recording was captured for this spec.';
+        return;
+      }
+      if (!step) {
+        label.textContent = 'No recorded actions are available for this spec.';
+        return;
+      }
+      if (step.videoOffsetMs === undefined || step.videoOffsetMs === null) {
+        label.textContent = 'No synced recording timestamp is available for the selected step.';
+        return;
+      }
+      if (typeof currentSeconds === 'number' && Number.isFinite(currentSeconds)) {
+        label.textContent = 'Viewing ' + formatVideoClock(currentSeconds) + ' with the nearest recorded action selected.';
+        return;
+      }
+      label.textContent = 'Paused at ' + formatVideoClock(step.videoOffsetMs / 1000) + ' for the selected step.';
+    }
+
+    updatePrimaryBackButton();
+
     for (const spec of reportPayload.specs) {
       if (spec.steps.length > 0) {
         selectStep(spec.specId, 0);
@@ -1369,7 +1326,7 @@ function renderSingleSpecPage(
   return `
     <section class="overview-grid">
       ${renderRunContextPanel(manifest)}
-      ${renderSpecDetailSection(item, true, 'home')}
+      ${renderSpecDetailSection(item, true)}
     </section>
   `;
 }
@@ -1379,6 +1336,7 @@ function renderSuiteRunPage(
   items: ReportSpecListItem[],
   summary: OutcomeSummary,
 ): string {
+  const suiteLabel = deriveReportTitle(manifest);
   return `
     <section id="suite-overview" class="overview-grid">
       <section class="overview-panel">
@@ -1421,7 +1379,7 @@ function renderSuiteRunPage(
         </table>
       </section>
     </section>
-    ${items.map((item) => renderSpecDetailSection(item, false, 'suite')).join('')}
+    ${items.map((item) => renderSpecDetailSection(item, false, suiteLabel)).join('')}
   `;
 }
 
@@ -1570,23 +1528,21 @@ function renderSuiteRow(item: ReportSpecListItem, appLabel: string): string {
 function renderSpecDetailSection(
   item: ReportSpecListItem,
   visible: boolean,
-  backMode: 'suite' | 'home',
+  parentLabel?: string,
 ): string {
   const detailClass = visible ? 'detail-shell is-visible' : 'detail-shell';
-  const backButton = backMode === 'suite'
-    ? `<button class="back-button" type="button" onclick="clearSpecSelection()" aria-label="Back to suite list" title="Back to suite list">${renderBackArrowIconSvg()}</button>`
-    : `<a class="back-button" href="/" aria-label="Back to run history" title="Back to run history">${renderBackArrowIconSvg()}</a>`;
+  const detailSubtitle = parentLabel
+    ? `${parentLabel} · ${item.input.relativePath}`
+    : item.input.relativePath;
 
   if (!item.executed) {
     return `
       <section class="${detailClass}" data-spec-panel="${escapeHtml(item.input.specId)}">
         <div class="detail-header">
           <div class="detail-header-main">
-            ${backButton}
             <div class="detail-header-copy">
-              <div class="report-eyebrow">Run history</div>
               <h2>${escapeHtml(item.input.specName)}</h2>
-              <p>${escapeHtml(item.input.relativePath)}</p>
+              <p>${escapeHtml(detailSubtitle)}</p>
             </div>
           </div>
           ${renderStatusPill('not_executed')}
@@ -1615,11 +1571,9 @@ function renderSpecDetailSection(
     <section class="${detailClass}" data-spec-panel="${escapeHtml(spec.specId)}">
       <div class="detail-header">
         <div class="detail-header-main">
-          ${backButton}
           <div class="detail-header-copy">
-            <div class="report-eyebrow">Run history</div>
             <h2>${escapeHtml(item.input.specName)}</h2>
-            <p>${escapeHtml(item.input.relativePath)}</p>
+            <p>${escapeHtml(detailSubtitle)}</p>
           </div>
         </div>
         ${renderStatusPill(item.status)}
@@ -1695,77 +1649,15 @@ function renderSpecDetailSection(
             </div>
           </div>
           <div class="recording-meta" data-role="recording-caption">
-            ${spec.recordingFile
-              ? `Paused at ${formatVideoTimestamp(initialStep?.videoOffsetMs)} for the selected step.`
-              : 'No session recording was captured for this spec.'}
-          </div>
-
-          <p class="section-label">Selected Step</p>
-          <div class="media-shell screenshot-shell">
-            <img data-role="screenshot" src="${escapeHtml(initialStep?.screenshotFile || '')}" alt="${escapeHtml(initialStep?.naturalLanguageAction || '')}" style="display:${initialStep?.screenshotFile ? 'block' : 'none'}" />
-            <div class="empty-shot" data-role="empty-shot" style="display:${initialStep?.screenshotFile ? 'none' : 'block'}">
-              No screenshot recorded for the selected step.
-            </div>
-          </div>
-
-          <div class="detail-grid">
-            <div class="detail-card">
-              <h4>Action</h4>
-              <p data-role="action-title">${escapeHtml(initialStep?.naturalLanguageAction || 'No step selected')}</p>
-            </div>
-            <div class="detail-card">
-              <h4>Reasoning</h4>
-              <p data-role="reason">${escapeHtml(initialStep?.reason || 'No reasoning recorded.')}</p>
-            </div>
-            <div class="detail-card">
-              <h4>Planner Thought</h4>
-              <ul class="trace-list" data-role="thought-list"></ul>
-            </div>
-            <div class="detail-card">
-              <h4>Analysis</h4>
-              <p data-role="analysis">${escapeHtml(initialStep?.analysis || 'No step analysis recorded.')}</p>
-            </div>
-            <div class="detail-card">
-              <h4>Trace</h4>
-              <ul class="trace-list" data-role="trace-list"></ul>
-            </div>
-            <div class="detail-card">
-              <h4>Meta</h4>
-              <ul>
-                <li>Status: <span data-role="status">${initialStep?.success ? 'Success' : 'Failure'}</span></li>
-                <li>Duration: <span data-role="duration">${escapeHtml(formatStepDuration(initialStep?.durationMs || 0))}</span></li>
-                <li>Timestamp: <span data-role="timestamp">${escapeHtml(initialStep?.timestamp || 'Unknown')}</span></li>
-                <li>Error: <span data-role="error">${escapeHtml(initialStep?.errorMessage || 'No error recorded.')}</span></li>
-              </ul>
-            </div>
-            <div class="detail-card">
-              <h4>Raw Artifacts</h4>
-              <div class="artifact-list" data-role="raw-links"></div>
-            </div>
+            ${!spec.recordingFile
+              ? 'No session recording was captured for this spec.'
+              : !initialStep
+                ? 'No recorded actions are available for this spec.'
+                : initialStep.videoOffsetMs === undefined || initialStep.videoOffsetMs === null
+                  ? 'No synced recording timestamp is available for the selected step.'
+                  : `Paused at ${formatVideoTimestamp(initialStep.videoOffsetMs)} for the selected step.`}
           </div>
         </div>
-      </div>
-
-      <div class="raw-links-shell">
-        <details>
-          <summary>Raw Artifact Links</summary>
-          <div class="artifact-list">
-            <a href="${escapeHtml(spec.resultJsonPath)}">result.json</a>
-            <a href="${escapeHtml(spec.snapshotYamlPath)}">snapshot.yaml</a>
-            <a href="${escapeHtml(spec.snapshotJsonPath)}">snapshot.json</a>
-            ${spec.recordingFile ? `<a href="${escapeHtml(spec.recordingFile)}">recording</a>` : ''}
-            ${spec.steps
-              .map((step) => {
-                const links = [
-                  step.stepJsonFile ? `<a href="${escapeHtml(step.stepJsonFile)}">step ${step.stepNumber}.json</a>` : '',
-                  step.screenshotFile ? `<a href="${escapeHtml(step.screenshotFile)}">step ${step.stepNumber} screenshot</a>` : '',
-                ].filter(Boolean);
-                return links.join(' · ');
-              })
-              .filter(Boolean)
-              .join(' · ')}
-          </div>
-        </details>
       </div>
     </section>
   `;

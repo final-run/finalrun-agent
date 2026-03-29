@@ -347,6 +347,25 @@ function createSingleSpecManifest(): RunManifestRecord {
   };
 }
 
+function assertSimplifiedSpecDetailHtml(html: string): void {
+  assert.match(html, /Agent Actions/);
+  assert.match(html, /Session Recording/);
+  assert.match(html, /function selectNearestStepForTime/);
+  assert.match(html, /function findNearestStepIndex/);
+  assert.match(html, /selectNearestStepForTime\(specId, nextTime\)/);
+  assert.doesNotMatch(html, /Selected Step/);
+  assert.doesNotMatch(html, /<h4>Action<\/h4>/);
+  assert.doesNotMatch(html, /<h4>Reasoning<\/h4>/);
+  assert.doesNotMatch(html, /<h4>Planner Thought<\/h4>/);
+  assert.doesNotMatch(html, /<h4>Analysis<\/h4>/);
+  assert.doesNotMatch(html, /<h4>Trace<\/h4>/);
+  assert.doesNotMatch(html, /<h4>Meta<\/h4>/);
+  assert.doesNotMatch(html, /Raw Artifact Links/);
+  assert.doesNotMatch(html, /data-role="screenshot"/);
+  assert.doesNotMatch(html, /Back to suite list/);
+  assert.doesNotMatch(html, /onclick="clearSpecSelection\(\)"/);
+}
+
 test('renderRunIndexHtml renders the Flutter-style history table on the live CLI server path', () => {
   const html = renderRunIndexHtml(createRunIndexViewModel());
 
@@ -375,16 +394,20 @@ test('renderHtmlReport renders the new suite report layout on the live CLI serve
   assert.match(html, /selectSpec\('checkout'\)/);
   assert.match(html, /data-spec-panel="login"/);
   assert.match(html, /data-spec-panel="checkout"/);
+  assert.match(html, /id="primary-back-button"/);
+  assert.match(html, /handlePrimaryBack\(event\)/);
   assert.match(html, /data-role="recording-seekbar"/);
   assert.match(html, /data-role="recording-playpause"/);
   assert.match(html, /data-role="recording-fullscreen"/);
   assert.match(html, /<video data-role="recording-video" playsinline preload="metadata"/);
   assert.doesNotMatch(html, /<video data-role="recording-video" controls /);
   assert.match(html, /href="\/"/);
+  assert.match(html, /login suite · login\/valid_login\.yaml/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/run\.json/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/input\/suite\.snapshot\.yaml/);
-  assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/steps\/001\.json/);
   assert.match(html, /\/artifacts\/2026-03-24T18-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
+  assert.equal((html.match(/Run history/g) || []).length, 1);
+  assertSimplifiedSpecDetailHtml(html);
 });
 
 test('renderHtmlReport opens directly into the single-spec layout for one-spec direct runs', () => {
@@ -394,9 +417,48 @@ test('renderHtmlReport opens directly into the single-spec layout for one-spec d
   assert.doesNotMatch(html, /id="suite-overview"/);
   assert.doesNotMatch(html, /Executed tests/);
   assert.match(html, /Goal/);
-  assert.match(html, /Agent Actions/);
-  assert.match(html, /Session Recording/);
+  assert.match(html, /id="report-back-button"/);
   assert.match(html, /\/artifacts\/2026-03-24T20-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
+  assert.equal((html.match(/Run history/g) || []).length, 1);
+  assertSimplifiedSpecDetailHtml(html);
+});
+
+test('renderHtmlReport renders compact recording empty states without reintroducing debug panels', () => {
+  const noRecordingManifest = createSingleSpecManifest();
+  noRecordingManifest.specs[0] = {
+    ...noRecordingManifest.specs[0],
+    recordingFile: undefined,
+  };
+
+  const noRecordingHtml = renderHtmlReport(noRecordingManifest);
+  assert.match(noRecordingHtml, /No session recording was captured for this spec\./);
+  assertSimplifiedSpecDetailHtml(noRecordingHtml);
+
+  const noActionsManifest = createSingleSpecManifest();
+  noActionsManifest.specs[0] = {
+    ...noActionsManifest.specs[0],
+    steps: [],
+  };
+
+  const noActionsHtml = renderHtmlReport(noActionsManifest);
+  assert.match(noActionsHtml, /No steps were recorded for this spec\./);
+  assert.match(noActionsHtml, /No recorded actions are available for this spec\./);
+  assertSimplifiedSpecDetailHtml(noActionsHtml);
+});
+
+test('renderHtmlReport surfaces the no-synced-timestamp caption when steps lack video offsets', () => {
+  const manifest = createSingleSpecManifest();
+  manifest.specs[0] = {
+    ...manifest.specs[0],
+    steps: manifest.specs[0].steps.map((step) => ({
+      ...step,
+      videoOffsetMs: undefined,
+    })),
+  };
+
+  const html = renderHtmlReport(manifest);
+  assert.match(html, /No synced recording timestamp is available for the selected step\./);
+  assertSimplifiedSpecDetailHtml(html);
 });
 
 test('buildReportIndexViewModel derives display metadata for the actual CLI-served history page', async () => {
