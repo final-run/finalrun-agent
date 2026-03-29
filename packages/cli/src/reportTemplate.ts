@@ -511,19 +511,36 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     .workspace {
       display: grid;
       grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.05fr);
-      min-height: 560px;
+      min-height: clamp(560px, 76vh, 860px);
       border-top: 1px solid var(--border-light);
+      align-items: stretch;
     }
 
     .timeline-panel {
       padding: 22px;
       border-right: 1px solid var(--border-light);
       background: white;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+      overflow: hidden;
     }
 
     .detail-panel {
       padding: 22px;
       background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
+      min-height: 0;
+    }
+
+    .timeline-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
 
     .section-label {
@@ -537,7 +554,7 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
 
     .step-button {
       width: 100%;
-      margin: 0 0 12px;
+      margin: 0;
       padding: 14px;
       border: 1px solid transparent;
       border-radius: 14px;
@@ -564,6 +581,10 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
       align-items: start;
     }
 
+    .step-copy {
+      min-width: 0;
+    }
+
     .step-icon {
       width: 28px;
       height: 28px;
@@ -586,17 +607,23 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
       line-height: 1.45;
     }
 
-    .step-reason {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
+    .step-expanded {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(188, 197, 225, 0.65);
     }
 
-    .step-meta {
-      margin-top: 6px;
-      color: var(--icon);
-      font-size: 12px;
+    .step-button.is-selected .step-expanded {
+      display: block;
+    }
+
+    .step-reasoning-copy {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
     .duration-chip {
@@ -731,11 +758,18 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     @media (max-width: 980px) {
       .workspace {
         grid-template-columns: 1fr;
+        min-height: auto;
       }
 
       .timeline-panel {
         border-right: 0;
         border-bottom: 1px solid var(--border-light);
+        overflow: visible;
+      }
+
+      .timeline-scroll {
+        overflow: visible;
+        padding-right: 0;
       }
     }
   </style>
@@ -1326,9 +1360,11 @@ function renderSpecDetailSection(
       <div class="workspace">
         <div class="timeline-panel">
           <p class="section-label">Agent Actions</p>
-          ${spec && spec.steps.length > 0
-            ? spec.steps.map((step, index) => renderStepButton(spec.specId, step, index)).join('')
-            : '<div class="empty-panel">No steps were recorded for this spec.</div>'}
+          <div class="timeline-scroll">
+            ${spec && spec.steps.length > 0
+              ? spec.steps.map((step, index) => renderStepButton(spec.specId, step, index)).join('')
+              : '<div class="empty-panel">No steps were recorded for this spec.</div>'}
+          </div>
         </div>
 
         <div class="detail-panel" data-step-detail="${escapeHtml(item.input.specId)}">
@@ -1449,6 +1485,7 @@ function renderDetailSectionCard(params: {
 
 function renderStepButton(specId: string, step: RunManifestStepRecord, index: number): string {
   const statusClass = step.success ? 'success' : step.actionType === 'run_failure' ? 'error' : 'failure';
+  const reasoningText = resolveStepReasoning(step);
   return `
     <button
       class="step-button ${index === 0 ? 'is-selected' : ''}"
@@ -1459,15 +1496,33 @@ function renderStepButton(specId: string, step: RunManifestStepRecord, index: nu
     >
       <div class="step-row">
         <span class="step-icon ${statusClass}">${statusClass === 'success' ? '✓' : '!'}</span>
-        <div>
+        <div class="step-copy">
           <div class="step-title">${escapeHtml(step.naturalLanguageAction || step.actionType)}</div>
-          <div class="step-reason">${escapeHtml(step.reason || 'No rationale recorded.')}</div>
-          <div class="step-meta">${escapeHtml(step.timestamp || 'Unknown time')}</div>
         </div>
         <div class="duration-chip">${escapeHtml(formatStepDuration(step.durationMs || step.trace?.totalMs || 0))}</div>
       </div>
+      ${reasoningText
+        ? `<div class="step-expanded"><div class="step-reasoning-copy">${escapeHtml(reasoningText)}</div></div>`
+        : ''}
     </button>
   `;
+}
+
+function resolveStepReasoning(step: RunManifestStepRecord): string | undefined {
+  const title = normalizeStepText(step.naturalLanguageAction || step.actionType);
+  for (const candidate of [step.thought?.think, step.thought?.plan, step.reason]) {
+    const normalized = normalizeStepText(candidate);
+    if (!normalized || normalized === title) {
+      continue;
+    }
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeStepText(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function buildSpecListItems(manifest: ReportRunManifestRecord): ReportSpecListItem[] {

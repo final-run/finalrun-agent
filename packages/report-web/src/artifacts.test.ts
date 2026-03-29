@@ -233,6 +233,7 @@ test('loadReportRunManifestViewModel inlines snapshot YAML text for spec detail 
   }
 });
 
+
 async function writeJson(filePath: string, value: unknown): Promise<void> {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   await fsp.writeFile(filePath, JSON.stringify(value, null, 2), 'utf-8');

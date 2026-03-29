@@ -219,6 +219,11 @@ function createSuiteRunManifest(): RunManifestRecord {
             analysis: 'The login button was not visible.',
             thought: {
               plan: 'Open the login form.',
+              think: 'The login CTA is the fastest way to reach the authenticated screen.',
+            },
+            actionPayload: {
+              direction: 'down',
+              repeat: 1,
             },
             trace: {
               step: 1,
@@ -425,6 +430,17 @@ function assertSimplifiedSpecDetailHtml(html: string): void {
   assert.doesNotMatch(html, />Goal<\/strong>/);
 }
 
+function assertAgentActionListHtml(html: string): void {
+  assert.match(html, /class="timeline-scroll"/);
+  assert.match(html, /\.timeline-scroll\s*\{/);
+  assert.match(html, /class="step-title">Tap login<\/div>/);
+  assert.match(html, /\.step-button\.is-selected \.step-expanded\s*\{/);
+  assert.match(html, /class="step-reasoning-copy">The login CTA is the fastest way to reach the authenticated screen\.<\/div>/);
+  assert.doesNotMatch(html, /class="step-reason"/);
+  assert.doesNotMatch(html, /class="step-meta"/);
+  assert.doesNotMatch(html, />Grounding<\/div>/);
+}
+
 function assertCompactRunContextHtml(html: string): void {
   assert.match(html, /class="run-context-summary"/);
   assert.match(html, /class="context-summary-label">Environment<\/span>/);
@@ -499,6 +515,7 @@ test('renderHtmlReport renders the new suite report layout on the live CLI serve
   assertCompactRunContextHtml(html);
   assert.match(html, /class="tinted-png-icon"/);
   assertSimplifiedSpecDetailHtml(html);
+  assertAgentActionListHtml(html);
 });
 
 test('renderHtmlReport opens directly into the single-spec layout for one-spec direct runs', () => {
@@ -515,6 +532,7 @@ test('renderHtmlReport opens directly into the single-spec layout for one-spec d
   assert.equal((html.match(/Run history/g) || []).length, 1);
   assertCompactRunContextHtml(html);
   assertSimplifiedSpecDetailHtml(html);
+  assertAgentActionListHtml(html);
 });
 
 test('renderHtmlReport renders compact recording empty states without reintroducing debug panels', () => {
@@ -752,6 +770,7 @@ test('buildReportRunManifestViewModel inlines snapshot YAML text and scopes snap
     await fsp.rm(artifactsDir, { recursive: true, force: true });
   }
 });
+
 
 async function writeRunManifest(
   artifactsDir: string,
