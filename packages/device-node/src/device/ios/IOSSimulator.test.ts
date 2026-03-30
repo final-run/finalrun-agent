@@ -460,6 +460,7 @@ test('IOSSimulator applies supported custom permissions through simctl before la
   assert.equal(response.success, true);
   assert.equal(response.message, 'launched');
   assert.deepEqual(response.data, {
+    packageName: 'org.wikipedia',
     appliedPermissions: ['calendar'],
   });
   assert.deepEqual(calls, [

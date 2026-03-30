@@ -7,3 +7,5 @@ const cliDir = resolve(currentDir, '..');
 
 rmSync(resolve(cliDir, 'proto'), { recursive: true, force: true });
 rmSync(resolve(cliDir, 'node_modules/@finalrun'), { recursive: true, force: true });
+rmSync(resolve(cliDir, 'README.md'), { force: true });
+rmSync(resolve(cliDir, 'LICENSE'), { force: true });
