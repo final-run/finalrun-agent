@@ -20,7 +20,6 @@ export default tseslint.config(
       'drivers/android/app/build/**',
       'drivers/android/build/**',
       'drivers/ios/.derived-data/**',
-      'finalruntestspec/dist/**',
       'resources/android/*.apk',
       'resources/ios/*.zip',
       'resources/ios/Debug-iphonesimulator/**',
