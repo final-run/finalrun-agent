@@ -40,7 +40,6 @@ function resolveLocalResourceDir(startDir: string = __dirname): string | undefin
     path.resolve(startDir, '../../../resources'),
     path.resolve(startDir, '../../../../resources'),
     path.resolve(startDir, '../../resources'),
-    path.resolve(process.cwd(), 'resources'),
   ];
 
   return candidates.find((candidate) => fs.existsSync(candidate));

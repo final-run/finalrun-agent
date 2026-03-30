@@ -83,6 +83,39 @@ test('CliFilePathUtil fails clearly when an iOS archive cannot be unzipped', asy
   }
 });
 
+test('CliFilePathUtil reuses pre-extracted iOS driver apps without unzipping again', async () => {
+  const resourceDir = createTempResourceDir();
+  const targetDir = path.join(resourceDir, 'ios', 'Debug-iphonesimulator');
+  fs.mkdirSync(path.join(targetDir, 'finalrun-ios.app'), { recursive: true });
+  fs.mkdirSync(path.join(targetDir, 'finalrun-ios-test-Runner.app'), { recursive: true });
+  let unzipCalled = false;
+
+  try {
+    const filePathUtil = new CliFilePathUtil(
+      resourceDir,
+      (async (): Promise<ExecResult> => {
+        unzipCalled = true;
+        return { stdout: '', stderr: '' };
+      }),
+    );
+
+    const runnerPath = await filePathUtil.getIOSDriverAppPath();
+
+    assert.equal(
+      runnerPath,
+      path.join(
+        resourceDir,
+        'ios',
+        'Debug-iphonesimulator',
+        'finalrun-ios-test-Runner.app',
+      ),
+    );
+    assert.equal(unzipCalled, false);
+  } finally {
+    fs.rmSync(resourceDir, { recursive: true, force: true });
+  }
+});
+
 test('CliFilePathUtil downloads the Android driver asset from the manifest into the cache dir', async () => {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-assets-cache-'));
   const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-assets-source-'));

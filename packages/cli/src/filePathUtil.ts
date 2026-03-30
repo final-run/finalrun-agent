@@ -95,12 +95,7 @@ export class CliFilePathUtil implements FilePathUtil {
   async getIOSDriverAppPath(): Promise<string | null> {
     await this.ensureIOSAppsAvailable();
 
-    const runnerAppPath = path.join(
-      this.getResourceDir(),
-      'ios',
-      'Debug-iphonesimulator',
-      'finalrun-ios-test-Runner.app',
-    );
+    const { runnerAppPath } = this._resolveIOSExtractedAppPaths();
     if (!fs.existsSync(runnerAppPath)) {
       throw new Error(`Extracted iOS runner app not found: ${runnerAppPath}`);
     }
@@ -130,10 +125,14 @@ export class CliFilePathUtil implements FilePathUtil {
    * Ensure iOS apps are available (extract from .zip if needed).
    */
   async ensureIOSAppsAvailable(): Promise<void> {
+    const { appPath, runnerAppPath, targetDir } = this._resolveIOSExtractedAppPaths();
+    if (fs.existsSync(appPath) && fs.existsSync(runnerAppPath)) {
+      return;
+    }
+
     const appZipPath = await this._assetStore.resolveAssetPath('ios-driver-archive');
     const runnerZipPath = await this._assetStore.resolveAssetPath('ios-driver-runner-archive');
     const iosDir = path.join(this.getResourceDir(), 'ios');
-    const targetDir = path.join(iosDir, 'Debug-iphonesimulator');
 
     if (!appZipPath || !fs.existsSync(appZipPath)) {
       throw new Error(
@@ -160,9 +159,21 @@ export class CliFilePathUtil implements FilePathUtil {
       }
     }
 
-    const runnerAppPath = path.join(targetDir, 'finalrun-ios-test-Runner.app');
     if (!fs.existsSync(runnerAppPath)) {
       throw new Error(`Extracted iOS runner app not found: ${runnerAppPath}`);
     }
+  }
+
+  private _resolveIOSExtractedAppPaths(): {
+    targetDir: string;
+    appPath: string;
+    runnerAppPath: string;
+  } {
+    const targetDir = path.join(this.getResourceDir(), 'ios', 'Debug-iphonesimulator');
+    return {
+      targetDir,
+      appPath: path.join(targetDir, 'finalrun-ios.app'),
+      runnerAppPath: path.join(targetDir, 'finalrun-ios-test-Runner.app'),
+    };
   }
 }
