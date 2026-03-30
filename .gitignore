@@ -23,6 +23,9 @@ resources/ios/*.zip
 coverage/
 packages/*/coverage/
 
+# npm pack artifacts
+/finalrun-agent-*.tgz
+
 # Local environment files
 .env
 .env.*

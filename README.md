@@ -12,6 +12,10 @@ npm install -g finalrun-agent
 
 The package installs the `finalrun` command and also exposes `finalrun-agent` as an alias.
 
+During global installation, FinalRun stages its native driver assets under
+`~/.finalrun/assets/<version>/` so repository-local `.finalrun/` directories remain dedicated to
+YAML specs, env files, and run artifacts.
+
 ## Quick Start
 
 1. Create a `.finalrun/` workspace in the mobile app repo you want to test.
