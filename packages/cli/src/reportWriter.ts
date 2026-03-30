@@ -640,16 +640,23 @@ export class ReportWriter {
       return undefined;
     }
 
+    const ext = path.extname(recording.filePath) || '.mov';
+    const recordingRelative = path.posix.join('tests', specId, `recording${ext}`);
+    const sourcePath = path.resolve(recording.filePath);
+    const targetPath = path.resolve(path.join(this._runDir, recordingRelative));
+
     try {
-      await fsp.access(recording.filePath);
+      await fsp.access(sourcePath);
     } catch {
       Logger.w(`Recording file not found for report copy: ${recording.filePath}`);
       return undefined;
     }
 
-    const ext = path.extname(recording.filePath) || '.mov';
-    const recordingRelative = path.posix.join('tests', specId, `recording${ext}`);
-    await fsp.copyFile(recording.filePath, path.join(this._runDir, recordingRelative));
+    if (sourcePath === targetPath) {
+      return recordingRelative;
+    }
+
+    await fsp.copyFile(sourcePath, targetPath);
     return recordingRelative;
   }
 }

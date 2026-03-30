@@ -218,6 +218,13 @@ export async function runTests(
       try {
         const goal = effectiveGoals.get(spec.specId) ??
           compileSpecToGoal(spec, checked.environment.bindings);
+        const recordingExtension = goalSession.platform === 'android' ? '.mp4' : '.mov';
+        const recordingOutputPath = path.join(
+          runDir,
+          'tests',
+          spec.specId,
+          `recording${recordingExtension}`,
+        );
         const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
           goal,
           apiKey: options.apiKey,
@@ -229,6 +236,8 @@ export async function runTests(
           recording: {
             testRunId: path.basename(runDir),
             testCaseId: spec.specId,
+            outputFilePath: recordingOutputPath,
+            keepPartialOnFailure: true,
           },
         });
 
