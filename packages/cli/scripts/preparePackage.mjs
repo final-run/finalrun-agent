@@ -59,3 +59,6 @@ const protoSourcePath = resolve(repoRoot, 'proto/finalrun/driver.proto');
 const protoTargetPath = resolve(cliDir, 'proto/finalrun/driver.proto');
 mkdirSync(dirname(protoTargetPath), { recursive: true });
 cpSync(protoSourcePath, protoTargetPath);
+
+cpSync(resolve(repoRoot, 'README.md'), resolve(cliDir, 'README.md'));
+cpSync(resolve(repoRoot, 'LICENSE'), resolve(cliDir, 'LICENSE'));

@@ -1,8 +1,8 @@
 {
-  "name": "finalrun-ts",
+  "name": "finalrun-agent-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "AI-driven mobile app testing CLI — TypeScript monorepo",
+  "description": "Monorepo for the finalrun-agent CLI",
   "workspaces": [
     "packages/common",
     "packages/device-node",
@@ -19,11 +19,22 @@
     "dev:cli": "npm run dev --workspace=packages/cli --",
     "dev:report": "npm run dev --workspace=packages/report-web --",
     "dev:watch": "tsc --build --watch --preserveWatchOutput packages/common/tsconfig.json packages/device-node/tsconfig.json packages/goal-executor/tsconfig.json packages/cli/tsconfig.json",
+    "lint": "eslint packages/*/src packages/cli/bin packages/cli/scripts finalruntestspec/src finalruntestspec/test finalruntestspec/bin eslint.config.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "npm run build && npm run test:workspaces",
     "test:workspaces": "npm run test --workspaces --if-present",
     "generate:proto": "npm run generate:proto --workspace=packages/device-node"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
+    "typescript-eslint": "^8.57.2"
   }
 }

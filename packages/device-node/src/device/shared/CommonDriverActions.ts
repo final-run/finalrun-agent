@@ -147,7 +147,9 @@ export class CommonDriverActions {
       ),
       permissions: action.permissions,
     });
-    return this._toResponse(response);
+    return this._toResponse(response, {
+      packageName: action.appUpload.packageName,
+    });
   }
 
   async killApp(packageName: string): Promise<DeviceNodeResponse> {

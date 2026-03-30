@@ -44,6 +44,16 @@ finalruntestspec/frtestspec/changes/*
 !finalruntestspec/frtestspec/changes/.keep
 finalruntestspec/.codex/skills/frtestspec-*/
 
+# Internal assistant and design artifacts
+.agent/
+.agents/
+.claude/
+.cline/
+.clinerules/
+.codex/
+.opencode/
+openspec/
+
 # OS/editor noise
 .DS_Store
 .idea/
