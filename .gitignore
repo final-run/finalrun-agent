@@ -36,14 +36,6 @@ pnpm-debug.log*
 # FinalRun run artifacts
 .finalrun/artifacts/
 
-# finalruntestspec local artifacts
-finalruntestspec/dist/
-finalruntestspec/.finalrun/
-finalruntestspec/frtestspec/config.yaml
-finalruntestspec/frtestspec/changes/*
-!finalruntestspec/frtestspec/changes/.keep
-finalruntestspec/.codex/skills/frtestspec-*/
-
 # OS/editor noise
 .DS_Store
 .idea/
