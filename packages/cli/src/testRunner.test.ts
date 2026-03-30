@@ -502,6 +502,58 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
   }
 });
 
+test('ReportWriter reuses artifact-local recording files without duplicating the copy step', async () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-artifact-recording-'));
+  const writer = new ReportWriter({
+    runDir,
+    envName: 'none',
+    platform: 'android',
+    runId: '2026-03-24T08-10-11.000Z-none-android',
+    bindings: {
+      secrets: {},
+      variables: {},
+    },
+  });
+  const spec: LoadedRepoTestSpec = {
+    name: 'login',
+    description: 'Verify login.',
+    preconditions: [],
+    setup: [],
+    steps: ['Open login.'],
+    assertions: ['The dashboard is visible.'],
+    sourcePath: path.join(runDir, 'workspace', '.finalrun', 'tests', 'login.yaml'),
+    relativePath: 'login.yaml',
+    specId: 'login',
+  };
+  const recordingPath = path.join(runDir, 'tests', 'login', 'recording.mp4');
+
+  try {
+    await writer.init();
+    await fsp.mkdir(path.dirname(recordingPath), { recursive: true });
+    await fsp.writeFile(recordingPath, 'artifact-native-recording', 'utf-8');
+
+    const specRecord = await writer.writeSpecRecord(
+      spec,
+      createGoalResult({
+        recording: {
+          filePath: recordingPath,
+          startedAt: '2026-03-17T18:00:00.000Z',
+          completedAt: '2026-03-17T18:00:01.000Z',
+        },
+      }),
+      {
+        secrets: {},
+        variables: {},
+      },
+    );
+
+    assert.equal(specRecord.recordingFile, 'tests/login/recording.mp4');
+    assert.equal(await fsp.readFile(recordingPath, 'utf-8'), 'artifact-native-recording');
+  } finally {
+    await fsp.rm(runDir, { recursive: true, force: true });
+  }
+});
+
 test('runTests finalizes top-level artifacts when shared-session execution throws before a spec completes', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-runner-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -687,6 +739,8 @@ test('runTests prepares one shared session for multiple specs and cleans it up o
   let prepareCalls = 0;
   let cleanupCalls = 0;
   const executedCases: string[] = [];
+  const recordingOutputPaths: string[] = [];
+  const keepPartialFlags: boolean[] = [];
 
   testRunnerDependencies.prepareGoalSession = async () => {
     prepareCalls += 1;
@@ -699,6 +753,8 @@ test('runTests prepares one shared session for multiple specs and cleans it up o
   testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
     if (config.recording) {
       executedCases.push(config.recording.testCaseId);
+      recordingOutputPaths.push(config.recording.outputFilePath ?? '');
+      keepPartialFlags.push(config.recording.keepPartialOnFailure ?? false);
     }
     return createGoalResult();
   };
@@ -718,6 +774,71 @@ test('runTests prepares one shared session for multiple specs and cleans it up o
     assert.equal(prepareCalls, 1);
     assert.equal(cleanupCalls, 1);
     assert.deepEqual(executedCases, ['login', 'search']);
+    assert.deepEqual(recordingOutputPaths, [
+      path.join(result.runDir, 'tests', 'login', 'recording.mp4'),
+      path.join(result.runDir, 'tests', 'search', 'recording.mp4'),
+    ]);
+    assert.deepEqual(keepPartialFlags, [true, true]);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests uses mov artifact recording output paths for iOS specs', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-ios-recording-output-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  const recordingConfigs: Array<{
+    testCaseId: string;
+    outputFilePath?: string;
+    keepPartialOnFailure?: boolean;
+  }> = [];
+
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({ platform: 'ios' });
+  testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
+    if (config.recording) {
+      recordingConfigs.push({
+        testCaseId: config.recording.testCaseId,
+        outputFilePath: config.recording.outputFilePath,
+        keepPartialOnFailure: config.recording.keepPartialOnFailure,
+      });
+    }
+    return createGoalResult({ platform: 'ios' });
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      platform: 'ios',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(recordingConfigs, [
+      {
+        testCaseId: 'login',
+        outputFilePath: path.join(result.runDir, 'tests', 'login', 'recording.mov'),
+        keepPartialOnFailure: true,
+      },
+    ]);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;

@@ -95,15 +95,22 @@ export class RecordingManager implements DeviceRecordingController {
       });
     }
 
-    const recordingDir = path.resolve(this._cwdProvider(), provider.recordingFolder);
+    const explicitOutputPath = params.recordingRequest.outputFilePath
+      ? path.resolve(params.recordingRequest.outputFilePath)
+      : undefined;
+    const recordingDir = explicitOutputPath
+      ? path.dirname(explicitOutputPath)
+      : path.resolve(this._cwdProvider(), provider.recordingFolder);
     await fsp.mkdir(recordingDir, { recursive: true });
 
     const sanitizedTestRunId = this._sanitizeForFilename(params.recordingRequest.testRunId);
     const sanitizedTestCaseId = this._sanitizeForFilename(
       params.recordingRequest.testCaseId,
     );
-    const fileName = `${sanitizedTestRunId}_${sanitizedTestCaseId}.${provider.fileExtension}`;
-    const filePath = path.join(recordingDir, fileName);
+    const fallbackFileName =
+      `${sanitizedTestRunId}_${sanitizedTestCaseId}.${provider.fileExtension}`;
+    const filePath = explicitOutputPath ?? path.join(recordingDir, fallbackFileName);
+    const fileName = path.basename(filePath);
 
     const recordingInfo = new RecordingInfo({
       deviceId: params.deviceId,
@@ -210,14 +217,13 @@ export class RecordingManager implements DeviceRecordingController {
       filePath: recordingInfo.filePath,
     });
     if (!stopResult.success) {
+      if (await this._shouldPreserveFailedStopOutput(process, recordingInfo, options)) {
+        this._finalizeStoppedRecording(mapKey, recordingInfo);
+      }
       return stopResult;
     }
 
-    this._recordingProcessMap.delete(mapKey);
-    this._stoppedTestCases.add(mapKey);
-    this._removeDeviceRecordingKey(recordingInfo.deviceId, mapKey);
-    recordingInfo.markAsEnded();
-    this._recordingInfoMap.delete(mapKey);
+    this._finalizeStoppedRecording(mapKey, recordingInfo);
 
     if (options.keepOutput === false) {
       try {
@@ -291,6 +297,31 @@ export class RecordingManager implements DeviceRecordingController {
       .replaceAll(/[/\\:*?"<>|]/g, '_')
       .replaceAll(/\s+/g, '_')
       .replaceAll(/_+/g, '_');
+  }
+
+  private _finalizeStoppedRecording(mapKey: string, recordingInfo: RecordingInfo): void {
+    this._recordingProcessMap.delete(mapKey);
+    this._stoppedTestCases.add(mapKey);
+    this._removeDeviceRecordingKey(recordingInfo.deviceId, mapKey);
+    recordingInfo.markAsEnded();
+    this._recordingInfoMap.delete(mapKey);
+  }
+
+  private async _shouldPreserveFailedStopOutput(
+    process: ChildProcess,
+    recordingInfo: RecordingInfo,
+    options: RecordingStopOptions,
+  ): Promise<boolean> {
+    if (options.keepOutput === false || process.exitCode === null) {
+      return false;
+    }
+
+    try {
+      await fsp.access(recordingInfo.filePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private _removeDeviceRecordingKey(deviceId: string, mapKey: string): void {

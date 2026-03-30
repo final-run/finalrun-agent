@@ -62,6 +62,8 @@ export interface GoalRunnerConfig {
   recording?: {
     testRunId: string;
     testCaseId: string;
+    outputFilePath?: string;
+    keepPartialOnFailure?: boolean;
   };
 }
 
@@ -269,6 +271,7 @@ export async function executeGoalOnSession(
         testRunId: string;
         testCaseId: string;
         startedAt: string;
+        keepPartialOnFailure: boolean;
       }
     | undefined;
 
@@ -304,6 +307,7 @@ export async function executeGoalOnSession(
           testRunId: config.recording.testRunId,
           testCaseId: config.recording.testCaseId,
           apiKey: config.apiKey,
+          outputFilePath: config.recording.outputFilePath,
         }),
       );
 
@@ -315,6 +319,7 @@ export async function executeGoalOnSession(
             typeof recordingResponse.data?.['startedAt'] === 'string'
               ? (recordingResponse.data['startedAt'] as string)
               : new Date().toISOString(),
+          keepPartialOnFailure: config.recording.keepPartialOnFailure ?? false,
         };
         Logger.i(
           `Recording started for spec ${config.recording.testCaseId} at ${activeRecording.startedAt}`,
@@ -374,6 +379,14 @@ export async function executeGoalOnSession(
         const message =
           `Unable to stop recording for spec ${activeRecording.testCaseId}: ` +
           `${stopResponse.message ?? 'unknown recording error'}`;
+        try {
+          await session.device.abortRecording(
+            activeRecording.testRunId,
+            activeRecording.keepPartialOnFailure,
+          );
+        } catch (error) {
+          Logger.w('Failed to finalize recording after stop failure:', error);
+        }
         if (recordingRequired) {
           Logger.e(message);
           result = markGoalResultFailed(
@@ -398,7 +411,10 @@ export async function executeGoalOnSession(
     }
     if (activeRecording) {
       try {
-        await session.device.abortRecording(activeRecording.testRunId, false);
+        await session.device.abortRecording(
+          activeRecording.testRunId,
+          activeRecording.keepPartialOnFailure,
+        );
       } catch (error) {
         Logger.w('Failed to abort active recording during cleanup:', error);
       }

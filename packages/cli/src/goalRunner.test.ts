@@ -94,6 +94,7 @@ function createStartableIOSEntry(): DeviceInventoryEntry {
 function createDependencies(params: {
   startRecording?: (request: RecordingRequest) => Promise<DeviceNodeResponse>;
   stopRecording?: (testRunId: string, testCaseId: string) => Promise<DeviceNodeResponse>;
+  abortRecording?: (testRunId: string, keepOutput?: boolean) => Promise<void>;
   executeGoal?: () => Promise<GoalResult>;
   devices?: DeviceInfo[];
   inventoryReports?: DeviceInventoryReport[];
@@ -144,7 +145,9 @@ function createDependencies(params: {
             },
           })))(testRunId, testCaseId);
     },
-    async abortRecording() {},
+    async abortRecording(testRunId: string, keepOutput?: boolean) {
+      await (params.abortRecording ?? (async () => {}))(testRunId, keepOutput);
+    },
   };
 
   const deviceNode = {
@@ -266,7 +269,68 @@ test('runGoal starts and stops Android recording when recording is configured', 
   assert.equal(recordingRequests.length, 1);
   assert.equal(recordingRequests[0]?.testRunId, 'run-1');
   assert.equal(recordingRequests[0]?.testCaseId, 'case-1');
+  assert.equal(recordingRequests[0]?.outputFilePath, undefined);
   assert.equal(result.recording?.filePath, '/tmp/run_case.mp4');
+});
+
+test('executeGoalOnSession forwards explicit recording output paths and preserves partials when execution aborts', async () => {
+  const recordingRequests: RecordingRequest[] = [];
+  const abortCalls: Array<[string, boolean | undefined]> = [];
+  const dependencies = createDependencies({
+    async startRecording(request) {
+      recordingRequests.push(request);
+      return new DeviceNodeResponse({
+        success: true,
+        data: {
+          startedAt: '2026-03-20T10:00:00.000Z',
+        },
+      });
+    },
+    async abortRecording(testRunId, keepOutput) {
+      abortCalls.push([testRunId, keepOutput]);
+    },
+    async executeGoal() {
+      throw new Error('executor crashed');
+    },
+  });
+
+  const session = await prepareGoalSession(
+    {
+      platform: PLATFORM_ANDROID,
+    },
+    dependencies,
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        executeGoalOnSession(
+          session,
+          {
+            goal: 'Spec 1',
+            apiKey: 'test-key',
+            provider: 'openai',
+            modelName: 'gpt-4.1',
+            recording: {
+              testRunId: 'run-1',
+              testCaseId: 'case-1',
+              outputFilePath: '/tmp/finalrun-artifacts/run-1/tests/case-1/recording.mp4',
+              keepPartialOnFailure: true,
+            },
+          },
+          dependencies,
+        ),
+      /executor crashed/,
+    );
+
+    assert.equal(
+      recordingRequests[0]?.outputFilePath,
+      '/tmp/finalrun-artifacts/run-1/tests/case-1/recording.mp4',
+    );
+    assert.deepEqual(abortCalls, [['run-1', true]]);
+  } finally {
+    await session.cleanup();
+  }
 });
 
 test('prepareGoalSession installs the Android app override once during shared setup', async () => {
@@ -616,6 +680,7 @@ test('runGoal fails before execution if required Android recording cannot start'
 });
 
 test('runGoal marks the Android spec as failed if recording stops without a video file', async () => {
+  const abortCalls: Array<[string, boolean | undefined]> = [];
   const dependencies = createDependencies({
     async startRecording() {
       return new DeviceNodeResponse({
@@ -630,6 +695,9 @@ test('runGoal marks the Android spec as failed if recording stops without a vide
         success: false,
         message: 'scrcpy process exited before file creation',
       });
+    },
+    async abortRecording(testRunId, keepOutput) {
+      abortCalls.push([testRunId, keepOutput]);
     },
   });
 
@@ -650,4 +718,5 @@ test('runGoal marks the Android spec as failed if recording stops without a vide
 
   assert.equal(result.success, false);
   assert.match(result.message, /Recording is required for Android runs/);
+  assert.deepEqual(abortCalls, [['run-1', false]]);
 });
