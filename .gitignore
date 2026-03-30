@@ -45,7 +45,6 @@ pnpm-debug.log*
 .codex/
 .opencode/
 openspec/
-
 # OS/editor noise
 .DS_Store
 .idea/
