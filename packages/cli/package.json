@@ -43,7 +43,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist proto",
+    "clean": "rm -rf dist proto tsconfig.tsbuildinfo",
     "start": "tsx bin/finalrun.ts",
     "dev": "tsx --tsconfig ../../tsconfig.dev.json bin/finalrun.ts",
     "test": "node --test \"dist/**/*.test.js\"",
