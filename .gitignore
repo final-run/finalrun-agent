@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+packages/*/node_modules/
+
+# TypeScript build output
+packages/*/dist/
+packages/report-web/.next/
+packages/cli/proto/
+*.tsbuildinfo
+packages/*/*.tsbuildinfo
+drivers/android/.gradle/
+drivers/android/.kotlin/
+drivers/android/app/build/
+drivers/android/build/
+drivers/android/local.properties
+drivers/ios/.derived-data/
+drivers/ios/finalrun-ios.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/configuration/
+resources/ios/Debug-iphonesimulator/
+
+# Test and coverage artifacts
+coverage/
+packages/*/coverage/
+
+# npm pack artifacts
+/finalrun-agent-*.tgz
+
+# Local environment files
+.env
+.env.*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# FinalRun run artifacts
+.finalrun/artifacts/
+
+# Internal assistant and design artifacts
+.agent/
+.agents/
+.claude/
+.cline/
+.clinerules/
+.codex/
+.opencode/
+openspec/
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/

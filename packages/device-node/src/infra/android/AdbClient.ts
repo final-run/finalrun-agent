@@ -1,0 +1,918 @@
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import {
+  DEFAULT_GRPC_PORT_START,
+  Logger,
+  type SingleArgument,
+} from '@finalrun/common';
+
+const execFileAsync = promisify(execFile);
+
+type ExecFileFn = (
+  file: string,
+  args: readonly string[],
+) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
+
+export interface AndroidSwipeParams {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  durationMs: number;
+}
+
+export interface AndroidCommandResult {
+  success: boolean;
+  message?: string;
+  stdout?: string;
+  stderr?: string;
+  data?: Record<string, unknown>;
+}
+
+export const ANDROID_DRIVER_APP_PACKAGE_NAME = 'app.finalrun.android';
+export const ANDROID_DRIVER_TEST_PACKAGE_NAME = 'app.finalrun.android.test';
+
+const ANDROID_KEY_CODES: Record<string, string> = {
+  enter: 'KEYCODE_ENTER',
+  return: 'KEYCODE_ENTER',
+  backspace: 'KEYCODE_DEL',
+  delete: 'KEYCODE_DEL',
+  back: 'KEYCODE_BACK',
+  home: 'KEYCODE_HOME',
+  lock: 'KEYCODE_LOCK',
+  power: 'KEYCODE_POWER',
+  volume_up: 'KEYCODE_VOLUME_UP',
+  volumeup: 'KEYCODE_VOLUME_UP',
+  volume_down: 'KEYCODE_VOLUME_DOWN',
+  volumedown: 'KEYCODE_VOLUME_DOWN',
+  escape: 'KEYCODE_ESCAPE',
+  esc: 'KEYCODE_ESCAPE',
+  tab: 'KEYCODE_TAB',
+  up: 'KEYCODE_DPAD_UP',
+  down: 'KEYCODE_DPAD_DOWN',
+  left: 'KEYCODE_DPAD_LEFT',
+  right: 'KEYCODE_DPAD_RIGHT',
+  center: 'KEYCODE_DPAD_CENTER',
+  play_pause: 'KEYCODE_MEDIA_PLAY_PAUSE',
+  stop: 'KEYCODE_MEDIA_STOP',
+  next: 'KEYCODE_MEDIA_NEXT',
+  previous: 'KEYCODE_MEDIA_PREVIOUS',
+  rewind: 'KEYCODE_MEDIA_REWIND',
+  fast_forward: 'KEYCODE_MEDIA_FAST_FORWARD',
+  menu: 'KEYCODE_MENU',
+};
+
+const ANDROID_PERMISSION_TRANSLATIONS: Record<string, string[]> = {
+  location: [
+    'android.permission.ACCESS_FINE_LOCATION',
+    'android.permission.ACCESS_COARSE_LOCATION',
+    'android.permission.ACCESS_BACKGROUND_LOCATION',
+  ],
+  camera: ['android.permission.CAMERA'],
+  contacts: [
+    'android.permission.READ_CONTACTS',
+    'android.permission.WRITE_CONTACTS',
+  ],
+  phone: [
+    'android.permission.CALL_PHONE',
+    'android.permission.ANSWER_PHONE_CALLS',
+  ],
+  microphone: ['android.permission.RECORD_AUDIO'],
+  bluetooth: [
+    'android.permission.BLUETOOTH_CONNECT',
+    'android.permission.BLUETOOTH_SCAN',
+  ],
+  storage: [
+    'android.permission.WRITE_EXTERNAL_STORAGE',
+    'android.permission.READ_EXTERNAL_STORAGE',
+  ],
+  notifications: ['android.permission.POST_NOTIFICATIONS'],
+  medialibrary: [
+    'android.permission.WRITE_EXTERNAL_STORAGE',
+    'android.permission.READ_EXTERNAL_STORAGE',
+    'android.permission.READ_MEDIA_AUDIO',
+    'android.permission.READ_MEDIA_IMAGES',
+    'android.permission.READ_MEDIA_VIDEO',
+  ],
+  calendar: [
+    'android.permission.WRITE_CALENDAR',
+    'android.permission.READ_CALENDAR',
+  ],
+  sms: [
+    'android.permission.READ_SMS',
+    'android.permission.RECEIVE_SMS',
+    'android.permission.SEND_SMS',
+  ],
+  overlay: ['SYSTEM_ALERT_WINDOW'],
+};
+
+export class AdbClient {
+  private _nextPort: number = DEFAULT_GRPC_PORT_START;
+  private _portMap: Map<string, number> = new Map();
+  private _execFileFn: ExecFileFn;
+
+  constructor(params?: { execFileFn?: ExecFileFn }) {
+    this._execFileFn = params?.execFileFn ?? execFileAsync;
+  }
+
+  async forwardPort(
+    adbPath: string,
+    deviceSerial: string,
+    devicePort: number,
+  ): Promise<number> {
+    const localPort = this._allocatePort(deviceSerial);
+
+    await this._execFileFn(adbPath, [
+      '-s',
+      deviceSerial,
+      'forward',
+      `tcp:${localPort}`,
+      `tcp:${devicePort}`,
+    ]);
+
+    Logger.d(`Port forwarded: localhost:${localPort} -> ${deviceSerial}:${devicePort}`);
+    return localPort;
+  }
+
+  async removePortForward(adbPath: string, deviceSerial: string): Promise<void> {
+    const port = this._portMap.get(deviceSerial);
+    if (port === undefined) {
+      return;
+    }
+
+    try {
+      await this._execFileFn(adbPath, [
+        '-s',
+        deviceSerial,
+        'forward',
+        '--remove',
+        `tcp:${port}`,
+      ]);
+    } catch {
+      // Ignore best-effort cleanup failures.
+    }
+
+    this._portMap.delete(deviceSerial);
+  }
+
+  getForwardedPort(deviceSerial: string): number | undefined {
+    return this._portMap.get(deviceSerial);
+  }
+
+  async installApp(
+    adbPath: string,
+    deviceSerial: string,
+    apkPath: string,
+  ): Promise<boolean> {
+    const result = await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'install', '-r', '-g', apkPath],
+      `Failed to install APK on ${deviceSerial}`,
+    );
+    if (result.success) {
+      Logger.i(`Installed APK on ${deviceSerial}: ${apkPath}`);
+    }
+    return result.success;
+  }
+
+  async uninstallApp(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+  ): Promise<void> {
+    await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'uninstall', packageName],
+      `Failed to uninstall ${packageName} on ${deviceSerial}`,
+      { suppressErrorLog: true },
+    );
+  }
+
+  async openDeepLink(
+    adbPath: string,
+    deviceSerial: string,
+    deeplink: string,
+  ): Promise<boolean> {
+    const result = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'am',
+        'start',
+        '-W',
+        '-a',
+        'android.intent.action.VIEW',
+        '-d',
+        deeplink,
+      ],
+      `Failed to open Android deeplink on ${deviceSerial}`,
+    );
+    if (result.success) {
+      Logger.i(`Opened Android deeplink on ${deviceSerial}: ${deeplink}`);
+    }
+    return result.success;
+  }
+
+  async swipe(
+    adbPath: string,
+    deviceSerial: string,
+    params: AndroidSwipeParams,
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'input',
+        'swipe',
+        String(params.startX),
+        String(params.startY),
+        String(params.endX),
+        String(params.endY),
+        String(params.durationMs),
+      ],
+      `Android swipe failed on ${deviceSerial}`,
+    );
+  }
+
+  async runCommand(
+    adbPath: string,
+    deviceSerial: string,
+    command: string,
+  ): Promise<AndroidCommandResult> {
+    const parts = command.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) {
+      return {
+        success: false,
+        message: 'Android command failed: command was empty',
+      };
+    }
+
+    return await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, ...parts],
+      `Android command failed on ${deviceSerial}`,
+    );
+  }
+
+  async isKeyboardOpen(
+    adbPath: string,
+    deviceSerial: string,
+  ): Promise<AndroidCommandResult> {
+    const result = await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'shell', 'dumpsys', 'input_method'],
+      `Failed to inspect keyboard state on ${deviceSerial}`,
+    );
+    if (!result.success) {
+      return result;
+    }
+
+    const visible = (result.stdout ?? '').includes('mInputShown=true');
+    return {
+      success: visible,
+      message: visible ? 'Keyboard is visible' : 'Keyboard is hidden',
+      stdout: result.stdout,
+      stderr: result.stderr,
+      data: { visible },
+    };
+  }
+
+  async hideKeyboard(
+    adbPath: string,
+    deviceSerial: string,
+  ): Promise<AndroidCommandResult> {
+    const keyboardState = await this.isKeyboardOpen(adbPath, deviceSerial);
+    if (keyboardState.data?.['visible'] !== true) {
+      return {
+        success: true,
+        message: 'Keyboard is already hidden',
+      };
+    }
+
+    return await this.performKeyPress(adbPath, deviceSerial, 'back');
+  }
+
+  async clearAppData(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'shell', 'pm', 'clear', packageName],
+      `Failed to clear app data for ${packageName} on ${deviceSerial}`,
+    );
+  }
+
+  async forceStop(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+    options?: { suppressErrorLog?: boolean },
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'shell', 'am', 'force-stop', packageName],
+      `Failed to force-stop ${packageName} on ${deviceSerial}`,
+      { suppressErrorLog: options?.suppressErrorLog },
+    );
+  }
+
+  async performKeyPress(
+    adbPath: string,
+    deviceSerial: string,
+    key: string,
+  ): Promise<AndroidCommandResult> {
+    const normalizedKey = this._normalizeKeyName(key);
+    const adbKey = ANDROID_KEY_CODES[normalizedKey];
+    if (!adbKey) {
+      return {
+        success: false,
+        message: `Android key is not mapped for adb: ${key}`,
+        data: { handled: false },
+      };
+    }
+
+    const result = await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'shell', 'input', 'keyevent', adbKey],
+      `Failed to press Android key ${key} on ${deviceSerial}`,
+    );
+    return {
+      ...result,
+      data: { handled: true },
+    };
+  }
+
+  async back(adbPath: string, deviceSerial: string): Promise<AndroidCommandResult> {
+    return await this.performKeyPress(adbPath, deviceSerial, 'back');
+  }
+
+  async home(adbPath: string, deviceSerial: string): Promise<AndroidCommandResult> {
+    return await this.performKeyPress(adbPath, deviceSerial, 'home');
+  }
+
+  async rotate(
+    adbPath: string,
+    deviceSerial: string,
+  ): Promise<AndroidCommandResult> {
+    const currentRotation = await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'shell', 'settings', 'get', 'system', 'user_rotation'],
+      `Failed to read Android rotation on ${deviceSerial}`,
+    );
+    if (!currentRotation.success) {
+      return currentRotation;
+    }
+
+    const current = Number.parseInt((currentRotation.stdout ?? '').trim(), 10);
+    const nextRotation = current === 1 || current === 3 ? 0 : 1;
+    const orientation = nextRotation === 0 ? 'portrait' : 'landscape';
+
+    const disableAutoRotate = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'settings',
+        'put',
+        'system',
+        'accelerometer_rotation',
+        '0',
+      ],
+      `Failed to disable Android auto-rotate on ${deviceSerial}`,
+    );
+    if (!disableAutoRotate.success) {
+      return disableAutoRotate;
+    }
+
+    const result = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'settings',
+        'put',
+        'system',
+        'user_rotation',
+        String(nextRotation),
+      ],
+      `Failed to rotate Android device ${deviceSerial}`,
+    );
+    return {
+      ...result,
+      data: {
+        orientation,
+      },
+    };
+  }
+
+  async bringAppToForeground(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'monkey',
+        '-p',
+        packageName,
+        '-c',
+        'android.intent.category.LAUNCHER',
+        '1',
+      ],
+      `Failed to foreground ${packageName} on ${deviceSerial}`,
+    );
+  }
+
+  async launchAppCli(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+    argumentsMap?: Record<string, SingleArgument>,
+  ): Promise<AndroidCommandResult> {
+    const resolveResult = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'cmd',
+        'package',
+        'resolve-activity',
+        '--brief',
+        packageName,
+        '-c',
+        'android.intent.category.LAUNCHER',
+      ],
+      `Failed to resolve Android launcher activity for ${packageName} on ${deviceSerial}`,
+    );
+    if (!resolveResult.success) {
+      return resolveResult;
+    }
+
+    const component = (resolveResult.stdout ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .at(-1);
+
+    if (!component) {
+      return {
+        success: false,
+        message: `Failed to resolve launcher component for ${packageName}`,
+      };
+    }
+
+    const args = [
+      '-s',
+      deviceSerial,
+      'shell',
+      'am',
+      'start',
+      '-W',
+      '-n',
+      component,
+    ];
+
+    for (const [argumentKey, argumentValue] of Object.entries(argumentsMap ?? {})) {
+      args.push('-e', argumentValue.key || argumentKey, argumentValue.value);
+    }
+
+    return await this._runAdb(
+      adbPath,
+      args,
+      `Failed to launch ${packageName} on ${deviceSerial}`,
+    );
+  }
+
+  async listInstalledPackageIds(
+    adbPath: string,
+    deviceSerial: string,
+    options?: { userOnly?: boolean },
+  ): Promise<string[]> {
+    const result = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'pm',
+        'list',
+        'packages',
+        ...(options?.userOnly ? ['-3'] : []),
+      ],
+      `Failed to list Android packages on ${deviceSerial}`,
+    );
+    if (!result.success) {
+      return [];
+    }
+
+    return (result.stdout ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^package:/, ''))
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  async isPackageInstalled(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+  ): Promise<AndroidCommandResult> {
+    const packages = await this.listInstalledPackageIds(adbPath, deviceSerial);
+    const installed = packages.includes(packageName);
+    return {
+      success: installed,
+      message: installed
+        ? `App installed: ${packageName}`
+        : `App not installed: ${packageName}`,
+      data: {
+        packageName,
+        installed,
+      },
+    };
+  }
+
+  async isAirplaneModeOn(
+    adbPath: string,
+    deviceSerial: string,
+  ): Promise<boolean> {
+    const result = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'settings',
+        'get',
+        'global',
+        'airplane_mode_on',
+      ],
+      `Failed to read airplane mode state on ${deviceSerial}`,
+      { suppressErrorLog: true },
+    );
+    return (result.stdout ?? '').trim() === '1';
+  }
+
+  async toggleAirplaneMode(
+    adbPath: string,
+    deviceSerial: string,
+    enabled: boolean,
+    sdkVersion?: string | number | null,
+  ): Promise<AndroidCommandResult> {
+    const parsedApiLevel =
+      typeof sdkVersion === 'number'
+        ? sdkVersion
+        : typeof sdkVersion === 'string'
+          ? Number.parseInt(sdkVersion, 10)
+          : Number.NaN;
+
+    if (Number.isFinite(parsedApiLevel) && parsedApiLevel < 29) {
+      const stateResult = await this._runAdb(
+        adbPath,
+        [
+          '-s',
+          deviceSerial,
+          'shell',
+          'settings',
+          'put',
+          'global',
+          'airplane_mode_on',
+          enabled ? '1' : '0',
+        ],
+        `Failed to set airplane mode state on ${deviceSerial}`,
+      );
+      if (!stateResult.success) {
+        return stateResult;
+      }
+
+      return await this._runAdb(
+        adbPath,
+        [
+          '-s',
+          deviceSerial,
+          'shell',
+          'am',
+          'broadcast',
+          '-a',
+          'android.intent.action.AIRPLANE_MODE',
+          '--ez',
+          'state',
+          enabled ? 'true' : 'false',
+        ],
+        `Failed to broadcast airplane mode change on ${deviceSerial}`,
+      );
+    }
+
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'cmd',
+        'connectivity',
+        'airplane-mode',
+        enabled ? 'enable' : 'disable',
+      ],
+      `Failed to toggle airplane mode on ${deviceSerial}`,
+    );
+  }
+
+  async toggleInternet(
+    adbPath: string,
+    deviceSerial: string,
+    enable: boolean,
+    sdkVersion?: string | number | null,
+  ): Promise<AndroidCommandResult> {
+    if (enable && (await this.isAirplaneModeOn(adbPath, deviceSerial))) {
+      const airplaneResult = await this.toggleAirplaneMode(
+        adbPath,
+        deviceSerial,
+        false,
+        sdkVersion,
+      );
+      if (!airplaneResult.success) {
+        return airplaneResult;
+      }
+    }
+
+    const wifiResult = await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'svc',
+        'wifi',
+        enable ? 'enable' : 'disable',
+      ],
+      `Failed to toggle Wi-Fi on ${deviceSerial}`,
+    );
+    if (!wifiResult.success) {
+      return wifiResult;
+    }
+
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'svc',
+        'data',
+        enable ? 'enable' : 'disable',
+      ],
+      `Failed to toggle mobile data on ${deviceSerial}`,
+    );
+  }
+
+  async allowAllPermissions(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+  ): Promise<AndroidCommandResult> {
+    const permissions = Object.fromEntries(
+      Object.keys(ANDROID_PERMISSION_TRANSLATIONS).map((permission) => [
+        permission,
+        'allow',
+      ]),
+    );
+    return await this.togglePermissions(adbPath, deviceSerial, packageName, permissions);
+  }
+
+  async togglePermissions(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+    permissions: Record<string, string>,
+  ): Promise<AndroidCommandResult> {
+    const errors: string[] = [];
+
+    for (const [permissionName, action] of Object.entries(permissions)) {
+      const translatedPermissions = this._translatePermissionName(permissionName);
+      if (translatedPermissions.length === 0) {
+        errors.push(`Unknown permission: ${permissionName}`);
+        continue;
+      }
+
+      for (const androidPermission of translatedPermissions) {
+        let result: AndroidCommandResult;
+        if (androidPermission === 'SYSTEM_ALERT_WINDOW') {
+          result = await this._toggleSystemAlertWindowPermission(
+            adbPath,
+            deviceSerial,
+            packageName,
+            action,
+          );
+        } else {
+          const adbAction = action === 'allow' ? 'grant' : 'revoke';
+          result = await this._runAdb(
+            adbPath,
+            [
+              '-s',
+              deviceSerial,
+              'shell',
+              'pm',
+              adbAction,
+              packageName,
+              androidPermission,
+            ],
+            `Failed to ${adbAction} ${androidPermission} on ${deviceSerial}`,
+          );
+        }
+
+        if (!result.success) {
+          errors.push(
+            `Failed to update ${androidPermission}: ${result.message ?? 'unknown error'}`,
+          );
+        }
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      message:
+        errors.length === 0
+          ? 'Permissions updated successfully'
+          : errors.join('\n'),
+    };
+  }
+
+  async toggleDisableBatteryOptimization(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+    disableOptimization: boolean,
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'dumpsys',
+        'deviceidle',
+        'whitelist',
+        `${disableOptimization ? '+' : '-'}${packageName}`,
+      ],
+      `Failed to update battery optimization whitelist for ${packageName} on ${deviceSerial}`,
+    );
+  }
+
+  async performMockLocation(
+    adbPath: string,
+    deviceSerial: string,
+    driverPackageName: string = ANDROID_DRIVER_APP_PACKAGE_NAME,
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'appops',
+        'set',
+        driverPackageName,
+        'android:mock_location',
+        'allow',
+      ],
+      `Failed to enable mock location on ${deviceSerial}`,
+    );
+  }
+
+  async performGeoFix(
+    adbPath: string,
+    deviceSerial: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<AndroidCommandResult> {
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'emu',
+        'geo',
+        'fix',
+        String(longitude),
+        String(latitude),
+      ],
+      `Failed to set emulator geo fix on ${deviceSerial}`,
+    );
+  }
+
+  private _allocatePort(deviceSerial: string): number {
+    const existingPort = this._portMap.get(deviceSerial);
+    if (existingPort !== undefined) {
+      return existingPort;
+    }
+
+    const port = this._nextPort++;
+    this._portMap.set(deviceSerial, port);
+    return port;
+  }
+
+  private async _runAdb(
+    adbPath: string,
+    args: readonly string[],
+    failurePrefix: string,
+    options?: { suppressErrorLog?: boolean },
+  ): Promise<AndroidCommandResult> {
+    try {
+      const { stdout, stderr } = await this._execFileFn(adbPath, args);
+      const stdoutText = stdout.toString().trim();
+      const stderrText = stderr.toString().trim();
+      return {
+        success: true,
+        message: stderrText || stdoutText || undefined,
+        stdout: stdoutText,
+        stderr: stderrText,
+      };
+    } catch (error) {
+      const result = this._toFailureResult(failurePrefix, error);
+      if (!options?.suppressErrorLog) {
+        Logger.e(failurePrefix, error);
+      }
+      return result;
+    }
+  }
+
+  private _toFailureResult(
+    failurePrefix: string,
+    error: unknown,
+  ): AndroidCommandResult {
+    const stdout =
+      typeof error === 'object' &&
+      error !== null &&
+      'stdout' in error &&
+      (typeof (error as { stdout?: unknown }).stdout === 'string' ||
+        Buffer.isBuffer((error as { stdout?: unknown }).stdout))
+        ? (error as { stdout?: string | Buffer }).stdout?.toString().trim()
+        : '';
+    const stderr =
+      typeof error === 'object' &&
+      error !== null &&
+      'stderr' in error &&
+      (typeof (error as { stderr?: unknown }).stderr === 'string' ||
+        Buffer.isBuffer((error as { stderr?: unknown }).stderr))
+        ? (error as { stderr?: string | Buffer }).stderr?.toString().trim()
+        : '';
+    const errorMessage = stderr || stdout || (error instanceof Error ? error.message : String(error));
+
+    return {
+      success: false,
+      message: `${failurePrefix}: ${errorMessage}`,
+      stdout,
+      stderr,
+    };
+  }
+
+  private _normalizeKeyName(key: string): string {
+    return key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  }
+
+  private _translatePermissionName(permissionName: string): string[] {
+    if (permissionName.includes('.')) {
+      return [permissionName];
+    }
+
+    return ANDROID_PERMISSION_TRANSLATIONS[permissionName] ?? [];
+  }
+
+  private async _toggleSystemAlertWindowPermission(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+    action: string,
+  ): Promise<AndroidCommandResult> {
+    const mode = action === 'allow' ? 'allow' : action === 'unset' ? 'default' : 'deny';
+    return await this._runAdb(
+      adbPath,
+      [
+        '-s',
+        deviceSerial,
+        'shell',
+        'appops',
+        'set',
+        packageName,
+        'SYSTEM_ALERT_WINDOW',
+        mode,
+      ],
+      `Failed to update overlay permission for ${packageName} on ${deviceSerial}`,
+    );
+  }
+}

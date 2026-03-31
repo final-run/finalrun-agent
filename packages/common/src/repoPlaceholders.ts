@@ -1,0 +1,63 @@
+import type { RuntimeBindings } from './models/RepoEnvironment.js';
+
+const PLACEHOLDER_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
+
+export function resolveRuntimePlaceholders(
+  value: string,
+  bindings: RuntimeBindings,
+): string {
+  return value.replace(
+    PLACEHOLDER_PATTERN,
+    (_match, namespace: string, key: string) => {
+      if (namespace === 'variables') {
+        const variableValue = bindings.variables[key];
+        return variableValue === undefined ? `\${${namespace}.${key}}` : String(variableValue);
+      }
+
+      const secretValue = bindings.secrets[key];
+      return secretValue === undefined ? `\${${namespace}.${key}}` : secretValue;
+    },
+  );
+}
+
+export function containsSecretPlaceholder(value: string): boolean {
+  return /\$\{secrets\.[A-Za-z0-9_-]+\}/.test(value);
+}
+
+export function redactResolvedValue(
+  value: string | undefined,
+  bindings: RuntimeBindings,
+): string | undefined {
+  if (!value) {
+    return value;
+  }
+
+  const replacements = Object.entries(bindings.secrets)
+    .filter(([, secretValue]) => Boolean(secretValue))
+    .sort(([, left], [, right]) => right.length - left.length);
+  if (replacements.length === 0) {
+    return value;
+  }
+
+  const placeholderBySecretValue = new Map<string, string>();
+  for (const [key, secretValue] of replacements) {
+    if (!placeholderBySecretValue.has(secretValue)) {
+      placeholderBySecretValue.set(secretValue, `\${secrets.${key}}`);
+    }
+  }
+
+  const secretPattern = new RegExp(
+    replacements
+      .map(([, secretValue]) => escapeRegExp(secretValue))
+      .join('|'),
+    'g',
+  );
+
+  return value.replace(secretPattern, (match) => {
+    return placeholderBySecretValue.get(match) ?? match;
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

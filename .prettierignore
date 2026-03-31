@@ -1,0 +1,13 @@
+node_modules/
+packages/*/dist/
+packages/report-web/.next/
+coverage/
+drivers/android/.gradle/
+drivers/android/.kotlin/
+drivers/android/app/build/
+drivers/android/build/
+drivers/ios/.derived-data/
+finalruntestspec/dist/
+resources/android/*.apk
+resources/ios/*.zip
+resources/ios/Debug-iphonesimulator/
