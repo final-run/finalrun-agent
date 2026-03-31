@@ -19,6 +19,8 @@ export type { PlannerRequest, PlannerResponse, GrounderRequest, GrounderResponse
 
 export { VisualGrounder } from './ai/VisualGrounder.js';
 export type { VisualGroundingResult } from './ai/VisualGrounder.js';
+export { FatalProviderError } from './ai/providerFailure.js';
+export type { TerminalFailureSignal } from './ai/providerFailure.js';
 
 export { GrounderResponseConverter, ConversionResult } from './GrounderResponseConverter.js';
 export type {

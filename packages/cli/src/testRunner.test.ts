@@ -918,6 +918,117 @@ test('runTests stops the batch after a shared-session failure and cleans up once
   }
 });
 
+test('runTests stops remaining specs after a terminal AI provider failure', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-terminal-provider-failure-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'first.yaml'),
+    ['name: first', 'steps:', '  - Open first flow.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'second.yaml'),
+    ['name: second', 'steps:', '  - Open second flow.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'third.yaml'),
+    ['name: third', 'steps:', '  - Open third flow.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let cleanupCalls = 0;
+  const executedCases: string[] = [];
+  const terminalFailureMessage =
+    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized';
+
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
+      },
+    });
+  testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
+    const testCaseId = config.recording?.testCaseId ?? 'unknown';
+    executedCases.push(testCaseId);
+    if (testCaseId === 'second') {
+      return createGoalResult({
+        success: false,
+        status: 'failure',
+        message: terminalFailureMessage,
+        terminalFailure: {
+          kind: 'provider',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+          statusCode: 401,
+          message: terminalFailureMessage,
+        },
+      });
+    }
+    if (testCaseId === 'third') {
+      throw new Error('Third spec should not execute after a terminal provider failure');
+    }
+    return createGoalResult();
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'failure');
+    assert.deepEqual(executedCases, ['first', 'second']);
+    assert.equal(result.specResults.length, 2);
+    assert.equal(result.specResults[1]?.status, 'failure');
+    assert.match(result.specResults[1]?.message ?? '', /HTTP 401/);
+    assert.equal(cleanupCalls, 1);
+
+    const summary = JSON.parse(
+      await fsp.readFile(path.join(result.runDir, 'summary.json'), 'utf-8'),
+    ) as {
+      status: string;
+      tests: Array<{ status: string }>;
+    };
+    assert.equal(summary.status, 'failure');
+    assert.equal(summary.tests.length, 2);
+    assert.equal(summary.tests[1]?.status, 'failure');
+
+    const manifest = JSON.parse(
+      await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8'),
+    ) as {
+      run: {
+        status: string;
+        firstFailure?: { message?: string };
+      };
+      specs: Array<{ status: string }>;
+    };
+    assert.equal(manifest.run.status, 'failure');
+    assert.equal(manifest.specs.length, 2);
+    assert.equal(manifest.specs[1]?.status, 'failure');
+    assert.match(manifest.run.firstFailure?.message ?? '', /HTTP 401/);
+
+    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
+    assert.match(runnerLog, /Stopping run after terminal AI provider failure/);
+    assert.match(runnerLog, /AI provider error \(openai\/gpt-4o, HTTP 401\): Unauthorized/);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('runTests aborts the batch after SIGINT and marks the active run as aborted', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-abort-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');

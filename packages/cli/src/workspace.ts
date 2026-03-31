@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
+import YAML from 'yaml';
 
 export interface FinalRunWorkspace {
   rootDir: string;
@@ -16,12 +17,19 @@ export interface AppOverrideValidationResult {
   inferredPlatform: string;
 }
 
+export interface WorkspaceConfig {
+  env?: string;
+  model?: string;
+}
+
 export interface ResolvedEnvironmentFile {
   envName: string;
   envPath?: string;
   availableEnvNames: string[];
   usesEmptyBindings: boolean;
 }
+
+const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model']);
 
 export async function resolveWorkspace(
   cwd: string = process.cwd(),
@@ -226,6 +234,45 @@ export async function resolveEnvironmentFile(
   );
 }
 
+export async function loadWorkspaceConfig(finalrunDir: string): Promise<WorkspaceConfig> {
+  const configPath = path.join(finalrunDir, 'config.yaml');
+  if (!(await pathExists(configPath))) {
+    return {};
+  }
+
+  const raw = await fs.readFile(configPath, 'utf-8').catch(() => {
+    throw new Error(`Workspace config file not found: ${configPath}`);
+  });
+
+  const parsed = parseYamlDocument(raw, configPath);
+  if (parsed === undefined || parsed === null) {
+    return {};
+  }
+
+  assertPlainObject(parsed, `Workspace config ${configPath}`);
+  assertAllowedKeys(parsed, WORKSPACE_CONFIG_TOP_LEVEL_KEYS, `Workspace config ${configPath}`);
+
+  return {
+    env: readOptionalTrimmedString(parsed['env'], `${configPath} env`, {
+      allowEmpty: false,
+    }),
+    model: readOptionalTrimmedString(parsed['model'], `${configPath} model`, {
+      allowEmpty: true,
+    }),
+  };
+}
+
+export async function resolveConfiguredEnvironmentFile(
+  workspace: FinalRunWorkspace,
+  requestedEnvName?: string,
+): Promise<ResolvedEnvironmentFile> {
+  const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
+  return resolveEnvironmentFile(
+    workspace.envDir,
+    requestedEnvName ?? workspaceConfig.env,
+  );
+}
+
 async function pathExists(candidatePath: string): Promise<boolean> {
   try {
     await fs.access(candidatePath);
@@ -294,4 +341,53 @@ function resolveWorkspaceScopedPath(
   }
 
   return path.resolve(scopedRootDir, candidatePath);
+}
+
+function parseYamlDocument(raw: string, filePath: string): unknown {
+  const document = YAML.parseDocument(raw);
+  if (document.errors.length > 0) {
+    const firstError = document.errors[0];
+    throw new Error(`Invalid YAML in ${filePath}: ${firstError.message}`);
+  }
+  return document.toJS();
+}
+
+function assertPlainObject(value: unknown, label: string): asserts value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must contain a YAML mapping at the top level.`);
+  }
+}
+
+function assertAllowedKeys(
+  value: Record<string, unknown>,
+  allowedKeys: Set<string>,
+  label: string,
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error(
+        `${label} contains unsupported key "${key}". Supported keys: ${Array.from(allowedKeys).join(', ')}.`,
+      );
+    }
+  }
+}
+
+function readOptionalTrimmedString(
+  value: unknown,
+  label: string,
+  options?: { allowEmpty?: boolean },
+): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a string.`);
+  }
+
+  const normalizedValue = value.trim();
+  if (!options?.allowEmpty && normalizedValue.length === 0) {
+    throw new Error(`${label} must not be empty.`);
+  }
+
+  return normalizedValue;
 }

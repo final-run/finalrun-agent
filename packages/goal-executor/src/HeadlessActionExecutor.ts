@@ -47,6 +47,10 @@ import {
 } from '@finalrun/common';
 import { AIAgent } from './ai/AIAgent.js';
 import { VisualGrounder } from './ai/VisualGrounder.js';
+import {
+  type TerminalFailureSignal,
+  terminalFailureFromError,
+} from './ai/providerFailure.js';
 import { GrounderResponseConverter, ConversionResult } from './GrounderResponseConverter.js';
 import {
   describeLLMTrace,
@@ -85,6 +89,7 @@ export interface ActionOutput {
   success: boolean;
   error?: string;
   trace?: TimingMetadata;
+  terminalFailure?: TerminalFailureSignal;
 }
 
 interface GroundToPointResult {
@@ -185,13 +190,13 @@ export class HeadlessActionExecutor {
           return { success: false, error: `Unknown action: ${input.action}` };
       }
     } catch (error) {
-      if (error instanceof TimedActionPhaseFailure) {
-        return this._failure([], error);
+      const terminalFailure = terminalFailureFromError(error);
+      if (terminalFailure) {
+        Logger.e(terminalFailure.message);
+      } else {
+        Logger.e(`Action ${input.action} failed:`, error);
       }
-
-      const msg = error instanceof Error ? error.message : String(error);
-      Logger.e(`Action ${input.action} failed:`, error);
-      return { success: false, error: msg };
+      return this._failure([], error);
     }
   }
 
@@ -219,6 +224,7 @@ export class HeadlessActionExecutor {
             success: false,
             error: fallbackResult.error ?? 'Visual grounding failed',
             trace: this._buildTrace(spans),
+            terminalFailure: fallbackResult.terminalFailure,
           };
         }
         return this._success(spans);
@@ -292,6 +298,7 @@ export class HeadlessActionExecutor {
             success: false,
             error: fallbackResult.error ?? 'Visual grounding failed',
             trace: this._buildTrace(spans),
+            terminalFailure: fallbackResult.terminalFailure,
           };
         }
         return this._success(spans);
@@ -810,12 +817,32 @@ export class HeadlessActionExecutor {
     }
 
     const startedAt = nowMs();
-    const result = await this._visualGrounder.ground({
-      act: input.reason,
-      screenshot: input.screenshot,
-      platform: this._platform,
-      traceStep: input.traceStep,
-    });
+    let result: Awaited<ReturnType<VisualGrounder['ground']>>;
+    try {
+      result = await this._visualGrounder.ground({
+        act: input.reason,
+        screenshot: input.screenshot,
+        platform: this._platform,
+        traceStep: input.traceStep,
+      });
+    } catch (error) {
+      const message = this._redactRuntimeString(
+        error instanceof Error ? error.message : String(error),
+      );
+      return this._failure(
+        spans,
+        new TimedActionPhaseFailure(
+          message ?? 'Visual grounding failed',
+          {
+            name: 'action.visual_fallback',
+            durationMs: roundDuration(nowMs() - startedAt),
+            status: 'failure',
+            detail: message,
+          },
+          error,
+        ),
+      );
+    }
 
     spans.push(
       this._llmTraceToSpan(
@@ -1078,12 +1105,14 @@ export class HeadlessActionExecutor {
     spans: SpanTiming[],
     error: unknown,
   ): ActionOutput {
+    const terminalFailure = terminalFailureFromError(error);
     if (error instanceof TimedActionPhaseFailure) {
       spans.push(error.span);
       return {
         success: false,
         error: this._redactRuntimeString(error.message) ?? error.message,
         trace: this._buildTrace(spans),
+        terminalFailure,
       };
     }
 
@@ -1093,6 +1122,7 @@ export class HeadlessActionExecutor {
         error instanceof Error ? error.message : String(error),
       ) ?? (error instanceof Error ? error.message : String(error)),
       trace: this._buildTrace(spans),
+      terminalFailure,
     };
   }
 

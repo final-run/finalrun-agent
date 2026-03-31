@@ -341,6 +341,12 @@ export async function runTests(
             reportWriter.appendLogLine(`Run aborted while executing spec ${spec.relativePath}.`);
             break;
           }
+          if (goalResult.terminalFailure) {
+            reportWriter.appendLogLine(
+              `Stopping run after terminal AI provider failure in ${spec.relativePath}: ${goalResult.terminalFailure.message}`,
+            );
+            break;
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           encounteredFailure = true;

@@ -12,6 +12,7 @@ import {
 import type { Agent } from '@finalrun/common';
 import type { AIAgent, PlannerResponse } from './ai/AIAgent.js';
 import { HeadlessGoalExecutor } from './HeadlessGoalExecutor.js';
+import { FatalProviderError } from './ai/providerFailure.js';
 
 function createAgent(
   responses: DeviceNodeResponse[],
@@ -211,6 +212,114 @@ test('HeadlessGoalExecutor aborts immediately on fatal capture/setup failure', a
   assert.equal(result.message, 'gRPC client not connected');
   assert.equal(result.totalIterations, 1);
   assert.equal(result.steps[0]?.action, 'captureDeviceState');
+});
+
+test('HeadlessGoalExecutor fails immediately on terminal planner provider errors', async () => {
+  const agent = createAgent([
+    new DeviceNodeResponse({
+      success: true,
+      data: {
+        screenshot: 'image',
+        hierarchy: '[]',
+        screenWidth: 1080,
+        screenHeight: 2400,
+      },
+    }),
+  ]);
+
+  const aiAgent = createAiAgent(async () => {
+    throw new FatalProviderError({
+      provider: 'openai',
+      modelName: 'gpt-4o',
+      statusCode: 401,
+      detail: 'Unauthorized',
+    });
+  });
+
+  const executor = new HeadlessGoalExecutor({
+    goal: 'Add Hindi',
+    platform: 'android',
+    maxIterations: 3,
+    agent,
+    aiAgent,
+  });
+
+  const result = await executor.executeGoal();
+
+  assert.equal(result.success, false);
+  assert.equal(result.status, 'failure');
+  assert.equal(
+    result.message,
+    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+  );
+  assert.equal(result.terminalFailure?.statusCode, 401);
+  assert.equal(result.totalIterations, 1);
+  assert.equal(result.steps[0]?.action, 'plannerError');
+  assert.equal(
+    result.steps[0]?.errorMessage,
+    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+  );
+});
+
+test('HeadlessGoalExecutor fails immediately on terminal grounder provider errors', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createGoalAgent({
+    captureResponses: [
+      new DeviceNodeResponse({
+        success: true,
+        data: {
+          screenshot: 'image',
+          hierarchy: '[]',
+          screenWidth: 1080,
+          screenHeight: 2400,
+        },
+      }),
+    ],
+    executedActions,
+  });
+
+  const aiAgent = {
+    async plan() {
+      return {
+        act: PLANNER_ACTION_TAP,
+        reason: 'Tap the language option.',
+        remember: [],
+      };
+    },
+    async ground() {
+      throw new FatalProviderError({
+        provider: 'anthropic',
+        modelName: 'claude-3-7-sonnet',
+        statusCode: 400,
+        detail: 'Bad Request',
+      });
+    },
+  } as unknown as AIAgent;
+
+  const executor = new HeadlessGoalExecutor({
+    goal: 'Add Hindi',
+    platform: 'android',
+    maxIterations: 3,
+    agent,
+    aiAgent,
+  });
+
+  const result = await executor.executeGoal();
+
+  assert.equal(result.success, false);
+  assert.equal(result.status, 'failure');
+  assert.equal(
+    result.message,
+    'AI provider error (anthropic/claude-3-7-sonnet, HTTP 400): Bad Request',
+  );
+  assert.equal(result.terminalFailure?.statusCode, 400);
+  assert.equal(result.totalIterations, 1);
+  assert.equal(result.steps[0]?.action, 'tap');
+  assert.equal(
+    result.steps[0]?.errorMessage,
+    'AI provider error (anthropic/claude-3-7-sonnet, HTTP 400): Bad Request',
+  );
+  assert.equal(executedActions.length, 0);
 });
 
 test('HeadlessGoalExecutor emits debug step trace logs and summary timings', async (t) => {

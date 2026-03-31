@@ -83,6 +83,5 @@ export const PLANNER_ACTION_DEEPLINK = 'deeplink';
 // ============================================================================
 // Environment variable keys
 // ============================================================================
-export const ENV_API_KEY = 'API_KEY';
 export const ENV_BASE_URL = 'BASE_URL';
 export const ENV_DEBUG = 'DEBUG';

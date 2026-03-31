@@ -13,6 +13,7 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
+  configYaml?: string;
   specLines?: string[];
   specs?: Record<string, string>;
   suites?: Record<string, string>;
@@ -28,6 +29,14 @@ function createTempWorkspace(params?: {
   const suites = params?.suites ?? {};
   if ((params?.includeSuitesDir ?? Object.keys(suites).length > 0) === true) {
     fs.mkdirSync(suitesDir, { recursive: true });
+  }
+
+  if (params?.configYaml !== undefined) {
+    fs.writeFileSync(
+      path.join(rootDir, '.finalrun', 'config.yaml'),
+      params.configYaml,
+      'utf-8',
+    );
   }
 
   const specs = params?.specs ?? {
@@ -60,7 +69,7 @@ function createTempWorkspace(params?: {
   return rootDir;
 }
 
-function runCli(args: string[], cwd: string) {
+function runCli(args: string[], cwd: string, envOverrides?: NodeJS.ProcessEnv) {
   const compiledBinPath = path.resolve(__dirname, '../bin/finalrun.js');
   const sourceBinPath = path.resolve(__dirname, '../bin/finalrun.ts');
   const tsxCliPath = path.resolve(__dirname, '../../../node_modules/tsx/dist/cli.mjs');
@@ -72,10 +81,19 @@ function runCli(args: string[], cwd: string) {
       : [tsxCliPath, sourceBinPath, ...args];
   return spawnSync(process.execPath, commandArgs, {
     cwd,
-    env: process.env,
+    env: {
+      ...process.env,
+      ...envOverrides,
+    },
     encoding: 'utf-8',
   });
 }
+
+const EMPTY_PROVIDER_ENV_VARS = {
+  OPENAI_API_KEY: '',
+  GOOGLE_API_KEY: '',
+  ANTHROPIC_API_KEY: '',
+};
 
 function createDoctorDependencies(params: {
   requestedPlatforms?: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS>;
@@ -110,6 +128,59 @@ test('finalrun check works without --env when dev.yaml exists', async () => {
     envFiles: {
       'dev.yaml': ['variables:', '  locale: en-US'].join('\n'),
     },
+  });
+
+  try {
+    const result = runCli(['check'], rootDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /using env dev\./);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun check uses .finalrun/config.yaml env when --env is omitted', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: staging\n',
+    envFiles: {
+      'dev.yaml': ['variables:', '  locale: en-US'].join('\n'),
+      'staging.yaml': ['variables:', '  locale: de-DE'].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['check'], rootDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /using env staging\./);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun check prefers --env over .finalrun/config.yaml env', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: staging\n',
+    envFiles: {
+      'dev.yaml': ['variables:', '  locale: en-US'].join('\n'),
+      'staging.yaml': ['variables:', '  locale: de-DE'].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['check', '--env', 'dev'], rootDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /using env dev\./);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun check ignores config model values', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: bedrock/claude\n',
   });
 
   try {
@@ -355,6 +426,184 @@ test('finalrun test rejects mixing --suite with selectors before API key validat
     const result = runCli(['test', '--suite', 'login_suite.yaml', 'login.yaml'], rootDir);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Pass either --suite <path> or positional test selectors, not both/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test requires --model before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /--model is required\. Use provider\/model, for example google\/gemini-3-flash-preview\. Supported providers: openai, google, anthropic\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test uses .finalrun/config.yaml model when --model is omitted', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /--model is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test validates malformed config models before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: not-a-provider-model\n',
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /Invalid model format: "not-a-provider-model"\. Expected provider\/model with non-empty provider and model name\. Supported providers: openai, google, anthropic\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test validates unsupported config providers before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: bedrock/claude\n',
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /Unsupported AI provider: "bedrock"\. Supported providers: openai, google, anthropic\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test uses .finalrun/config.yaml env when --env is omitted', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['env: staging', 'model: google/gemini-3-flash-preview'].join('\n'),
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prefers explicit --model over .finalrun/config.yaml model', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: bedrock/claude\n',
+  });
+
+  try {
+    const result = runCli(
+      ['test', 'login.yaml', '--model', 'google/gemini-3-flash-preview'],
+      rootDir,
+      EMPTY_PROVIDER_ENV_VARS,
+    );
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Unsupported AI provider: "bedrock"/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prefers explicit --env over .finalrun/config.yaml env', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['env: qa', 'model: google/gemini-3-flash-preview'].join('\n'),
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(
+      ['test', 'login.yaml', '--env', 'prod'],
+      rootDir,
+      EMPTY_PROVIDER_ENV_VARS,
+    );
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Environment "qa" was not found/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test rejects unsupported providers before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml', '--model', 'bedrock/claude'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /Unsupported AI provider: "bedrock"\. Supported providers: openai, google, anthropic\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
     assert.doesNotMatch(result.stderr, /API key is required/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

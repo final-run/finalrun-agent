@@ -21,6 +21,7 @@ import {
 } from '@finalrun/common';
 import type { Agent } from '@finalrun/common';
 import type { AIAgent, GrounderResponse } from './ai/AIAgent.js';
+import { FatalProviderError } from './ai/providerFailure.js';
 import { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
 
 function createAgent(
@@ -413,6 +414,48 @@ test('HeadlessActionExecutor preserves a ground failure when no visual fallback 
   assert.equal(result.trace?.spans[0]?.status, 'failure');
 });
 
+test('HeadlessActionExecutor surfaces terminal provider failures from grounder calls', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions);
+  const aiAgent = createAiAgent(async () => {
+    throw new FatalProviderError({
+      provider: 'openai',
+      modelName: 'gpt-4o',
+      statusCode: 401,
+      detail: 'Unauthorized',
+    });
+  });
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_TAP,
+    reason: 'Tap the account button.',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(
+    result.error,
+    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+  );
+  assert.deepEqual(result.terminalFailure, {
+    kind: 'provider',
+    provider: 'openai',
+    modelName: 'gpt-4o',
+    statusCode: 401,
+    message: 'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+  });
+  assert.equal(executedActions.length, 0);
+  assertTraceNames(result.trace, ['action.ground']);
+  assert.equal(result.trace?.spans[0]?.status, 'failure');
+});
+
 test('HeadlessActionExecutor resolves secret placeholders for text input only at the device boundary', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
@@ -491,4 +534,54 @@ test('HeadlessActionExecutor keeps secret placeholders tokenized in deeplink tra
     result.trace?.spans[0]?.detail,
     'url=wikipedia://login?email=${secrets.email}',
   );
+});
+
+test('HeadlessActionExecutor surfaces terminal provider failures from visual grounding fallback', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions);
+  const aiAgent = createAiAgent(async (request) => {
+    if (request.tracePhase === 'action.visual_fallback') {
+      throw new FatalProviderError({
+        provider: 'google',
+        modelName: 'gemini-2.0-flash',
+        statusCode: 400,
+        detail: 'Bad Request',
+      });
+    }
+
+    return {
+      output: { needsVisualGrounding: true },
+      raw: '{}',
+      trace: {
+        totalMs: 13,
+        promptBuildMs: 2,
+        llmMs: 8,
+        parseMs: 3,
+      },
+    };
+  });
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_TAP,
+    reason: 'Tap the element that needs screenshot-only grounding.',
+    screenshot: 'base64-image',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(
+    result.error,
+    'AI provider error (google/gemini-2.0-flash, HTTP 400): Bad Request',
+  );
+  assert.equal(result.terminalFailure?.statusCode, 400);
+  assert.equal(executedActions.length, 0);
+  assertTraceNames(result.trace, ['action.ground', 'action.visual_fallback']);
+  assert.equal(result.trace?.spans[1]?.status, 'failure');
 });

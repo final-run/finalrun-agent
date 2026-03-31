@@ -50,6 +50,7 @@ import {
   startTracePhase,
   type LLMTrace,
 } from '../trace.js';
+import { classifyFatalProviderError } from './providerFailure.js';
 
 // ============================================================================
 // Types
@@ -355,15 +356,25 @@ export class AIAgent {
       return { type: 'text' as const, text: part.text };
     });
 
-    const result = await generateText({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      maxOutputTokens: 4096,
-      providerOptions,
-    });
+    let result: Awaited<ReturnType<typeof generateText>>;
+    try {
+      result = await generateText({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        maxOutputTokens: 4096,
+        providerOptions,
+      });
+    } catch (error) {
+      throw (
+        classifyFatalProviderError(error, {
+          provider: this._provider,
+          modelName: this._modelName,
+        }) ?? error
+      );
+    }
 
     if (result.reasoningText) {
       Logger.d(
