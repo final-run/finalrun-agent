@@ -49,13 +49,17 @@ export function resolveCliPackageVersion(startDir: string = __dirname): string {
   return packageJson?.version ?? '0.0.0';
 }
 
+export function resolveFinalRunRootDir(): string {
+  return path.join(os.homedir(), '.finalrun');
+}
+
 export function resolveCliCacheRoot(startDir: string = __dirname): string {
   const overrideRoot = process.env['FINALRUN_CACHE_DIR'];
   if (overrideRoot && overrideRoot.trim()) {
     return path.resolve(overrideRoot, resolveCliPackageVersion(startDir));
   }
 
-  return path.join(os.homedir(), '.finalrun', 'assets', resolveCliPackageVersion(startDir));
+  return path.join(resolveFinalRunRootDir(), 'assets', resolveCliPackageVersion(startDir));
 }
 
 export function resolveCliLaunchArgs(

@@ -94,7 +94,7 @@ program
 
 program
   .command('runs')
-  .description('List local FinalRun reports from .finalrun/artifacts')
+  .description('List local FinalRun reports from the workspace-scoped artifact store')
   .option('--json', 'Print the runs index as JSON', false)
   .action(async (options: RunsCommandOptions) => {
     await runCommand(async () => {
@@ -321,12 +321,18 @@ async function runTestCommand(params: {
 
     console.log(`Artifacts written to ${result.runDir}`);
     console.log(`Runs index available at ${result.runIndexPath}`);
-    const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
-    if (activeServer) {
-      const runUrl = buildRunReportUrl(activeServer.url, result.runId);
+    try {
+      const server = await startOrReuseWorkspaceReportServer({
+        workspace,
+        requestedPort: 4173,
+        dev: false,
+      });
+      const runUrl = buildRunReportUrl(server.url, result.runId);
       console.log(`Run report available at ${runUrl}`);
       await openUrlBestEffort(runUrl);
-    } else {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Could not start the local report UI automatically: ${message}`);
       console.log('Start the local report UI with `finalrun start-server`.');
     }
     process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);

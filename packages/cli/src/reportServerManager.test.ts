@@ -23,7 +23,14 @@ function createWorkspace(): FinalRunWorkspace {
   const testsDir = path.join(finalrunDir, 'tests');
   const suitesDir = path.join(finalrunDir, 'suites');
   const envDir = path.join(finalrunDir, 'env');
-  const artifactsDir = path.join(finalrunDir, 'artifacts');
+  const artifactsDir = path.join(
+    rootDir,
+    '.artifacts-home',
+    '.finalrun',
+    'workspaces',
+    'workspace-hash',
+    'artifacts',
+  );
   fs.mkdirSync(testsDir, { recursive: true });
   fs.mkdirSync(suitesDir, { recursive: true });
   fs.mkdirSync(envDir, { recursive: true });

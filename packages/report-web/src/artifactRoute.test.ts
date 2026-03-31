@@ -6,14 +6,27 @@ import path from 'node:path';
 import test from 'node:test';
 import { GET, HEAD } from '../app/artifacts/[...artifactPath]/route';
 
-function createWorkspaceContext() {
+interface TestWorkspaceContext {
+  workspaceRoot: string;
+  artifactsDir: string;
+  storageRoot: string;
+}
+
+function createWorkspaceContext(): TestWorkspaceContext {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-route-'));
-  const artifactsDir = path.join(workspaceRoot, '.finalrun', 'artifacts');
+  const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-route-storage-'));
+  const artifactsDir = path.join(storageRoot, '.finalrun', 'workspaces', 'workspace-hash', 'artifacts');
   fs.mkdirSync(artifactsDir, { recursive: true });
   return {
     workspaceRoot,
+    storageRoot,
     artifactsDir,
   };
+}
+
+async function cleanupWorkspaceContext(context: TestWorkspaceContext): Promise<void> {
+  await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+  await fsp.rm(context.storageRoot, { recursive: true, force: true });
 }
 
 test('artifact GET returns partial content headers for range requests', async () => {
@@ -57,7 +70,7 @@ test('artifact GET returns partial content headers for range requests', async ()
     } else {
       process.env.FINALRUN_REPORT_ARTIFACTS_DIR = previousArtifactsDir;
     }
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });
 
@@ -103,6 +116,6 @@ test('artifact HEAD preserves range headers without sending a response body', as
     } else {
       process.env.FINALRUN_REPORT_ARTIFACTS_DIR = previousArtifactsDir;
     }
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });

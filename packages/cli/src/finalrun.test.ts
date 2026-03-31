@@ -8,6 +8,9 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
 import { runDoctorCommand } from './doctorRunner.js';
+import { resolveWorkspace } from './workspace.js';
+
+const CLI_TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-home-'));
 
 function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
@@ -83,10 +86,25 @@ function runCli(args: string[], cwd: string, envOverrides?: NodeJS.ProcessEnv) {
     cwd,
     env: {
       ...process.env,
+      HOME: CLI_TEST_HOME,
       ...envOverrides,
     },
     encoding: 'utf-8',
   });
+}
+
+async function resolveWorkspaceForHome(cwd: string, homeDir: string) {
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeDir;
+  try {
+    return await resolveWorkspace(cwd);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
 }
 
 const EMPTY_PROVIDER_ENV_VARS = {
@@ -735,7 +753,8 @@ test('finalrun report serve remains available as a compatibility alias', async (
 
 test('finalrun runs --json prints the saved runs index', async () => {
   const rootDir = createTempWorkspace();
-  const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
+  const workspace = await resolveWorkspaceForHome(rootDir, CLI_TEST_HOME);
+  const artifactsDir = workspace.artifactsDir;
   await fsp.mkdir(artifactsDir, { recursive: true });
   await fsp.writeFile(
     path.join(artifactsDir, 'runs.json'),
@@ -784,7 +803,8 @@ test('finalrun runs --json prints the saved runs index', async () => {
 
 test('finalrun runs prints a console summary and suggests starting the local report UI', async () => {
   const rootDir = createTempWorkspace();
-  const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
+  const workspace = await resolveWorkspaceForHome(rootDir, CLI_TEST_HOME);
+  const artifactsDir = workspace.artifactsDir;
   await fsp.mkdir(artifactsDir, { recursive: true });
   await fsp.writeFile(
     path.join(artifactsDir, 'runs.json'),
