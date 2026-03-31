@@ -44,6 +44,7 @@ finalrun doctor
 If `.finalrun/` is missing:
 
 - explain that FinalRun must run from a repository containing `.finalrun/`
+- clarify that only `.finalrun/tests` is always required; `suites/` is only required for suite-based workflows
 - show the expected structure
 - offer a scaffold plan or route the user to `generate-finalrun-test`
 - do not claim that the CLI can bootstrap the workspace automatically
@@ -52,8 +53,8 @@ Expected structure:
 
 ```text
 .finalrun/
-  tests/
-  suites/
+  tests/      # required
+  suites/     # optional unless using `finalrun suite` or `--suite`
   env/        # optional
   config.yaml # optional
 ```
