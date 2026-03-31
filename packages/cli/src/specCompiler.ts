@@ -15,15 +15,6 @@ export function compileSpecToGoal(
     sections.push(`Description: ${interpolateVariables(spec.description, bindings)}`);
   }
 
-  if (spec.preconditions.length > 0) {
-    sections.push(
-      formatBulletSection(
-        'Preconditions',
-        spec.preconditions.map((item) => interpolateVariables(item, bindings)),
-      ),
-    );
-  }
-
   if (spec.setup.length > 0) {
     sections.push(
       formatNumberedSection(

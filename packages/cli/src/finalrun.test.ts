@@ -353,6 +353,26 @@ test('finalrun check fails with actionable binding guidance when .finalrun/env i
   }
 });
 
+test('finalrun check rejects specs with preconditions keys', async () => {
+  const rootDir = createTempWorkspace({
+    specLines: [
+      'name: login',
+      'preconditions:',
+      '  - App is installed.',
+      'steps:',
+      '  - Open the login screen.',
+    ],
+  });
+
+  try {
+    const result = runCli(['check'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /contains unsupported key "preconditions"/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('finalrun check accepts repeated selectors and comma-delimited selectors', async () => {
   const rootDir = createTempWorkspace({
     specs: {

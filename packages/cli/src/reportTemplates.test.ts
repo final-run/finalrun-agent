@@ -251,7 +251,6 @@ function createSuiteRunManifest(): RunManifestRecord {
         },
         authored: {
           name: 'valid login',
-          preconditions: [],
           setup: [],
           steps: ['Tap login'],
           assertions: ['Dashboard is visible'],
