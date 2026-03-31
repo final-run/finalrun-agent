@@ -42,6 +42,7 @@ pnpm-debug.log*
 .agents/
 .claude/
 .cline/
+.cursor/
 .clinerules/
 .codex/
 .opencode/
