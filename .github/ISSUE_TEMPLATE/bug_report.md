@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible problem in finalrun-agent
+about: Report a reproducible problem in the @finalrun/finalrun-agent package
 title: '[Bug]: '
 labels: bug
 assignees: ''

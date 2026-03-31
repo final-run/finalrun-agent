@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Initial public release of the `finalrun-agent` npm package
+- Initial public release of the `@finalrun/finalrun-agent` npm package
 - YAML-defined mobile app test execution for Android and iOS targets
 - CLI commands for `check`, `test`, `doctor`, `runs`, and local report serving
 - Local run artifact generation and report browsing support

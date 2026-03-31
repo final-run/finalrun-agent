@@ -9,7 +9,7 @@ function createPackageRoot(version = '9.9.9') {
   const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-install-assets-'));
   fs.writeFileSync(
     path.join(packageRoot, 'package.json'),
-    JSON.stringify({ name: 'finalrun-agent', version }, null, 2),
+    JSON.stringify({ name: '@finalrun/finalrun-agent', version }, null, 2),
     'utf-8',
   );
   fs.mkdirSync(path.join(packageRoot, 'install-resources', 'android'), { recursive: true });
@@ -87,7 +87,7 @@ test('installBundledAssets no-ops when the packaged install resources are absent
   try {
     fs.writeFileSync(
       path.join(packageRoot, 'package.json'),
-      JSON.stringify({ name: 'finalrun-agent', version: '0.1.0' }, null, 2),
+      JSON.stringify({ name: '@finalrun/finalrun-agent', version: '0.1.0' }, null, 2),
       'utf-8',
     );
 

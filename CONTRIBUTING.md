@@ -10,6 +10,12 @@ cd finalrun-agent
 npm ci
 ```
 
+Published npm package:
+
+```sh
+npm install -g @finalrun/finalrun-agent
+```
+
 Build the workspace packages:
 
 ```sh
