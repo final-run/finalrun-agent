@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an improvement to finalrun-agent
+about: Suggest an improvement to the @finalrun/finalrun-agent package
 title: '[Feature]: '
 labels: enhancement
 assignees: ''

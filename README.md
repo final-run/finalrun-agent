@@ -7,7 +7,7 @@
 Install the npm package globally:
 
 ```sh
-npm install -g finalrun-agent
+npm install -g @finalrun/finalrun-agent
 ```
 
 The package installs the `finalrun` command and also exposes `finalrun-agent` as an alias.
