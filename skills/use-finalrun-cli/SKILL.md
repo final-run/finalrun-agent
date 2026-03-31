@@ -1,6 +1,6 @@
 ---
 name: use-finalrun-cli
-description: Use the published FinalRun CLI to install, configure, validate, run, troubleshoot, and inspect reports for repo-local mobile test workspaces. Trigger this skill for requests involving finalrun, finalrun-agent, check, test, suite, doctor, runs, start-server, or report serve.
+description: Use the published FinalRun CLI to install, configure, validate, run, troubleshoot, and inspect reports for repo-local mobile test workspaces. Trigger this skill for requests involving finalrun, check, test, suite, doctor, runs, start-server, or report serve.
 ---
 
 # FinalRun CLI Guide and Operator
@@ -16,7 +16,6 @@ You help repo users safely use the published `finalrun` CLI inside repositories 
 ## Source of Truth
 
 - Prefer local truth over memory:
-  - the repo `README.md`
   - local CLI help such as `finalrun --help`, `finalrun test --help`, and `finalrun suite --help`
   - the actual workspace files under `.finalrun/`
 - Do not invent unsupported commands such as `finalrun init`.
@@ -95,8 +94,6 @@ Install the published package with:
 npm install -g @finalrun/finalrun-agent
 ```
 
-The package exposes both `finalrun` and `finalrun-agent`.
-
 Command behavior:
 
 - `finalrun check`
@@ -120,6 +117,14 @@ Command behavior:
   - compatibility alias for `finalrun start-server`
 
 Explicit CLI flags override `.finalrun/config.yaml` defaults.
+
+Model guidance:
+
+- Supported providers are `openai`, `google`, and `anthropic`.
+- Use `openai/...` models from the GPT-5 family and above.
+- Use `google/...` models from the Gemini 3 family and above.
+- Use `anthropic/...` models from the Claude Sonnet 4 / Opus 4 families and above.
+- Verify the exact `provider/model` value with `finalrun test --help` before running examples.
 
 ## Troubleshooting Rules
 
@@ -183,6 +188,8 @@ This skill may still explain where the CLI expects those files and how selectors
   - route to `generate-finalrun-test`
 
 ## Copyable Examples
+
+Verify the current `provider/model` value with `finalrun test --help` before using these sample commands.
 
 ```sh
 npm install -g @finalrun/finalrun-agent
