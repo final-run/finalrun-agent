@@ -119,7 +119,7 @@ program
 
 program
   .command('test')
-  .description('Run repo-local FinalRun YAML specs')
+  .description('Run repo-local FinalRun YAML specs from .finalrun/tests')
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
@@ -131,63 +131,34 @@ program
   )
   .option('--debug', 'Enable debug logging', false)
   .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
-  .argument('[selectors...]', 'YAML files, directories, or globs under .finalrun/tests')
+  .argument('[selectors...]', 'Workspace-relative YAML files, directories, or globs under .finalrun/tests')
   .action(async (selectors: string[] | undefined, options: TestCommandOptions) => {
-    await runCommand(async () => {
-      const normalizedSelectors = normalizeSpecSelectors(selectors);
-      if (options.suite && normalizedSelectors.length > 0) {
-        throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
-      }
-      if (normalizedSelectors.length === 0 && !options.suite) {
-        throw new Error(TEST_SELECTION_REQUIRED_ERROR);
-      }
-      const workspace = await resolveWorkspace();
-      await ensureWorkspaceDirectories(workspace);
-      const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
-      const model = parseModel(options.model ?? workspaceConfig.model);
+    await runTestCommand({
+      invokedCommand: 'test',
+      selectors,
+      options,
+    });
+  });
 
-      const debug = options.debug === true;
-      Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
-      const resolvedEnvironment = await resolveConfiguredEnvironmentFile(workspace, options.env);
-
-      const runtimeEnv = new CliEnv();
-      runtimeEnv.load(
-        resolvedEnvironment.usesEmptyBindings
-          ? undefined
-          : resolvedEnvironment.envName,
-      );
-      const apiKey = resolveApiKey({
-        env: runtimeEnv,
-        provider: model.provider,
-        providedApiKey: options.apiKey,
-      });
-
-      const result = await runTests({
-        envName: resolvedEnvironment.usesEmptyBindings
-          ? undefined
-          : resolvedEnvironment.envName,
-        selectors: normalizedSelectors,
-        suitePath: options.suite,
-        platform: options.platform,
-        appPath: options.app,
-        apiKey,
-        provider: model.provider,
-        modelName: model.modelName,
-        maxIterations: parseInt(options.maxIterations, 10) || 50,
-        debug,
-      });
-
-      console.log(`Artifacts written to ${result.runDir}`);
-      console.log(`Runs index available at ${result.runIndexPath}`);
-      const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
-      if (activeServer) {
-        const runUrl = buildRunReportUrl(activeServer.url, result.runId);
-        console.log(`Run report available at ${runUrl}`);
-        await openUrlBestEffort(runUrl);
-      } else {
-        console.log('Start the local report UI with `finalrun start-server`.');
-      }
-      process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
+program
+  .command('suite')
+  .description('Run repo-local FinalRun suite manifests from .finalrun/suites')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--app <path>', 'Optional app override (.apk or .app)')
+  .option('--api-key <key>', 'API key for the LLM provider')
+  .option(
+    '--model <provider/model>',
+    `LLM model in provider/model format (for example ${MODEL_FORMAT_EXAMPLE})`,
+  )
+  .option('--debug', 'Enable debug logging', false)
+  .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
+  .argument('<suitePath>', 'Workspace-relative YAML file under .finalrun/suites')
+  .action(async (suitePath: string, options: TestCommandOptions) => {
+    await runTestCommand({
+      invokedCommand: 'suite',
+      suitePath,
+      options,
     });
   });
 
@@ -294,6 +265,72 @@ interface InternalReportServerOptions {
   artifactsDir: string;
   port: string;
   mode: string;
+}
+
+async function runTestCommand(params: {
+  invokedCommand: 'test' | 'suite';
+  selectors?: string[];
+  suitePath?: string;
+  options: TestCommandOptions;
+}): Promise<void> {
+  await runCommand(async () => {
+    const normalizedSelectors = normalizeSpecSelectors(params.selectors);
+    const normalizedSuitePath = params.suitePath?.trim() || params.options.suite;
+    if (normalizedSuitePath && normalizedSelectors.length > 0) {
+      throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
+    }
+    if (normalizedSelectors.length === 0 && !normalizedSuitePath) {
+      throw new Error(TEST_SELECTION_REQUIRED_ERROR);
+    }
+    const workspace = await resolveWorkspace();
+    await ensureWorkspaceDirectories(workspace);
+    const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
+    const model = parseModel(params.options.model ?? workspaceConfig.model);
+
+    const debug = params.options.debug === true;
+    Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
+    const resolvedEnvironment = await resolveConfiguredEnvironmentFile(workspace, params.options.env);
+
+    const runtimeEnv = new CliEnv();
+    runtimeEnv.load(
+      resolvedEnvironment.usesEmptyBindings
+        ? undefined
+        : resolvedEnvironment.envName,
+    );
+    const apiKey = resolveApiKey({
+      env: runtimeEnv,
+      provider: model.provider,
+      providedApiKey: params.options.apiKey,
+    });
+
+    const result = await runTests({
+      envName: resolvedEnvironment.usesEmptyBindings
+        ? undefined
+        : resolvedEnvironment.envName,
+      selectors: normalizedSelectors,
+      suitePath: normalizedSuitePath,
+      platform: params.options.platform,
+      appPath: params.options.app,
+      apiKey,
+      provider: model.provider,
+      modelName: model.modelName,
+      maxIterations: parseInt(params.options.maxIterations, 10) || 50,
+      debug,
+      invokedCommand: params.invokedCommand,
+    });
+
+    console.log(`Artifacts written to ${result.runDir}`);
+    console.log(`Runs index available at ${result.runIndexPath}`);
+    const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
+    if (activeServer) {
+      const runUrl = buildRunReportUrl(activeServer.url, result.runId);
+      console.log(`Run report available at ${runUrl}`);
+      await openUrlBestEffort(runUrl);
+    } else {
+      console.log('Start the local report UI with `finalrun start-server`.');
+    }
+    process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
+  });
 }
 
 async function runCommand(run: () => Promise<void>): Promise<void> {
