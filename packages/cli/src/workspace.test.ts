@@ -579,6 +579,7 @@ test('runCheck resolves suite manifests into an ordered shared spec list', async
     suites: {
       'login_suite.yaml': [
         'name: login suite',
+        'description: Covers login entry points.',
         'tests:',
         '  - smoke.yaml',
         '  - auth/**',
@@ -600,6 +601,7 @@ test('runCheck resolves suite manifests into an ordered shared spec list', async
       suitePath: 'login_suite.yaml',
     });
     assert.equal(result.suite?.name, 'login suite');
+    assert.equal(result.suite?.description, 'Covers login entry points.');
     assert.deepEqual(
       result.specs.map((spec) => spec.relativePath),
       ['smoke.yaml', 'auth/login.yaml', 'auth/settings.yaml'],
@@ -648,6 +650,33 @@ test('runCheck rejects suite manifests with empty tests arrays', async () => {
           suitePath: 'empty_suite.yaml',
         }),
       /must define a non-empty tests array/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects suite manifests with non-string descriptions', async () => {
+  const rootDir = createTempWorkspace({
+    suites: {
+      'invalid_suite.yaml': [
+        'name: invalid suite',
+        'description: 42',
+        'tests:',
+        '  - login.yaml',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        runCheck({
+          envName: 'dev',
+          cwd: rootDir,
+          suitePath: 'invalid_suite.yaml',
+        }),
+      /description must be a string when provided/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

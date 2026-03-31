@@ -22,7 +22,7 @@ const SPEC_TOP_LEVEL_KEYS = new Set([
   'steps',
   'assertions',
 ]);
-const SUITE_TOP_LEVEL_KEYS = new Set(['name', 'tests']);
+const SUITE_TOP_LEVEL_KEYS = new Set(['name', 'description', 'tests']);
 const SECRET_PLACEHOLDER = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
 const SPEC_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
 
@@ -126,6 +126,7 @@ export async function loadTestSuite(
   assertAllowedKeys(parsed, SUITE_TOP_LEVEL_KEYS, `Test suite ${filePath}`);
 
   const name = readRequiredString(parsed['name'], `${filePath} name`);
+  const description = readOptionalString(parsed['description'], `${filePath} description`);
   const tests = readStringArray(parsed['tests'], `${filePath} tests`);
   if (tests.length === 0) {
     throw new Error(`Test suite ${filePath} must define a non-empty tests array.`);
@@ -134,6 +135,7 @@ export async function loadTestSuite(
   const relativePath = path.relative(suitesDir, filePath).split(path.sep).join('/');
   return {
     name,
+    description,
     tests,
     sourcePath: filePath,
     relativePath,
