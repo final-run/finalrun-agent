@@ -73,7 +73,7 @@ Secret and credential errors require explicit user action:
 - If a secret placeholder is malformed, explain that FinalRun requires the exact `${ENV_VAR}` form.
 - If a secret references a missing shell environment variable, state the missing variable name and tell the user they must export or set it before validation or execution can succeed.
 - If a spec references an unknown `${secrets.*}` or `${variables.*}` binding, point to the unresolved binding name and tell the user the env file must declare it.
-- If the provider API key is missing, report the exact required variable or `--api-key` option and state that user action is required before tests can run.
+- If the provider API key is missing, report the exact required variable for the active model (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `ANTHROPIC_API_KEY`). When no default model is configured, recommend a repeat-use setup: add `.finalrun/config.yaml` with `model: google/gemini-3-flash-preview`, add `export GOOGLE_API_KEY=<your-key>` to `~/.zshrc`, reload the shell with `source ~/.zshrc`, and rerun. Mention `--api-key` only if the user asks for a one-off run.
 - Never invent, infer, write, or silently substitute secret values.
 
 ## Safety Policy
@@ -240,7 +240,10 @@ Diagnose from the actual CLI output first. Do not guess.
   - `openai/...` uses `OPENAI_API_KEY`
   - `google/...` uses `GOOGLE_API_KEY`
   - `anthropic/...` uses `ANTHROPIC_API_KEY`
-  - if missing, tell the user the exact variable they must set or that they must pass `--api-key`
+  - recommend `.finalrun/config.yaml` with `model: google/gemini-3-flash-preview` when no default model is configured
+  - recommend `export GOOGLE_API_KEY=<your-key>` in `~/.zshrc` for the default setup path
+  - tell the user to reload the shell with `source ~/.zshrc` and rerun
+  - mention `--api-key` only if they want a one-off run
 - Invalid `.finalrun/config.yaml`
   - point to the YAML or config error directly
 - Selector and suite resolution failures

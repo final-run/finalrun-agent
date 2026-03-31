@@ -89,8 +89,8 @@ Once approved, generate or update tests and suites using strict FinalRun YAML sy
 | **Moving/Reordering** | Ensure the list is in a **known default state** first. |
 
 ## Writing Good Test Flows
-- **Be specific**: Reference actual UI labels and icons (e.g. **Settings (gear icon)**).
-- **Bold UI elements**: **Save Button**, **Home Screen**.
+- **Be specific**: Reference actual UI labels and recognizable controls (e.g. Settings screen, Settings button).
+- **Name visible controls clearly**: Use plain language like Save button and Home screen.
 - **Variables**: Use syntax like "Type `${variables.search_term}` into the search field".
 - **Idempotency is the priority**: Assume the test has already run and failed once; the setup flow must fix it.
 
@@ -118,7 +118,7 @@ assertions:
 - **name:** Short unique identifier.
 - **description:** High level summary of the user journey.
 - **setup:** Actionable steps to guarantee a clean starting state, honoring the Idempotency rule. Ensure you navigate and perform the cleanup visually if prior failure polluted the app state.
-- **steps:** Chronological list of user interactions. Use bolding for UI elements.
+- **steps:** Chronological list of user interactions. Name the target screen, button, field, or control directly in each step.
 - **assertions:** Specific boolean checks of UI labels, elements, or visibility to prove test passage.
 
 ### Suite File Template (`.finalrun/suites/<feature-name>.yaml`)
