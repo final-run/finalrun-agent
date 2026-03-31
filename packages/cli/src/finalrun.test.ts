@@ -8,6 +8,9 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
 import { runDoctorCommand } from './doctorRunner.js';
+import { resolveWorkspace } from './workspace.js';
+
+const CLI_TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-home-'));
 
 function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
@@ -83,10 +86,25 @@ function runCli(args: string[], cwd: string, envOverrides?: NodeJS.ProcessEnv) {
     cwd,
     env: {
       ...process.env,
+      HOME: CLI_TEST_HOME,
       ...envOverrides,
     },
     encoding: 'utf-8',
   });
+}
+
+async function resolveWorkspaceForHome(cwd: string, homeDir: string) {
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeDir;
+  try {
+    return await resolveWorkspace(cwd);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
 }
 
 const EMPTY_PROVIDER_ENV_VARS = {
@@ -353,6 +371,26 @@ test('finalrun check fails with actionable binding guidance when .finalrun/env i
   }
 });
 
+test('finalrun check rejects specs with preconditions keys', async () => {
+  const rootDir = createTempWorkspace({
+    specLines: [
+      'name: login',
+      'preconditions:',
+      '  - App is installed.',
+      'steps:',
+      '  - Open the login screen.',
+    ],
+  });
+
+  try {
+    const result = runCli(['check'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /contains unsupported key "preconditions"/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('finalrun check accepts repeated selectors and comma-delimited selectors', async () => {
   const rootDir = createTempWorkspace({
     specs: {
@@ -397,6 +435,85 @@ test('finalrun check validates suite manifests with --suite', async () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Validated 2 spec\(s\)/);
     assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test resolves nested spec paths without requiring the .finalrun/tests prefix', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+    specs: {
+      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login/auth.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Spec selector not found/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun suite resolves suite manifests without requiring the .finalrun/suites prefix', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+    specs: {
+      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
+    },
+    suites: {
+      'login/auth_suite.yaml': [
+        'name: auth suite',
+        'tests:',
+        '  - login/auth.yaml',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['suite', 'login/auth_suite.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Suite manifest not found/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun suite matches the legacy test --suite invocation', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+    specs: {
+      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
+    },
+    suites: {
+      'login/auth_suite.yaml': [
+        'name: auth suite',
+        'tests:',
+        '  - login/auth.yaml',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const suiteResult = runCli(['suite', 'login/auth_suite.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    const legacyResult = runCli(
+      ['test', '--suite', 'login/auth_suite.yaml'],
+      rootDir,
+      EMPTY_PROVIDER_ENV_VARS,
+    );
+    assert.equal(suiteResult.status, legacyResult.status);
+    assert.equal(suiteResult.stdout, legacyResult.stdout);
+    assert.equal(suiteResult.stderr, legacyResult.stderr);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -636,7 +753,8 @@ test('finalrun report serve remains available as a compatibility alias', async (
 
 test('finalrun runs --json prints the saved runs index', async () => {
   const rootDir = createTempWorkspace();
-  const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
+  const workspace = await resolveWorkspaceForHome(rootDir, CLI_TEST_HOME);
+  const artifactsDir = workspace.artifactsDir;
   await fsp.mkdir(artifactsDir, { recursive: true });
   await fsp.writeFile(
     path.join(artifactsDir, 'runs.json'),
@@ -685,7 +803,8 @@ test('finalrun runs --json prints the saved runs index', async () => {
 
 test('finalrun runs prints a console summary and suggests starting the local report UI', async () => {
   const rootDir = createTempWorkspace();
-  const artifactsDir = path.join(rootDir, '.finalrun', 'artifacts');
+  const workspace = await resolveWorkspaceForHome(rootDir, CLI_TEST_HOME);
+  const artifactsDir = workspace.artifactsDir;
   await fsp.mkdir(artifactsDir, { recursive: true });
   await fsp.writeFile(
     path.join(artifactsDir, 'runs.json'),

@@ -17,7 +17,6 @@ const ENV_TOP_LEVEL_KEYS = new Set(['secrets', 'variables']);
 const SPEC_TOP_LEVEL_KEYS = new Set([
   'name',
   'description',
-  'preconditions',
   'setup',
   'steps',
   'assertions',
@@ -93,7 +92,6 @@ export async function loadTestSpec(
 
   const name = readRequiredString(parsed['name'], `${filePath} name`);
   const description = readOptionalString(parsed['description'], `${filePath} description`);
-  const preconditions = readStringArray(parsed['preconditions'], `${filePath} preconditions`);
   const setup = readStringArray(parsed['setup'], `${filePath} setup`);
   const steps = readStringArray(parsed['steps'], `${filePath} steps`);
   const assertions = readStringArray(parsed['assertions'], `${filePath} assertions`);
@@ -106,7 +104,6 @@ export async function loadTestSpec(
   return {
     name,
     description,
-    preconditions,
     setup,
     steps,
     assertions,
@@ -152,7 +149,6 @@ export function validateSpecBindings(
   const values = [
     spec.name,
     spec.description,
-    ...spec.preconditions,
     ...spec.setup,
     ...spec.steps,
     ...spec.assertions,

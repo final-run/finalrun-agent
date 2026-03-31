@@ -36,7 +36,6 @@ interface SpecSnapshotState {
   authored: {
     name: string;
     description?: string;
-    preconditions: string[];
     setup: string[];
     steps: string[];
     assertions: string[];
@@ -248,7 +247,6 @@ export class ReportWriter {
       const authored = {
         name: spec.name,
         description: spec.description,
-        preconditions: spec.preconditions,
         setup: spec.setup,
         steps: spec.steps,
         assertions: spec.assertions,
@@ -624,7 +622,6 @@ export class ReportWriter {
       bindingReferences: snapshot?.bindingReferences ?? { variables: [], secrets: [] },
       authored: snapshot?.authored ?? {
         name: spec.specName,
-        preconditions: [],
         setup: [],
         steps: [],
         assertions: [],
@@ -684,7 +681,6 @@ function collectBindingReferences(spec: LoadedRepoTestSpec): BindingReferenceRec
   const values = [
     spec.name,
     spec.description,
-    ...spec.preconditions,
     ...spec.setup,
     ...spec.steps,
     ...spec.assertions,

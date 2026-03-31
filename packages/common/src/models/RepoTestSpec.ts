@@ -1,7 +1,6 @@
 export interface RepoTestSpec {
   name: string;
   description?: string;
-  preconditions: string[];
   setup: string[];
   steps: string[];
   assertions: string[];

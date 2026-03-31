@@ -166,6 +166,6 @@ test('formatRunIndexForConsole prints ABORT for aborted runs', () => {
     ],
   });
 
-  assert.match(output, /^Status  Env/m);
+  assert.match(output, /^Status {2}Env/m);
   assert.match(output, /ABORT/);
 });

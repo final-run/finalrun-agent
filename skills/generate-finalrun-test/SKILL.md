@@ -107,8 +107,6 @@ Every test specification file must strictly follow this exact schema:
 ```yaml
 name: <snake_case_name>
 description: <One or two sentences describing what the test validates.>
-preconditions:
-  - <string>
 setup:
   - <string>
 steps:
@@ -120,7 +118,6 @@ assertions:
 **Instruction Guidelines for the specific keys:**
 - **name:** Short unique identifier.
 - **description:** High level summary of the user journey.
-- **preconditions:** Environmental assumptions ONLY (e.g., "App is installed", "Network is connected"). Do not use for user actions.
 - **setup:** Actionable steps to guarantee a clean starting state, honoring the Idempotency rule. Ensure you navigate and perform the cleanup visually if prior failure polluted the app state.
 - **steps:** Chronological list of user interactions. Use bolding for UI elements.
 - **assertions:** Specific boolean checks of UI labels, elements, or visibility to prove test passage.
@@ -145,4 +142,3 @@ After creating or updating test specs, suite manifests, and (when needed) env fi
 4. **Re-run `finalrun check`** until it succeeds. If errors point at spec structure or paths, fix those YAML files and check again.
 
 If `finalrun` is not on `PATH`, resolve the install or invoke it by absolute path before relying on check output.
-

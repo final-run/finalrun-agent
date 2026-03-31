@@ -37,16 +37,6 @@ pnpm-debug.log*
 # FinalRun run artifacts
 .finalrun/artifacts/
 
-# Internal assistant and design artifacts
-.agent/
-.agents/
-.claude/
-.cline/
-.cursor/
-.clinerules/
-.codex/
-.opencode/
-openspec/
 # OS/editor noise
 .DS_Store
 .idea/

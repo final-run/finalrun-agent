@@ -12,14 +12,25 @@ import {
   type ReportWorkspaceContext,
 } from './artifacts';
 
-function createWorkspaceContext(): ReportWorkspaceContext {
+interface TestWorkspaceContext extends ReportWorkspaceContext {
+  storageRoot: string;
+}
+
+function createWorkspaceContext(): TestWorkspaceContext {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-artifacts-'));
-  const artifactsDir = path.join(workspaceRoot, '.finalrun', 'artifacts');
+  const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-storage-'));
+  const artifactsDir = path.join(storageRoot, '.finalrun', 'workspaces', 'workspace-hash', 'artifacts');
   fs.mkdirSync(artifactsDir, { recursive: true });
   return {
     workspaceRoot,
+    storageRoot,
     artifactsDir,
   };
+}
+
+async function cleanupWorkspaceContext(context: TestWorkspaceContext): Promise<void> {
+  await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+  await fsp.rm(context.storageRoot, { recursive: true, force: true });
 }
 
 test('loadArtifactResponse returns full-file headers for artifact reads', async () => {
@@ -38,7 +49,7 @@ test('loadArtifactResponse returns full-file headers for artifact reads', async 
     assert.equal(response.headers['content-length'], '10');
     assert.equal(response.headers['content-type'], 'video/mp4');
   } finally {
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });
 
@@ -199,7 +210,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
       ],
     );
   } finally {
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });
 
@@ -229,7 +240,7 @@ test('loadReportRunManifestViewModel inlines snapshot YAML text for spec detail 
     assert.equal(manifest.input.specs[0]?.snapshotYamlText, ['name: valid login', 'steps:', '  - Tap login'].join('\n'));
     assert.equal(manifest.specs.length, 0);
   } finally {
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });
 
@@ -354,7 +365,7 @@ test('loadArtifactResponse serves byte ranges for seekable media playback', asyn
     assert.equal(response.headers['content-length'], '4');
     assert.equal(response.headers['content-range'], 'bytes 2-5/10');
   } finally {
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });
 
@@ -375,6 +386,6 @@ test('loadArtifactResponse rejects byte ranges outside the artifact size', async
       },
     );
   } finally {
-    await fsp.rm(context.workspaceRoot, { recursive: true, force: true });
+    await cleanupWorkspaceContext(context);
   }
 });
