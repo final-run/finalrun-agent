@@ -146,7 +146,6 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
   const spec: LoadedRepoTestSpec = {
     name: 'login',
     description: 'Verify a user can log in.',
-    preconditions: [],
     setup: [],
     steps: ['Enter ${secrets.email} on the login screen.'],
     assertions: ['The feed is visible.'],
@@ -377,7 +376,6 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
 
   const spec: LoadedRepoTestSpec = {
     name: 'valid login',
-    preconditions: [],
     setup: [],
     steps: ['Open login.', 'Submit valid credentials.'],
     assertions: ['The dashboard is visible.'],
@@ -526,7 +524,6 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
   const spec: LoadedRepoTestSpec = {
     name: 'login',
     description: 'Verify login.',
-    preconditions: [],
     setup: [],
     steps: ['Open login.'],
     assertions: ['The dashboard is visible.'],

@@ -336,6 +336,29 @@ test('runCheck rejects legacy env app keys', async () => {
   }
 });
 
+test('runCheck rejects specs with preconditions keys', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'login.yaml': [
+        'name: login',
+        'preconditions:',
+        '  - App is installed.',
+        'steps:',
+        '  - Open the login screen.',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ envName: 'dev', cwd: rootDir }),
+      /contains unsupported key "preconditions"/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('runCheck ignores invalid model formats in .finalrun/config.yaml', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: "not-a-provider-model"\n',
