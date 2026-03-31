@@ -82,13 +82,13 @@ finalrun check --env dev
 Run a test:
 
 ```sh
-finalrun test .finalrun/tests/smoke.yaml --env dev --platform android --model google/gemini-3-flash-preview
+finalrun test smoke.yaml --env dev --platform android --model google/gemini-3-flash-preview
 ```
 
 Run a suite manifest:
 
 ```sh
-finalrun test --suite smoke.yaml --env dev --platform ios --model google/gemini-2.0-flash
+finalrun suite smoke.yaml --env dev --platform ios --model google/gemini-2.0-flash
 ```
 
 ## YAML Test Specs
@@ -114,6 +114,13 @@ tests:
   - auth/logout.yaml
 ```
 
+In standard usage:
+
+- `finalrun test auth/login.yaml` resolves `auth/login.yaml` from `.finalrun/tests/`
+- `finalrun suite auth_smoke.yaml` resolves `auth_smoke.yaml` from `.finalrun/suites/`
+
+Explicit `.finalrun/tests/...` and `.finalrun/suites/...` paths still work for compatibility when you want them.
+
 ## CLI Commands
 
 `finalrun check`
@@ -123,9 +130,17 @@ tests:
 
 `finalrun test`
 
-- Executes one or more YAML specs or a suite manifest.
+- Executes one or more YAML specs from `.finalrun/tests`.
 - Requires a model from `--model <provider/model>` or `.finalrun/config.yaml`.
 - Supports `--env`, `--platform`, `--app`, `--suite`, and `--api-key`, with CLI flags taking precedence over config.
+
+`finalrun suite`
+
+- Executes a suite manifest from `.finalrun/suites`.
+- Requires a model from `--model <provider/model>` or `.finalrun/config.yaml`.
+- Supports `--env`, `--platform`, `--app`, and `--api-key`, with CLI flags taking precedence over config.
+
+`finalrun test --suite <path>` remains supported as a compatibility path, but `finalrun suite <path>` is the preferred standard.
 
 `finalrun doctor`
 
@@ -144,6 +159,7 @@ See command help for full options:
 ```sh
 finalrun --help
 finalrun test --help
+finalrun suite --help
 ```
 
 ## Prerequisites
@@ -172,14 +188,22 @@ FinalRun requires a `provider/model` value from `--model <provider/model>` or `.
 Examples:
 
 ```sh
-finalrun test .finalrun/tests/smoke.yaml --platform android --model google/gemini-3-flash-preview
-finalrun test .finalrun/tests/smoke.yaml --platform android --model google/gemini-2.0-flash
-finalrun test .finalrun/tests/smoke.yaml --platform ios --model anthropic/claude-3-7-sonnet
+finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
+finalrun test smoke.yaml --platform android --model google/gemini-2.0-flash
+finalrun suite smoke.yaml --platform ios --model anthropic/claude-3-7-sonnet
 ```
 
 ## Development
 
 Contributor setup, monorepo structure, build commands, and testing expectations live in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+For source development in this monorepo, install workspace dependencies first:
+
+```sh
+npm ci
+```
+
+If you use git worktrees, do this once per fresh worktree before running `npm run build`, `npm run test`, `npm run dev:cli`, or any local `finalrun-dev` wrapper that executes the TypeScript sources directly.
 
 Project policies:
 

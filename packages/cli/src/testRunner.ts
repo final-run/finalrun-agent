@@ -46,6 +46,7 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
   modelName: string;
   maxIterations?: number;
   debug?: boolean;
+  invokedCommand?: 'test' | 'suite';
 }
 
 export interface TestRunnerResult {
@@ -592,8 +593,11 @@ function buildCliContext(
   debug: boolean;
   maxIterations?: number;
 } {
-  const commandParts = ['finalrun', 'test'];
-  if (options.suitePath) {
+  const invokedCommand = options.invokedCommand ?? 'test';
+  const commandParts = ['finalrun', invokedCommand];
+  if (invokedCommand === 'suite' && options.suitePath) {
+    commandParts.push(options.suitePath);
+  } else if (options.suitePath) {
     commandParts.push('--suite', options.suitePath);
   }
   return {

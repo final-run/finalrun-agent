@@ -722,6 +722,59 @@ test('runTests succeeds without env config when the repo is env-free', async () 
   }
 });
 
+test('runTests records the suite subcommand in run metadata when invoked via finalrun suite', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-command-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const suitesDir = path.join(rootDir, '.finalrun', 'suites');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(suitesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(testsDir, 'smoke.yaml'),
+    ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(suitesDir, 'smoke.yaml'),
+    ['name: smoke suite', 'tests:', '  - smoke.yaml'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  let cleanupCalls = 0;
+
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
+      },
+    });
+  testRunnerDependencies.executeGoalOnSession = async () => createGoalResult();
+
+  try {
+    const result = await runTests({
+      cwd: rootDir,
+      suitePath: 'smoke.yaml',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+      invokedCommand: 'suite',
+    });
+
+    const runJson = JSON.parse(
+      await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8'),
+    );
+    assert.equal(runJson.input.cli.command, 'finalrun suite smoke.yaml');
+    assert.equal(runJson.input.cli.suitePath, 'smoke.yaml');
+    assert.deepEqual(runJson.input.cli.selectors, []);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    assert.equal(cleanupCalls, 1);
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('runTests prepares one shared session for multiple specs and cleans it up once', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');

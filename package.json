@@ -11,6 +11,7 @@
     "packages/report-web"
   ],
   "scripts": {
+    "bootstrap": "npm ci",
     "build": "npm run build --workspaces",
     "build:drivers": "./scripts/build-drivers-android.sh && ./scripts/build-drivers-ios.sh",
     "build:drivers:android": "./scripts/build-drivers-android.sh",
@@ -24,7 +25,14 @@
     "format:check": "prettier --check .",
     "test": "npm run build && npm run test:workspaces",
     "test:workspaces": "npm run test --workspaces --if-present",
-    "generate:proto": "npm run generate:proto --workspace=packages/device-node"
+    "generate:proto": "npm run generate:proto --workspace=packages/device-node",
+    "prebuild": "node ./scripts/ensure-dev-install.mjs",
+    "predev:cli": "node ./scripts/ensure-dev-install.mjs",
+    "predev:report": "node ./scripts/ensure-dev-install.mjs",
+    "predev:watch": "node ./scripts/ensure-dev-install.mjs",
+    "pretest": "node ./scripts/ensure-dev-install.mjs",
+    "prelint": "node ./scripts/ensure-dev-install.mjs",
+    "pregenerate:proto": "node ./scripts/ensure-dev-install.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

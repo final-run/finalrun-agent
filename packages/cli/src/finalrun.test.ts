@@ -440,6 +440,85 @@ test('finalrun check validates suite manifests with --suite', async () => {
   }
 });
 
+test('finalrun test resolves nested spec paths without requiring the .finalrun/tests prefix', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+    specs: {
+      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login/auth.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Spec selector not found/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun suite resolves suite manifests without requiring the .finalrun/suites prefix', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+    specs: {
+      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
+    },
+    suites: {
+      'login/auth_suite.yaml': [
+        'name: auth suite',
+        'tests:',
+        '  - login/auth.yaml',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const result = runCli(['suite', 'login/auth_suite.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
+    );
+    assert.doesNotMatch(result.stderr, /Suite manifest not found/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun suite matches the legacy test --suite invocation', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: google/gemini-3-flash-preview\n',
+    specs: {
+      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
+    },
+    suites: {
+      'login/auth_suite.yaml': [
+        'name: auth suite',
+        'tests:',
+        '  - login/auth.yaml',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const suiteResult = runCli(['suite', 'login/auth_suite.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    const legacyResult = runCli(
+      ['test', '--suite', 'login/auth_suite.yaml'],
+      rootDir,
+      EMPTY_PROVIDER_ENV_VARS,
+    );
+    assert.equal(suiteResult.status, legacyResult.status);
+    assert.equal(suiteResult.stdout, legacyResult.stdout);
+    assert.equal(suiteResult.stderr, legacyResult.stderr);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('finalrun test reports missing selectors before API key validation', async () => {
   const rootDir = createTempWorkspace();
 
