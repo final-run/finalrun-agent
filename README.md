@@ -13,8 +13,9 @@ npm install -g finalrun-agent
 The package installs the `finalrun` command and also exposes `finalrun-agent` as an alias.
 
 During global installation, FinalRun stages its native driver assets under
-`~/.finalrun/assets/<version>/` so repository-local `.finalrun/` directories remain dedicated to
-YAML specs, env files, and run artifacts.
+`~/.finalrun/assets/<version>/`. Run artifacts are stored separately under
+`~/.finalrun/workspaces/<workspace-hash>/artifacts`, while repository-local `.finalrun/`
+directories remain dedicated to YAML specs, env files, and config.
 
 ## Quick Start
 
@@ -37,7 +38,6 @@ Example workspace layout:
     smoke.yaml
   env/
     dev.yaml
-  artifacts/
 ```
 
 Minimal test spec:
@@ -133,7 +133,7 @@ tests:
 
 `finalrun runs`
 
-- Lists local reports from `.finalrun/artifacts`.
+- Lists local reports from the workspace-scoped artifact store at `~/.finalrun/workspaces/<workspace-hash>/artifacts`.
 
 `finalrun start-server`
 

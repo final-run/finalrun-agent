@@ -70,6 +70,23 @@ function createTempWorkspace(params?: {
   return rootDir;
 }
 
+async function withTempHome<T>(callback: (homeDir: string) => Promise<T>): Promise<T> {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-workspace-home-'));
+  const previousHome = process.env.HOME;
+
+  process.env.HOME = homeDir;
+  try {
+    return await callback(homeDir);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    await fsp.rm(homeDir, { recursive: true, force: true });
+  }
+}
+
 test('runCheck resolves the nearest .finalrun workspace and runtime bindings from a nested cwd', async () => {
   const secretEnvVar = 'FINALRUN_WORKSPACE_EMAIL_SECRET';
   const previousSecret = process.env[secretEnvVar];
@@ -773,19 +790,41 @@ test('validateAppOverride accepts .apk and .app bundles and rejects unsupported 
   }
 });
 
-test('ensureWorkspaceDirectories creates .finalrun/artifacts after resolving the workspace', async () => {
-  const rootDir = createTempWorkspace();
+test('ensureWorkspaceDirectories creates a hashed external artifacts directory and metadata', async () => {
+  await withTempHome(async (homeDir) => {
+    const rootDir = createTempWorkspace();
 
-  try {
-    const nestedCwd = path.join(rootDir, 'apps', 'mobile');
-    fs.mkdirSync(nestedCwd, { recursive: true });
+    try {
+      const nestedCwd = path.join(rootDir, 'apps', 'mobile');
+      fs.mkdirSync(nestedCwd, { recursive: true });
 
-    const workspace = await resolveWorkspace(nestedCwd);
-    await ensureWorkspaceDirectories(workspace);
+      const workspace = await resolveWorkspace(nestedCwd);
+      const rootWorkspace = await resolveWorkspace(rootDir);
+      await ensureWorkspaceDirectories(workspace);
 
-    const artifactsStat = await fsp.stat(workspace.artifactsDir);
-    assert.equal(artifactsStat.isDirectory(), true);
-  } finally {
-    await fsp.rm(rootDir, { recursive: true, force: true });
-  }
+      assert.equal(workspace.artifactsDir, rootWorkspace.artifactsDir);
+      assert.equal(
+        workspace.artifactsDir.startsWith(path.join(homeDir, '.finalrun', 'workspaces') + path.sep),
+        true,
+      );
+
+      const artifactsStat = await fsp.stat(workspace.artifactsDir);
+      assert.equal(artifactsStat.isDirectory(), true);
+
+      const metadataPath = path.join(workspace.artifactsDir, '..', 'workspace.json');
+      const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
+        workspaceRoot: string;
+        canonicalWorkspaceRoot: string;
+        workspaceHash: string;
+        artifactsDir: string;
+      };
+      const canonicalRootDir = await fsp.realpath(rootDir);
+      assert.equal(metadata.workspaceRoot, rootDir);
+      assert.equal(metadata.canonicalWorkspaceRoot, canonicalRootDir);
+      assert.equal(metadata.artifactsDir, workspace.artifactsDir);
+      assert.equal(metadata.workspaceHash.length, 16);
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });
