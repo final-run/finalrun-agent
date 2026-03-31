@@ -23,6 +23,7 @@ import {
 function createAndroidGoalResult(): GoalResult {
   return {
     success: true,
+    status: 'success',
     message: 'Goal completed successfully.',
     platform: PLATFORM_ANDROID,
     startedAt: '2026-03-20T10:00:00.000Z',
@@ -201,7 +202,7 @@ function createDependencies(params: {
     createAiAgent: () => ({}) as never,
     createExecutor: () =>
       ({
-        cancel() {},
+        abort() {},
         async executeGoal() {
           return await (params.executeGoal ?? (async () => createAndroidGoalResult()))();
         },

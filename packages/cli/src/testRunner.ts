@@ -17,6 +17,7 @@ import {
 } from './goalRunner.js';
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
+import type { GoalExecutionStatus } from '@finalrun/goal-executor';
 import {
   runCheck,
   type CheckRunnerOptions,
@@ -49,6 +50,7 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
 
 export interface TestRunnerResult {
   success: boolean;
+  status: GoalExecutionStatus;
   runId: string;
   runDir: string;
   runIndexPath: string;
@@ -62,6 +64,15 @@ export const testRunnerDependencies = {
   runHostPreflight,
   resolveWorkspace,
   ensureWorkspaceDirectories,
+  addSigintListener(listener: () => void): () => void {
+    process.on('SIGINT', listener);
+    return () => {
+      process.removeListener('SIGINT', listener);
+    };
+  },
+  exitProcess(code: number): never {
+    process.exit(code);
+  },
 };
 
 export async function runTests(
@@ -87,48 +98,57 @@ export async function runTests(
     bufferedLogEntries.push(entry);
   };
   Logger.addSink(bufferingSink);
+  const runAbortController = new AbortController();
+  let runAborted = false;
+  const requestRunAbort = (): void => {
+    if (runAborted) {
+      Logger.e('\nReceived second SIGINT — forcing exit.');
+      reportWriter?.appendLogLine('Received second SIGINT — forcing exit.');
+      testRunnerDependencies.exitProcess(130);
+    }
 
-  let checked: CheckRunnerResult;
-  let effectiveGoals = new Map<string, string>();
-  try {
-    checked = await testRunnerDependencies.runCheck({
-      ...options,
-      requireSelection: true,
-    });
-    effectiveGoals = new Map(
-      checked.specs.map((spec) => [
-        spec.specId,
-        compileSpecToGoal(spec, checked.environment.bindings),
-      ]),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failedRun = await writeRunFailureArtifacts({
-      workspace,
-      envName: fallbackEnvName,
-      platform: inferPlatformHint(options.platform, options.appPath),
-      startedAt,
-      bindings: EMPTY_RUNTIME_BINDINGS,
-      message: `Run validation failed: ${message}`,
-      bufferedLogEntries,
-      cliContext: buildCliContext(options),
-      modelContext: buildModelContext(options.provider, options.modelName),
-      appContext: buildAppContext(options.appPath),
-      target: buildFallbackRunTarget(options),
-      failurePhase: 'validation',
-    });
-    return failedRun;
-  }
+    runAborted = true;
+    Logger.w('\nReceived SIGINT — aborting run...');
+    runAbortController.abort();
+  };
+  const removeSigintListener = testRunnerDependencies.addSigintListener(requestRunAbort);
 
   try {
-    const requestedPlatforms = resolveTestRequestedPlatforms(
-      options.platform ?? checked.appOverride?.inferredPlatform,
-    );
-    const preflight = await testRunnerDependencies.runHostPreflight({
-      requestedPlatforms,
-    });
-    if (shouldBlockLocalRunPreflight(preflight)) {
-      const failedRun = await writeRunFailureArtifacts({
+    let checked: CheckRunnerResult;
+    let effectiveGoals = new Map<string, string>();
+    try {
+      checked = await testRunnerDependencies.runCheck({
+        ...options,
+        requireSelection: true,
+      });
+      effectiveGoals = new Map(
+        checked.specs.map((spec) => [
+          spec.specId,
+          compileSpecToGoal(spec, checked.environment.bindings),
+        ]),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failedRun = await writeRunTerminalArtifacts({
+        workspace,
+        envName: fallbackEnvName,
+        platform: inferPlatformHint(options.platform, options.appPath),
+        startedAt,
+        bindings: EMPTY_RUNTIME_BINDINGS,
+        message: `Run validation failed: ${message}`,
+        bufferedLogEntries,
+        cliContext: buildCliContext(options),
+        modelContext: buildModelContext(options.provider, options.modelName),
+        appContext: buildAppContext(options.appPath),
+        target: buildFallbackRunTarget(options),
+        runStatus: runAborted ? 'aborted' : 'failure',
+        failurePhase: runAborted ? undefined : 'validation',
+      });
+      return failedRun;
+    }
+
+    if (runAborted) {
+      return await writeRunTerminalArtifacts({
         workspace,
         envName: checked.environment.envName,
         platform: inferPlatformHint(
@@ -137,7 +157,7 @@ export async function runTests(
         ),
         startedAt,
         bindings: checked.environment.bindings,
-        message: `Run setup failed before execution: ${formatHostPreflightReport(preflight, 'test')}`,
+        message: 'Run aborted before execution.',
         bufferedLogEntries,
         environment: checked.environment,
         specs: checked.specs,
@@ -148,156 +168,239 @@ export async function runTests(
         modelContext: buildModelContext(options.provider, options.modelName),
         appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
         target: checked.target,
-        failurePhase: 'setup',
+        runStatus: 'aborted',
+      });
+    }
+
+    try {
+      const requestedPlatforms = resolveTestRequestedPlatforms(
+        options.platform ?? checked.appOverride?.inferredPlatform,
+      );
+      const preflight = await testRunnerDependencies.runHostPreflight({
+        requestedPlatforms,
+      });
+      if (shouldBlockLocalRunPreflight(preflight)) {
+        const failedRun = await writeRunTerminalArtifacts({
+          workspace,
+          envName: checked.environment.envName,
+          platform: inferPlatformHint(
+            options.platform ?? checked.appOverride?.inferredPlatform,
+            checked.appOverride?.appPath ?? options.appPath,
+          ),
+          startedAt,
+          bindings: checked.environment.bindings,
+          message: `Run setup failed before execution: ${formatHostPreflightReport(preflight, 'test')}`,
+          bufferedLogEntries,
+          environment: checked.environment,
+          specs: checked.specs,
+          suite: checked.suite,
+          effectiveGoals,
+          workspaceRoot: checked.workspace.rootDir,
+          cliContext: buildCliContext(options),
+          modelContext: buildModelContext(options.provider, options.modelName),
+          appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+          target: checked.target,
+          runStatus: runAborted ? 'aborted' : 'failure',
+          failurePhase: runAborted ? undefined : 'setup',
+        });
+        return failedRun;
+      }
+
+      if (runAborted) {
+        return await writeRunTerminalArtifacts({
+          workspace,
+          envName: checked.environment.envName,
+          platform: inferPlatformHint(
+            options.platform ?? checked.appOverride?.inferredPlatform,
+            checked.appOverride?.appPath ?? options.appPath,
+          ),
+          startedAt,
+          bindings: checked.environment.bindings,
+          message: 'Run aborted before execution.',
+          bufferedLogEntries,
+          environment: checked.environment,
+          specs: checked.specs,
+          suite: checked.suite,
+          effectiveGoals,
+          workspaceRoot: checked.workspace.rootDir,
+          cliContext: buildCliContext(options),
+          modelContext: buildModelContext(options.provider, options.modelName),
+          appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+          target: checked.target,
+          runStatus: 'aborted',
+        });
+      }
+
+      goalSession = await testRunnerDependencies.prepareGoalSession({
+        platform: options.platform ?? checked.appOverride?.inferredPlatform,
+        appOverridePath: checked.appOverride?.appPath,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failedRun = await writeRunTerminalArtifacts({
+        workspace,
+        envName: checked.environment.envName,
+        platform: inferPlatformHint(
+          options.platform ?? checked.appOverride?.inferredPlatform,
+          checked.appOverride?.appPath ?? options.appPath,
+        ),
+        startedAt,
+        bindings: checked.environment.bindings,
+        message: `Run setup failed before execution: ${message}`,
+        bufferedLogEntries,
+        diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
+        environment: checked.environment,
+        specs: checked.specs,
+        suite: checked.suite,
+        effectiveGoals,
+        workspaceRoot: checked.workspace.rootDir,
+        cliContext: buildCliContext(options),
+        modelContext: buildModelContext(options.provider, options.modelName),
+        appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+        target: checked.target,
+        runStatus: runAborted ? 'aborted' : 'failure',
+        failurePhase: runAborted ? undefined : 'setup',
       });
       return failedRun;
     }
 
-    goalSession = await testRunnerDependencies.prepareGoalSession({
-      platform: options.platform ?? checked.appOverride?.inferredPlatform,
-      appOverridePath: checked.appOverride?.appPath,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failedRun = await writeRunFailureArtifacts({
+    ({ reportWriter, runDir } = await createReportWriter({
       workspace,
       envName: checked.environment.envName,
-      platform: inferPlatformHint(
-        options.platform ?? checked.appOverride?.inferredPlatform,
-        checked.appOverride?.appPath ?? options.appPath,
-      ),
+      platform: goalSession.platform,
       startedAt,
       bindings: checked.environment.bindings,
-      message: `Run setup failed before execution: ${message}`,
-      bufferedLogEntries,
-      diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
-      environment: checked.environment,
-      specs: checked.specs,
-      suite: checked.suite,
-      effectiveGoals,
-      workspaceRoot: checked.workspace.rootDir,
-      cliContext: buildCliContext(options),
-      modelContext: buildModelContext(options.provider, options.modelName),
-      appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-      target: checked.target,
-      failurePhase: 'setup',
-    });
-    return failedRun;
-  }
-
-  ({ reportWriter, runDir } = await createReportWriter({
-    workspace,
-    envName: checked.environment.envName,
-    platform: goalSession.platform,
-    startedAt,
-    bindings: checked.environment.bindings,
-  }));
-  logSink = reportWriter.createLoggerSink();
-  flushBufferedLogEntries(bufferedLogEntries, logSink);
-  Logger.removeSink(bufferingSink);
-  Logger.addSink(logSink);
-
-  try {
-    await reportWriter.writeRunInputs({
-      workspaceRoot: checked.workspace.rootDir,
-      environment: checked.environment,
-      specs: checked.specs,
-      effectiveGoals,
-      cli: buildCliContext(options),
-      model: buildModelContext(options.provider, options.modelName),
-      app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-      target: checked.target,
-      suite: checked.suite,
-    });
-    reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
-
-    for (const spec of checked.specs) {
-      reportWriter.appendLogLine(`Running spec ${spec.relativePath}`);
-      const specStartedAt = new Date().toISOString();
-
-      try {
-        const goal = effectiveGoals.get(spec.specId) ??
-          compileSpecToGoal(spec, checked.environment.bindings);
-        const recordingExtension = goalSession.platform === 'android' ? '.mp4' : '.mov';
-        const recordingOutputPath = path.join(
-          runDir,
-          'tests',
-          spec.specId,
-          `recording${recordingExtension}`,
-        );
-        const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
-          goal,
-          apiKey: options.apiKey,
-          provider: options.provider,
-          modelName: options.modelName,
-          maxIterations: options.maxIterations,
-          debug: options.debug,
-          runtimeBindings: checked.environment.bindings,
-          recording: {
-            testRunId: path.basename(runDir),
-            testCaseId: spec.specId,
-            outputFilePath: recordingOutputPath,
-            keepPartialOnFailure: true,
-          },
-        });
-
-        const specRecord = await reportWriter.writeSpecRecord(
-          spec,
-          goalResult,
-          checked.environment.bindings,
-        );
-        specResults.push(specRecord);
-        encounteredFailure ||= !goalResult.success;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        encounteredFailure = true;
-        reportWriter.appendLogLine(
-          `Spec ${spec.relativePath} failed before completion: ${message}`,
-        );
-        specResults.push(
-          await reportWriter.writeSpecFailureRecord({
-            spec,
-            bindings: checked.environment.bindings,
-            message,
-            platform: goalSession.platform,
-            startedAt: specStartedAt,
-            completedAt: new Date().toISOString(),
-          }),
-        );
-        break;
-      }
-    }
-
-    const success =
-      !encounteredFailure && specResults.every((spec) => spec.success);
-    await reportWriter.finalize({
-      startedAt: startedAt.toISOString(),
-      completedAt: new Date().toISOString(),
-      specs: specResults,
-      successOverride: success,
-      failurePhase: encounteredFailure ? 'execution' : undefined,
-    });
-    await rebuildRunIndex(workspace.artifactsDir);
-
-    return {
-      success,
-      runId: path.basename(runDir),
-      runDir,
-      runIndexPath: path.join(workspace.artifactsDir, 'runs.json'),
-      specResults,
-    };
-  } finally {
-    if (goalSession) {
-      try {
-        await goalSession.cleanup();
-      } catch (error) {
-        Logger.w('Failed to clean up device resources:', error);
-      }
-    }
-    if (logSink) {
-      Logger.removeSink(logSink);
-    }
+    }));
+    logSink = reportWriter.createLoggerSink();
+    flushBufferedLogEntries(bufferedLogEntries, logSink);
     Logger.removeSink(bufferingSink);
+    Logger.addSink(logSink);
+
+    try {
+      await reportWriter.writeRunInputs({
+        workspaceRoot: checked.workspace.rootDir,
+        environment: checked.environment,
+        specs: checked.specs,
+        effectiveGoals,
+        cli: buildCliContext(options),
+        model: buildModelContext(options.provider, options.modelName),
+        app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+        target: checked.target,
+        suite: checked.suite,
+      });
+      reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
+
+      if (runAborted) {
+        reportWriter.appendLogLine('Run aborted before executing any specs.');
+      }
+
+      for (const spec of checked.specs) {
+        if (runAborted) {
+          reportWriter.appendLogLine('Run aborted before starting the next spec.');
+          break;
+        }
+        reportWriter.appendLogLine(`Running spec ${spec.relativePath}`);
+        const specStartedAt = new Date().toISOString();
+
+        try {
+          const goal = effectiveGoals.get(spec.specId) ??
+            compileSpecToGoal(spec, checked.environment.bindings);
+          const recordingExtension = goalSession.platform === 'android' ? '.mp4' : '.mov';
+          const recordingOutputPath = path.join(
+            runDir,
+            'tests',
+            spec.specId,
+            `recording${recordingExtension}`,
+          );
+          const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
+            goal,
+            apiKey: options.apiKey,
+            provider: options.provider,
+            modelName: options.modelName,
+            maxIterations: options.maxIterations,
+            debug: options.debug,
+            runtimeBindings: checked.environment.bindings,
+            abortSignal: runAbortController.signal,
+            recording: {
+              testRunId: path.basename(runDir),
+              testCaseId: spec.specId,
+              outputFilePath: recordingOutputPath,
+              keepPartialOnFailure: true,
+            },
+          });
+
+          const specRecord = await reportWriter.writeSpecRecord(
+            spec,
+            goalResult,
+            checked.environment.bindings,
+          );
+          specResults.push(specRecord);
+          encounteredFailure ||= !goalResult.success;
+          if (goalResult.status === 'aborted' || runAborted) {
+            runAborted = true;
+            reportWriter.appendLogLine(`Run aborted while executing spec ${spec.relativePath}.`);
+            break;
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          encounteredFailure = true;
+          reportWriter.appendLogLine(
+            `Spec ${spec.relativePath} failed before completion: ${message}`,
+          );
+          specResults.push(
+            await reportWriter.writeSpecFailureRecord({
+              spec,
+              bindings: checked.environment.bindings,
+              message,
+              platform: goalSession.platform,
+              startedAt: specStartedAt,
+              completedAt: new Date().toISOString(),
+            }),
+          );
+          break;
+        }
+      }
+
+      const success =
+        !runAborted && !encounteredFailure && specResults.every((spec) => spec.success);
+      const runStatus: GoalExecutionStatus = runAborted
+        ? 'aborted'
+        : success
+          ? 'success'
+          : 'failure';
+      await reportWriter.finalize({
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        specs: specResults,
+        successOverride: success,
+        statusOverride: runStatus,
+        failurePhase: runStatus === 'failure' && encounteredFailure ? 'execution' : undefined,
+      });
+      await rebuildRunIndex(workspace.artifactsDir);
+
+      return {
+        success,
+        status: runStatus,
+        runId: path.basename(runDir),
+        runDir,
+        runIndexPath: path.join(workspace.artifactsDir, 'runs.json'),
+        specResults,
+      };
+    } finally {
+      if (goalSession) {
+        try {
+          await goalSession.cleanup();
+        } catch (error) {
+          Logger.w('Failed to clean up device resources:', error);
+        }
+      }
+      if (logSink) {
+        Logger.removeSink(logSink);
+      }
+      Logger.removeSink(bufferingSink);
+    }
+  } finally {
+    removeSigintListener();
   }
 }
 
@@ -353,7 +456,7 @@ async function createReportWriter(params: {
   return { reportWriter, runDir };
 }
 
-async function writeRunFailureArtifacts(params: {
+async function writeRunTerminalArtifacts(params: {
   workspace: FinalRunWorkspace;
   envName: string;
   platform: string;
@@ -371,7 +474,8 @@ async function writeRunFailureArtifacts(params: {
   modelContext: ReturnType<typeof buildModelContext>;
   appContext: ReturnType<typeof buildAppContext>;
   target: RunTargetRecord;
-  failurePhase: 'validation' | 'setup' | 'execution';
+  runStatus: GoalExecutionStatus;
+  failurePhase?: 'validation' | 'setup' | 'execution';
 }): Promise<TestRunnerResult> {
   const { reportWriter, runDir } = await createReportWriter({
     workspace: params.workspace,
@@ -413,7 +517,8 @@ async function writeRunFailureArtifacts(params: {
     startedAt: params.startedAt.toISOString(),
     completedAt: new Date().toISOString(),
     specs: [],
-    successOverride: false,
+    successOverride: params.runStatus === 'success',
+    statusOverride: params.runStatus,
     failurePhase: params.failurePhase,
     diagnosticsSummary:
       params.diagnostics && params.diagnostics.length > 0
@@ -422,7 +527,8 @@ async function writeRunFailureArtifacts(params: {
   });
   await rebuildRunIndex(params.workspace.artifactsDir);
   return {
-    success: false,
+    success: params.runStatus === 'success',
+    status: params.runStatus,
     runId: path.basename(runDir),
     runDir,
     runIndexPath: path.join(params.workspace.artifactsDir, 'runs.json'),

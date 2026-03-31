@@ -24,7 +24,7 @@ function createDevice(platform: string): { getPlatform(): string } {
 }
 
 function createGoalResult(params?: Partial<GoalResult>): GoalResult {
-  return {
+  const result = {
     success: true,
     message: 'Opened the app successfully.',
     analysis: 'The flow completed successfully.',
@@ -51,6 +51,10 @@ function createGoalResult(params?: Partial<GoalResult>): GoalResult {
       },
     ],
     ...params,
+  };
+  return {
+    ...result,
+    status: result.status ?? (result.success ? 'success' : 'failure'),
   };
 }
 
@@ -155,6 +159,7 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
   const recordingPath = path.join(runDir, 'source-recording.mp4');
   const goalResult: GoalResult = {
     success: true,
+    status: 'success',
     message: 'Entered person@example.com and opened the feed.',
     analysis: 'Entered person@example.com and verified the feed.',
     platform: 'android',
@@ -909,6 +914,183 @@ test('runTests stops the batch after a shared-session failure and cleans up once
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests aborts the batch after SIGINT and marks the active run as aborted', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-abort-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'first.yaml'),
+    ['name: first', 'steps:', '  - Open first flow.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'second.yaml'),
+    ['name: second', 'steps:', '  - Open second flow.'].join('\n'),
+    'utf-8',
+  );
+  fs.writeFileSync(
+    path.join(testsDir, 'third.yaml'),
+    ['name: third', 'steps:', '  - Open third flow.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  const originalAddSigintListener = testRunnerDependencies.addSigintListener;
+  let cleanupCalls = 0;
+  let sigintListener: (() => void) | undefined;
+  const executedCases: string[] = [];
+
+  testRunnerDependencies.addSigintListener = (listener) => {
+    sigintListener = listener;
+    return () => {
+      if (sigintListener === listener) {
+        sigintListener = undefined;
+      }
+    };
+  };
+  testRunnerDependencies.prepareGoalSession = async () =>
+    createGoalSession({
+      cleanup: async () => {
+        cleanupCalls += 1;
+      },
+    });
+  testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
+    const testCaseId = config.recording?.testCaseId ?? 'unknown';
+    executedCases.push(testCaseId);
+    if (testCaseId === 'first') {
+      assert.equal(typeof sigintListener, 'function');
+      sigintListener?.();
+      assert.equal(config.abortSignal?.aborted, true);
+      return createGoalResult({
+        success: false,
+        status: 'aborted',
+        message: 'Goal execution was aborted',
+        analysis: 'The run was aborted by the user.',
+        totalIterations: 0,
+        steps: [],
+      });
+    }
+    return createGoalResult();
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'aborted');
+    assert.deepEqual(executedCases, ['first']);
+    assert.equal(result.specResults.length, 1);
+    assert.equal(result.specResults[0]?.status, 'aborted');
+    assert.equal(cleanupCalls, 1);
+
+    const summary = JSON.parse(
+      await fsp.readFile(path.join(result.runDir, 'summary.json'), 'utf-8'),
+    ) as {
+      status: string;
+      tests: Array<{ status: string }>;
+    };
+    assert.equal(summary.status, 'aborted');
+    assert.equal(summary.tests[0]?.status, 'aborted');
+
+    const manifest = JSON.parse(
+      await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8'),
+    ) as {
+      run: { status: string };
+      input: { specs: Array<unknown> };
+      specs: Array<{ status: string }>;
+    };
+    assert.equal(manifest.run.status, 'aborted');
+    assert.equal(manifest.input.specs.length, 3);
+    assert.equal(manifest.specs.length, 1);
+    assert.equal(manifest.specs[0]?.status, 'aborted');
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    testRunnerDependencies.addSigintListener = originalAddSigintListener;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests requests a forced exit after a second SIGINT', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-force-exit-'));
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'first.yaml'),
+    ['name: first', 'steps:', '  - Open first flow.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareGoalSession = testRunnerDependencies.prepareGoalSession;
+  const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
+  const originalAddSigintListener = testRunnerDependencies.addSigintListener;
+  const originalExitProcess = testRunnerDependencies.exitProcess;
+  let sigintListener: (() => void) | undefined;
+  let forcedExitCode: number | undefined;
+
+  testRunnerDependencies.addSigintListener = (listener) => {
+    sigintListener = listener;
+    return () => {
+      if (sigintListener === listener) {
+        sigintListener = undefined;
+      }
+    };
+  };
+  testRunnerDependencies.exitProcess = ((code: number) => {
+    forcedExitCode = code;
+    return undefined as never;
+  }) as typeof testRunnerDependencies.exitProcess;
+  testRunnerDependencies.prepareGoalSession = async () => createGoalSession();
+  testRunnerDependencies.executeGoalOnSession = async () => {
+    assert.equal(typeof sigintListener, 'function');
+    sigintListener?.();
+    sigintListener?.();
+    return createGoalResult({
+      success: false,
+      status: 'aborted',
+      message: 'Goal execution was aborted',
+      totalIterations: 0,
+      steps: [],
+    });
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['first.yaml'],
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(forcedExitCode, 130);
+    assert.equal(result.status, 'aborted');
+    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
+    assert.match(runnerLog, /Received second SIGINT — forcing exit\./);
+  } finally {
+    testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
+    testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;
+    testRunnerDependencies.addSigintListener = originalAddSigintListener;
+    testRunnerDependencies.exitProcess = originalExitProcess;
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });

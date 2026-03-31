@@ -64,8 +64,11 @@ export interface GoalRecordingResult {
   completedAt?: string;
 }
 
+export type GoalExecutionStatus = 'success' | 'failure' | 'aborted';
+
 export interface GoalResult {
   success: boolean;
+  status: GoalExecutionStatus;
   message: string;
   analysis?: string;
   platform: string;
@@ -86,6 +89,7 @@ export interface GoalProgressEvent {
   type: 'planning' | 'executing' | 'step_complete' | 'goal_complete' | 'error';
   iteration: number;
   totalIterations: number;
+  status?: GoalExecutionStatus;
   action?: string;
   reason?: string;
   success?: boolean;
@@ -149,7 +153,7 @@ const MAX_CONSECUTIVE_TRANSIENT_CAPTURE_FAILURES = 2;
 export class HeadlessGoalExecutor {
   private _config: GoalExecutorConfig;
   private _actionExecutor: HeadlessActionExecutor;
-  private _cancelled = false;
+  private _aborted = false;
   private _steps: StepResult[] = [];
 
   constructor(config: GoalExecutorConfig) {
@@ -163,12 +167,19 @@ export class HeadlessGoalExecutor {
   }
 
   /**
-   * Cancel the goal execution.
+   * Abort the goal execution.
    * The loop will stop after the current iteration completes.
    */
+  abort(): void {
+    this._aborted = true;
+    Logger.i('Goal execution aborted');
+  }
+
+  /**
+   * Backward-compatible alias for abort().
+   */
   cancel(): void {
-    this._cancelled = true;
-    Logger.i('Goal execution cancelled');
+    this.abort();
   }
 
   /**
@@ -191,10 +202,11 @@ export class HeadlessGoalExecutor {
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       const stepTrace = new StepTraceBuilder(iteration);
 
-      if (this._cancelled) {
+      if (this._aborted) {
         return {
           success: false,
-          message: 'Goal execution was cancelled',
+          status: 'aborted',
+          message: 'Goal execution was aborted',
           platform: this._config.platform,
           startedAt,
           completedAt: new Date().toISOString(),
@@ -252,6 +264,7 @@ export class HeadlessGoalExecutor {
         if (captureResult.status === 'fatal') {
           return {
             success: false,
+            status: 'failure',
             message: captureResult.message,
             platform: this._config.platform,
             startedAt,
@@ -270,6 +283,7 @@ export class HeadlessGoalExecutor {
         ) {
           return {
             success: false,
+            status: 'failure',
             message: `Repeated transient device state capture failures: ${captureResult.message}`,
             platform: this._config.platform,
             startedAt,
@@ -377,6 +391,7 @@ export class HeadlessGoalExecutor {
           type: 'goal_complete',
           iteration,
           totalIterations: maxIterations,
+          status: 'success',
           action,
           reason,
           success: true,
@@ -384,6 +399,7 @@ export class HeadlessGoalExecutor {
 
         return {
           success: true,
+          status: 'success',
           message: reason,
           analysis: plannerResponse.analysis,
           platform: this._config.platform,
@@ -419,6 +435,7 @@ export class HeadlessGoalExecutor {
           type: 'goal_complete',
           iteration,
           totalIterations: maxIterations,
+          status: 'failure',
           action,
           reason,
           success: false,
@@ -426,6 +443,7 @@ export class HeadlessGoalExecutor {
 
         return {
           success: false,
+          status: 'failure',
           message: reason,
           analysis: plannerResponse.analysis,
           platform: this._config.platform,
@@ -534,6 +552,7 @@ export class HeadlessGoalExecutor {
     Logger.w(`Max iterations (${maxIterations}) reached`);
     return {
       success: false,
+      status: 'failure',
       message: `Max iterations (${maxIterations}) exceeded without completing the goal`,
       platform: this._config.platform,
       startedAt,

@@ -3,6 +3,7 @@
 export { HeadlessGoalExecutor } from './HeadlessGoalExecutor.js';
 export type {
   GoalExecutorConfig,
+  GoalExecutionStatus,
   GoalResult,
   GoalRecordingResult,
   StepResult,

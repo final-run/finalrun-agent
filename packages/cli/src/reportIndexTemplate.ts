@@ -1,5 +1,7 @@
 import type { RunIndexEntryRecord } from '@finalrun/common';
 
+type RunOutcomeStatus = 'success' | 'failure' | 'aborted';
+
 function svgDataUri(svg: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
@@ -316,7 +318,7 @@ function renderRunIndexRow(run: ReportIndexRunRecord): string {
       </td>
       <td>${escapeHtml(run.appLabel)}</td>
       <td>${run.durationMs > 0 ? escapeHtml(formatLongDuration(run.durationMs)) : 'NA'}</td>
-      <td>${renderStatusPill(run.success ? 'success' : 'failure')}</td>
+      <td>${renderStatusPill(resolveRunStatus(run))}</td>
       <td>${escapeHtml(resultLabel)}</td>
       <td>
         <span class="run-on-badge">
@@ -337,8 +339,15 @@ function renderTintedPngIcon(src: string): string {
   return `<span class="tinted-png-icon" style="--icon-mask:url('${escapeHtml(src)}');" aria-hidden="true"></span>`;
 }
 
-function renderStatusPill(status: 'success' | 'failure'): string {
-  return `<span class="status-pill ${escapeHtml(status)}">${status === 'success' ? 'Passed' : 'Failed'}</span>`;
+function resolveRunStatus(
+  run: Pick<RunIndexEntryRecord, 'status' | 'success'>,
+): RunOutcomeStatus {
+  return run.status === 'aborted' ? 'aborted' : run.success ? 'success' : 'failure';
+}
+
+function renderStatusPill(status: RunOutcomeStatus): string {
+  const label = status === 'success' ? 'Passed' : status === 'aborted' ? 'Aborted' : 'Failed';
+  return `<span class="status-pill ${escapeHtml(status)}">${escapeHtml(label)}</span>`;
 }
 
 function renderSummaryCard(
@@ -429,6 +438,7 @@ function renderSharedCss(): string {
       --icon: #8E9AB9;
       --accent: #4318FF;
       --success: #05CD99;
+      --aborted: #475569;
       --warning: #FF920C;
       --failure: #EE5D50;
       --border: #E0E5F2;
@@ -483,6 +493,11 @@ function renderSharedCss(): string {
     .status-pill.success {
       background: rgba(5, 205, 153, 0.14);
       color: var(--success);
+    }
+
+    .status-pill.aborted {
+      background: rgba(71, 85, 105, 0.14);
+      color: var(--aborted);
     }
 
     .status-pill.failure {

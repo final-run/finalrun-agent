@@ -48,7 +48,9 @@ export class TerminalRenderer {
 
       case 'goal_complete':
         this._stopSpinner();
-        if (event.success) {
+        if (event.status === 'aborted') {
+          console.log(`\n\x1b[33m! Goal aborted\x1b[0m ${event.reason ?? ''}`);
+        } else if (event.success) {
           console.log(`\n\x1b[32m✓ Goal completed!\x1b[0m ${event.reason ?? ''}`);
         } else {
           console.log(`\n\x1b[31m✗ Goal failed:\x1b[0m ${event.reason ?? ''}`);
@@ -68,7 +70,9 @@ export class TerminalRenderer {
   printSummary(result: GoalResult): void {
     console.log('\n' + '─'.repeat(50));
     console.log(
-      result.success
+      result.status === 'aborted'
+        ? `\x1b[33m! Goal aborted\x1b[0m`
+        : result.success
         ? `\x1b[32m✓ Goal completed successfully\x1b[0m`
         : `\x1b[31m✗ Goal failed\x1b[0m`,
     );

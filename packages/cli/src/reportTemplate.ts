@@ -14,7 +14,8 @@ const TEST_ICON_SRC = svgDataUri(
   '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.023 6.44581L10.7376 0.160415C10.6334 0.0562284 10.4916 -0.00178609 10.3433 -0.000865207C10.195 5.56883e-05 10.0525 0.0598365 9.94698 0.165326C9.84149 0.270815 9.78171 0.413371 9.78079 0.561635C9.77987 0.709898 9.83788 0.851723 9.94207 0.95591L10.2838 1.29768L1.18337 10.3981C0.432289 11.1492 0.00665178 12.1642 9.49964e-05 13.2199C-0.00646187 14.2755 0.4066 15.2853 1.14841 16.0271C1.89022 16.7689 2.90002 17.182 3.95565 17.1754C5.01129 17.1689 6.02629 16.7432 6.77737 15.9921L15.8778 6.89168L16.2275 7.2413C16.3316 7.34549 16.4735 7.40351 16.6217 7.40258C16.77 7.40166 16.9126 7.34188 17.018 7.23639C17.1235 7.1309 17.1833 6.98835 17.1842 6.84008C17.1852 6.69182 17.1271 6.55 17.023 6.44581ZM13.1471 8.0589C12.6386 8.15099 10.8743 8.36749 9.64093 7.43637C8.84698 6.83875 7.93683 6.41188 6.96677 6.18217L11.0675 2.08139L15.0961 6.10993L13.1471 8.0589Z" fill="#707EAE"/></svg>',
 );
 
-type SpecOutcomeStatus = 'success' | 'failure' | 'error' | 'not_executed';
+type SpecOutcomeStatus = 'success' | 'failure' | 'error' | 'aborted' | 'not_executed';
+type RunOutcomeStatus = 'success' | 'failure' | 'aborted';
 
 export interface ReportManifestSelectedSpecRecord extends RunManifestSelectedSpecRecord {
   snapshotYamlText?: string;
@@ -41,6 +42,7 @@ interface ReportSpecListItem {
 interface OutcomeSummary {
   total: number;
   success: number;
+  aborted: number;
   failure: number;
   error: number;
   notExecuted: number;
@@ -190,6 +192,7 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
     }
 
     .segment.success { background: var(--success); }
+    .segment.aborted { background: var(--aborted); }
     .segment.failure { background: var(--failure); }
     .segment.error { background: var(--warning); }
     .segment.not-executed { background: var(--icon); }
@@ -470,6 +473,11 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
       border-color: rgba(5, 205, 153, 0.22);
     }
 
+    .analysis-card.aborted {
+      background: rgba(71, 85, 105, 0.08);
+      border-color: rgba(71, 85, 105, 0.22);
+    }
+
     .analysis-card.failure {
       background: rgba(238, 93, 80, 0.08);
       border-color: rgba(238, 93, 80, 0.22);
@@ -487,6 +495,10 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
 
     .analysis-card.success .detail-section-title {
       color: var(--success);
+    }
+
+    .analysis-card.aborted .detail-section-title {
+      color: var(--aborted);
     }
 
     .analysis-card.failure .detail-section-title {
@@ -866,7 +878,7 @@ export function renderHtmlReport(manifest: ReportRunManifestRecord): string {
           <p class="report-subtitle">${escapeHtml(run.runId)} · Completed ${escapeHtml(formatRelativeTime(run.completedAt))} ago</p>
         </div>
       </div>
-      ${renderStatusPill(run.success ? 'success' : 'failure')}
+      ${renderStatusPill(resolveRunStatus(run))}
     </section>
 
     ${isSingleSpec
@@ -1327,6 +1339,7 @@ function renderContextSummaryItem(label: string, value: string): string {
 function renderSummarySegments(summary: OutcomeSummary): string {
   const segments = [
     { label: 'Success', className: 'success', count: summary.success },
+    { label: 'Aborted', className: 'aborted', count: summary.aborted },
     { label: 'Failure', className: 'failure', count: summary.failure },
     { label: 'Error', className: 'error', count: summary.error },
     { label: 'Not Executed', className: 'not-executed', count: summary.notExecuted },
@@ -1349,6 +1362,8 @@ function renderSummarySegments(summary: OutcomeSummary): string {
           <span class="segment-legend-item">
             <span class="segment-legend-dot ${segment.className}" style="background:${segment.className === 'success'
               ? 'var(--success)'
+              : segment.className === 'aborted'
+                ? 'var(--aborted)'
               : segment.className === 'failure'
                 ? 'var(--failure)'
                 : segment.className === 'error'
@@ -1395,6 +1410,8 @@ function renderSpecDetailSection(
   const initialStep = spec?.steps[0];
   const statusText = item.status === 'error'
     ? 'Error'
+    : item.status === 'aborted'
+      ? 'Aborted'
     : item.status === 'failure'
       ? 'Failed'
       : item.status === 'not_executed'
@@ -1631,6 +1648,8 @@ function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
       summary.total += 1;
       if (item.status === 'success') {
         summary.success += 1;
+      } else if (item.status === 'aborted') {
+        summary.aborted += 1;
       } else if (item.status === 'failure') {
         summary.failure += 1;
       } else if (item.status === 'error') {
@@ -1643,6 +1662,7 @@ function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
     {
       total: 0,
       success: 0,
+      aborted: 0,
       failure: 0,
       error: 0,
       notExecuted: 0,
@@ -1651,6 +1671,18 @@ function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
 }
 
 function classifySpecStatus(spec: ReportManifestSpecRecord): SpecOutcomeStatus {
+  if (spec.status === 'aborted') {
+    return 'aborted';
+  }
+  if (spec.status === 'error') {
+    return 'error';
+  }
+  if (spec.status === 'success') {
+    return 'success';
+  }
+  if (spec.status === 'failure') {
+    return 'failure';
+  }
   if (spec.success) {
     return 'success';
   }
@@ -1678,9 +1710,17 @@ function deriveReportTitle(manifest: ReportRunManifestRecord): string {
   return manifest.run.runId;
 }
 
-function renderStatusPill(status: SpecOutcomeStatus | 'success' | 'failure'): string {
+function resolveRunStatus(
+  run: Pick<ReportRunManifestRecord['run'], 'status' | 'success'>,
+): RunOutcomeStatus {
+  return run.status === 'aborted' ? 'aborted' : run.success ? 'success' : 'failure';
+}
+
+function renderStatusPill(status: SpecOutcomeStatus | RunOutcomeStatus): string {
   const label = status === 'success'
     ? 'Passed'
+    : status === 'aborted'
+      ? 'Aborted'
     : status === 'failure'
       ? 'Failed'
       : status === 'error'
@@ -1792,6 +1832,7 @@ function renderSharedCss(): string {
       --icon: #8E9AB9;
       --accent: #4318FF;
       --success: #05CD99;
+      --aborted: #475569;
       --warning: #FF920C;
       --failure: #EE5D50;
       --border: #E0E5F2;
@@ -1846,6 +1887,11 @@ function renderSharedCss(): string {
     .status-pill.success {
       background: rgba(5, 205, 153, 0.14);
       color: var(--success);
+    }
+
+    .status-pill.aborted {
+      background: rgba(71, 85, 105, 0.14);
+      color: var(--aborted);
     }
 
     .status-pill.failure {

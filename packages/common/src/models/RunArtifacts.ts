@@ -47,6 +47,10 @@ export interface ArtifactTimingMetadata {
   }>;
 }
 
+export type StepArtifactStatus = 'success' | 'failure';
+export type SpecArtifactStatus = 'success' | 'failure' | 'error' | 'aborted';
+export type RunArtifactStatus = 'success' | 'failure' | 'aborted';
+
 export interface StepArtifactRecord {
   stepNumber: number;
   iteration: number;
@@ -57,7 +61,7 @@ export interface StepArtifactRecord {
   thought?: PlannerThoughtRecord;
   actionPayload?: ActionPayloadRecord;
   success: boolean;
-  status: 'success' | 'failure';
+  status: StepArtifactStatus;
   errorMessage?: string;
   durationMs?: number;
   timestamp: string;
@@ -74,6 +78,7 @@ export interface SpecArtifactRecord {
   sourcePath: string;
   relativePath: string;
   success: boolean;
+  status: SpecArtifactStatus;
   message: string;
   analysis?: string;
   platform: string;
@@ -111,6 +116,7 @@ export interface RunSummaryRecord {
   completedAt: string;
   durationMs: number;
   success: boolean;
+  status: RunArtifactStatus;
   failurePhase?: FailurePhase;
   specCount: number;
   passedCount: number;
@@ -123,6 +129,7 @@ export interface RunSummaryRecord {
     specName: string;
     relativePath: string;
     success: boolean;
+    status: SpecArtifactStatus;
     durationMs: number;
     resultFile: string;
   }>;
@@ -235,7 +242,7 @@ export interface RunManifestRecord {
   run: {
     runId: string;
     success: boolean;
-    status: 'success' | 'failure';
+    status: RunArtifactStatus;
     failurePhase?: FailurePhase;
     startedAt: string;
     completedAt: string;
@@ -271,7 +278,7 @@ export interface RunManifestRecord {
 export interface RunIndexEntryRecord {
   runId: string;
   success: boolean;
-  status: 'success' | 'failure';
+  status: RunArtifactStatus;
   failurePhase?: FailurePhase;
   startedAt: string;
   completedAt: string;
