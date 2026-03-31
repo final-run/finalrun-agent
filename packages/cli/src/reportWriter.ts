@@ -20,9 +20,11 @@ import {
   type RunManifestSpecRecord,
   type RunManifestSuiteRecord,
   type RunManifestStepRecord,
+  type RunArtifactStatus,
   type RunTargetRecord,
   type RunSummaryRecord,
   type RuntimeBindings,
+  type SpecArtifactStatus,
   type SpecArtifactRecord,
   type StepArtifactRecord,
   redactResolvedValue,
@@ -341,6 +343,7 @@ export class ReportWriter {
       sourcePath: spec.sourcePath,
       relativePath: spec.relativePath,
       success: result.success,
+      status: resolveSpecArtifactStatus(result),
       message: redactResolvedValue(result.message, bindings) ?? result.message,
       analysis: redactResolvedValue(result.analysis, bindings),
       platform: result.platform,
@@ -370,6 +373,7 @@ export class ReportWriter {
     completedAt: string;
     specs: SpecArtifactRecord[];
     successOverride?: boolean;
+    statusOverride?: RunArtifactStatus;
     failurePhase?: FailurePhase;
     diagnosticsSummary?: string;
   }): Promise<RunSummaryRecord> {
@@ -387,6 +391,7 @@ export class ReportWriter {
         new Date(params.completedAt).getTime() - new Date(params.startedAt).getTime(),
       ),
       success: params.successOverride ?? failedCount === 0,
+      status: params.statusOverride ?? ((params.successOverride ?? failedCount === 0) ? 'success' : 'failure'),
       failurePhase: params.failurePhase,
       specCount: params.specs.length,
       passedCount,
@@ -399,6 +404,7 @@ export class ReportWriter {
         specName: spec.specName,
         relativePath: spec.relativePath,
         success: spec.success,
+        status: spec.status,
         durationMs: spec.durationMs,
         resultFile: path.posix.join('tests', spec.specId, 'result.json'),
       })),
@@ -409,6 +415,7 @@ export class ReportWriter {
       completedAt: params.completedAt,
       specs: params.specs,
       success: summary.success,
+      status: summary.status,
       failurePhase: params.failurePhase,
       diagnosticsSummary: params.diagnosticsSummary,
     });
@@ -497,6 +504,7 @@ export class ReportWriter {
       sourcePath: params.spec.sourcePath,
       relativePath: params.spec.relativePath,
       success: false,
+      status: 'error',
       message: failureMessage,
       analysis: undefined,
       platform: params.platform,
@@ -523,6 +531,7 @@ export class ReportWriter {
     completedAt: string;
     specs: SpecArtifactRecord[];
     success: boolean;
+    status: RunArtifactStatus;
     failurePhase?: FailurePhase;
     diagnosticsSummary?: string;
   }): RunManifestRecord {
@@ -541,7 +550,7 @@ export class ReportWriter {
       run: {
         runId: this._runId,
         success: params.success,
-        status: params.success ? 'success' : 'failure',
+        status: params.status,
         failurePhase: params.failurePhase,
         startedAt: params.startedAt,
         completedAt: params.completedAt,
@@ -659,6 +668,13 @@ export class ReportWriter {
     await fsp.copyFile(sourcePath, targetPath);
     return recordingRelative;
   }
+}
+
+function resolveSpecArtifactStatus(result: GoalResult): SpecArtifactStatus {
+  if (result.status === 'aborted') {
+    return 'aborted';
+  }
+  return result.success ? 'success' : 'failure';
 }
 
 function collectBindingReferences(spec: LoadedRepoTestSpec): BindingReferenceRecord {

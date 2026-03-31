@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { RunManifestRecord, RunTargetRecord } from '@finalrun/common';
-import { rebuildRunIndex } from './runIndex.js';
+import { formatRunIndexForConsole, rebuildRunIndex } from './runIndex.js';
 
 function createRunManifest(
   runId: string,
@@ -136,4 +136,36 @@ test('rebuildRunIndex carries compact suite target metadata into runs.json', asy
   } finally {
     await fsp.rm(artifactsDir, { recursive: true, force: true });
   }
+});
+
+test('formatRunIndexForConsole prints ABORT for aborted runs', () => {
+  const output = formatRunIndexForConsole({
+    schemaVersion: 1,
+    generatedAt: '2026-03-23T18:00:00.000Z',
+    runs: [
+      {
+        runId: '2026-03-23T18-00-00.000Z-dev-android',
+        success: false,
+        status: 'aborted',
+        startedAt: '2026-03-23T18:00:00.000Z',
+        completedAt: '2026-03-23T18:00:10.000Z',
+        durationMs: 10000,
+        envName: 'dev',
+        platform: 'android',
+        modelLabel: 'openai/gpt-4o',
+        appLabel: 'repo app',
+        specCount: 2,
+        passedCount: 0,
+        failedCount: 1,
+        stepCount: 1,
+        paths: {
+          runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
+          log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
+        },
+      },
+    ],
+  });
+
+  assert.match(output, /^Status  Env/m);
+  assert.match(output, /ABORT/);
 });

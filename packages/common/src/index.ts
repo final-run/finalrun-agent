@@ -52,6 +52,9 @@ export type {
   RunManifestRecord,
   RunIndexEntryRecord,
   RunIndexRecord,
+  StepArtifactStatus,
+  SpecArtifactStatus,
+  RunArtifactStatus,
 } from './models/RunArtifacts.js';
 export { Hierarchy, HierarchyNode } from './models/Hierarchy.js';
 export {

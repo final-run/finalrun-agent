@@ -188,7 +188,7 @@ program
       } else {
         console.log('Start the local report UI with `finalrun start-server`.');
       }
-      process.exit(result.success ? 0 : 1);
+      process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
     });
   });
 

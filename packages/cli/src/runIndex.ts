@@ -89,10 +89,19 @@ export function formatRunIndexForConsole(index: RunIndexRecord): string {
   const lines = ['Status  Env       Platform  Specs     Duration  Run ID'];
   for (const run of index.runs) {
     lines.push(
-      `${pad(run.success ? 'PASS' : 'FAIL', 6)}  ${pad(run.envName, 8)}  ${pad(run.platform, 8)}  ${pad(`${run.passedCount}/${run.specCount}`, 8)}  ${pad(formatDuration(run.durationMs), 8)}  ${run.runId}`,
+      `${pad(resolveRunStatusLabel(run), 6)}  ${pad(run.envName, 8)}  ${pad(run.platform, 8)}  ${pad(`${run.passedCount}/${run.specCount}`, 8)}  ${pad(formatDuration(run.durationMs), 8)}  ${run.runId}`,
     );
   }
   return lines.join('\n');
+}
+
+function resolveRunStatusLabel(
+  run: Pick<RunIndexEntryRecord, 'status' | 'success'>,
+): 'PASS' | 'FAIL' | 'ABORT' {
+  if (run.status === 'aborted') {
+    return 'ABORT';
+  }
+  return run.success ? 'PASS' : 'FAIL';
 }
 
 function pad(value: string, width: number): string {

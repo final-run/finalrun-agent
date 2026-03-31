@@ -46,7 +46,7 @@ type GoalRunnerRenderer = Pick<
 
 type GoalRunnerExecutor = Pick<
   HeadlessGoalExecutor,
-  'cancel' | 'executeGoal'
+  'abort' | 'executeGoal'
 >;
 
 export interface GoalRunnerConfig {
@@ -59,6 +59,7 @@ export interface GoalRunnerConfig {
   platform?: string;
   appOverridePath?: string;
   runtimeBindings?: RuntimeBindings;
+  abortSignal?: AbortSignal;
   recording?: {
     testRunId: string;
     testCaseId: string;
@@ -265,7 +266,7 @@ export async function executeGoalOnSession(
   dependencies: GoalRunnerDependencies = goalRunnerDependencies,
 ): Promise<GoalResult> {
   const renderer = dependencies.createRenderer();
-  let cancelHandler: (() => void) | undefined;
+  let abortListener: (() => void) | undefined;
   let activeRecording:
     | {
         testRunId: string;
@@ -290,13 +291,17 @@ export async function executeGoalOnSession(
       aiAgent,
       runtimeBindings: config.runtimeBindings,
     });
-
-    // Handle SIGINT (Ctrl+C) for graceful cancellation
-    cancelHandler = () => {
-      Logger.i('\nReceived SIGINT — cancelling...');
-      executor.cancel();
-    };
-    process.on('SIGINT', cancelHandler);
+    if (config.abortSignal?.aborted) {
+      const abortedResult = createAbortedGoalResult(session.platform);
+      renderer.printSummary(abortedResult);
+      return abortedResult;
+    }
+    if (config.abortSignal) {
+      abortListener = () => {
+        executor.abort();
+      };
+      config.abortSignal.addEventListener('abort', abortListener);
+    }
 
     const recordingRequired =
       config.recording !== undefined && session.platform === PLATFORM_ANDROID;
@@ -406,8 +411,8 @@ export async function executeGoalOnSession(
 
     return finalResult;
   } finally {
-    if (cancelHandler) {
-      process.removeListener('SIGINT', cancelHandler);
+    if (abortListener && config.abortSignal) {
+      config.abortSignal.removeEventListener('abort', abortListener);
     }
     if (activeRecording) {
       try {
@@ -459,8 +464,23 @@ function createRecordingFailureResult(params: {
   const timestamp = new Date().toISOString();
   return {
     success: false,
+    status: 'failure',
     message: params.message,
     platform: params.platform,
+    startedAt: timestamp,
+    completedAt: timestamp,
+    steps: [],
+    totalIterations: 0,
+  };
+}
+
+function createAbortedGoalResult(platform: string): GoalResult {
+  const timestamp = new Date().toISOString();
+  return {
+    success: false,
+    status: 'aborted',
+    message: 'Goal execution was aborted',
+    platform,
     startedAt: timestamp,
     completedAt: timestamp,
     steps: [],
@@ -472,6 +492,7 @@ function markGoalResultFailed(result: GoalResult, message: string): GoalResult {
   return {
     ...result,
     success: false,
+    status: result.status === 'aborted' ? 'aborted' : 'failure',
     message: result.success ? message : `${result.message}\n${message}`,
   };
 }

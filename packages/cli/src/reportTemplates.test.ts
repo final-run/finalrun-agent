@@ -194,6 +194,7 @@ function createSuiteRunManifest(): RunManifestRecord {
         sourcePath: '/repo/.finalrun/tests/login/valid_login.yaml',
         relativePath: 'login/valid_login.yaml',
         success: false,
+        status: 'failure',
         message: 'button not found',
         analysis: 'button not found',
         platform: 'android',
@@ -571,6 +572,30 @@ test('renderHtmlReport surfaces the no-synced-timestamp caption when steps lack 
   const html = renderHtmlReport(manifest);
   assert.match(html, /No synced recording timestamp is available for the selected step\./);
   assertSimplifiedSpecDetailHtml(html);
+});
+
+test('report templates render aborted runs and specs with explicit aborted badges', () => {
+  const historyViewModel = createRunIndexViewModel();
+  historyViewModel.runs[0] = {
+    ...historyViewModel.runs[0],
+    success: false,
+    status: 'aborted',
+  };
+  const historyHtml = renderRunIndexHtml(historyViewModel);
+  assert.match(historyHtml, /class="status-pill aborted">Aborted<\/span>/);
+
+  const manifest = createSuiteRunManifest();
+  manifest.run.status = 'aborted';
+  manifest.specs[0] = {
+    ...manifest.specs[0],
+    status: 'aborted',
+    message: 'Goal execution was aborted',
+    analysis: 'The user aborted the run from the CLI.',
+  };
+
+  const html = renderHtmlReport(manifest);
+  assert.match(html, /class="status-pill aborted">Aborted<\/span>/);
+  assert.match(html, /The user aborted the run from the CLI\./);
 });
 
 test('buildReportIndexViewModel derives display metadata for the actual CLI-served history page', async () => {
