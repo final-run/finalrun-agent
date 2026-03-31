@@ -41,3 +41,6 @@ pnpm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+.claude/
+.codex/
+.cursor/
