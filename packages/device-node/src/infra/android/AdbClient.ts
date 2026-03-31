@@ -106,6 +106,15 @@ const ANDROID_PERMISSION_TRANSLATIONS: Record<string, string[]> = {
   overlay: ['SYSTEM_ALERT_WINDOW'],
 };
 
+/**
+ * True when `pm grant` / `pm revoke` failed because the target package does not declare the
+ * permission in its manifest (`Package … has not requested permission …`). Used for best-effort
+ * `allowAllPermissions` (still defaulted true) so undeclared permissions are skipped, not errors.
+ */
+export function isUndeclaredPermissionGrantFailure(stderrOrMessage: string): boolean {
+  return stderrOrMessage.toLowerCase().includes('has not requested permission');
+}
+
 export class AdbClient {
   private _nextPort: number = DEFAULT_GRPC_PORT_START;
   private _portMap: Map<string, number> = new Map();
@@ -701,6 +710,7 @@ export class AdbClient {
     permissions: Record<string, string>,
   ): Promise<AndroidCommandResult> {
     const errors: string[] = [];
+    let skippedUndeclaredRuntime = 0;
 
     for (const [permissionName, action] of Object.entries(permissions)) {
       const translatedPermissions = this._translatePermissionName(permissionName);
@@ -718,8 +728,14 @@ export class AdbClient {
             packageName,
             action,
           );
+          if (!result.success) {
+            errors.push(
+              `Failed to update ${androidPermission}: ${result.message ?? 'unknown error'}`,
+            );
+          }
         } else {
           const adbAction = action === 'allow' ? 'grant' : 'revoke';
+          const failurePrefix = `Failed to ${adbAction} ${androidPermission} on ${deviceSerial}`;
           result = await this._runAdb(
             adbPath,
             [
@@ -731,16 +747,28 @@ export class AdbClient {
               packageName,
               androidPermission,
             ],
-            `Failed to ${adbAction} ${androidPermission} on ${deviceSerial}`,
+            failurePrefix,
+            { suppressErrorLog: true },
           );
-        }
-
-        if (!result.success) {
-          errors.push(
-            `Failed to update ${androidPermission}: ${result.message ?? 'unknown error'}`,
-          );
+          if (!result.success) {
+            const textForMatch = `${result.stderr ?? ''}\n${result.message ?? ''}`;
+            if (isUndeclaredPermissionGrantFailure(textForMatch)) {
+              skippedUndeclaredRuntime += 1;
+            } else {
+              Logger.e(failurePrefix, new Error(result.message ?? 'unknown error'));
+              errors.push(
+                `Failed to update ${androidPermission}: ${result.message ?? 'unknown error'}`,
+              );
+            }
+          }
         }
       }
+    }
+
+    if (skippedUndeclaredRuntime > 0) {
+      Logger.i(
+        `Skipped ${skippedUndeclaredRuntime} Android runtime permission(s) not declared by ${packageName} on ${deviceSerial}`,
+      );
     }
 
     return {
