@@ -1,0 +1,7 @@
+reviews:
+  auto_review:
+    enabled: true
+    drafts: true
+    base_branches:
+      - ".*"
+    auto_pause_after_reviewed_commits: 0
