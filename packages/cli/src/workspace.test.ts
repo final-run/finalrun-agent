@@ -16,6 +16,7 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
+  configYaml?: string;
   specs?: Record<string, string>;
   suites?: Record<string, string>;
 }): string {
@@ -32,6 +33,14 @@ function createTempWorkspace(params?: {
   const includeSuitesDir = params?.includeSuitesDir ?? Object.keys(suites).length > 0;
   if (includeSuitesDir) {
     fs.mkdirSync(suitesDir, { recursive: true });
+  }
+
+  if (params?.configYaml !== undefined) {
+    fs.writeFileSync(
+      path.join(rootDir, '.finalrun', 'config.yaml'),
+      params.configYaml,
+      'utf-8',
+    );
   }
 
   const envFiles = params?.envFiles ?? {
@@ -125,6 +134,56 @@ test('runCheck defaults to dev when envName is omitted and dev.yaml exists', asy
 
   try {
     const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'dev');
+    assert.equal(result.environment.bindings.variables.language, 'Spanish');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck uses .finalrun/config.yaml env when --env is omitted', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: staging\n',
+    envFiles: {
+      'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
+      'staging.yaml': ['variables:', '  language: German'].join('\n'),
+    },
+    specs: {
+      'language.yaml': [
+        'name: language',
+        'steps:',
+        '  - Verify ${variables.language} is visible.',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'staging');
+    assert.equal(result.environment.bindings.variables.language, 'German');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck prefers explicit envName over .finalrun/config.yaml env', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: staging\n',
+    envFiles: {
+      'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
+      'staging.yaml': ['variables:', '  language: German'].join('\n'),
+    },
+    specs: {
+      'language.yaml': [
+        'name: language',
+        'steps:',
+        '  - Verify ${variables.language} is visible.',
+      ].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir, envName: 'dev' });
     assert.equal(result.environment.envName, 'dev');
     assert.equal(result.environment.bindings.variables.language, 'Spanish');
   } finally {
@@ -244,6 +303,24 @@ test('runCheck fails with actionable guidance when --env is explicit but .finalr
   }
 });
 
+test('runCheck preserves the missing-env error when .finalrun/config.yaml points to a missing env file', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: staging\n',
+    envFiles: {
+      'dev.yaml': '{}\n',
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /Environment "staging" was not found .* Available environments: dev/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('runCheck rejects legacy env app keys', async () => {
   const rootDir = createTempWorkspace({
     envYaml: ['app:', '  android:', '    packageName: org.wikipedia'].join('\n'),
@@ -253,6 +330,109 @@ test('runCheck rejects legacy env app keys', async () => {
     await assert.rejects(
       () => runCheck({ envName: 'dev', cwd: rootDir }),
       /contains unsupported key "app"/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck ignores invalid model formats in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: "not-a-provider-model"\n',
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'dev');
+    assert.equal(result.specs.length, 1);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck ignores unsupported model providers in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: "bedrock/claude"\n',
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'dev');
+    assert.equal(result.specs.length, 1);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects invalid YAML in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: [dev\n',
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /Invalid YAML in .*\/\.finalrun\/config\.yaml:/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects unknown keys in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['env: dev', 'region: us-west-2'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /config\.yaml contains unsupported key "region"\. Supported keys: env, model\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects non-string env values in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: 123\n',
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /config\.yaml env must be a string\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects non-string model values in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'model: 123\n',
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /config\.yaml model must be a string\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects empty env values in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'env: "   "\n',
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /config\.yaml env must not be empty\./,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

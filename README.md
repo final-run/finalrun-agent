@@ -28,6 +28,7 @@ Example workspace layout:
 
 ```text
 .finalrun/
+  config.yaml
   tests/
     smoke.yaml
     auth/
@@ -62,6 +63,15 @@ secrets:
 variables:
   locale: en-US
 ```
+
+Optional workspace config:
+
+```yaml
+env: dev
+model: google/gemini-3-flash-preview
+```
+
+`finalrun check` reads `env` from `.finalrun/config.yaml` when `--env` is omitted. `finalrun test` reads both `env` and `model` from config when the corresponding CLI flags are omitted. Explicit CLI flags always win over config.
 
 Validate the workspace:
 
@@ -108,11 +118,13 @@ tests:
 `finalrun check`
 
 - Validates the `.finalrun` workspace, environment bindings, selectors, and suite manifests.
+- Uses `.finalrun/config.yaml` `env` as the default when `--env` is omitted.
 
 `finalrun test`
 
 - Executes one or more YAML specs or a suite manifest.
-- Requires `--model <provider/model>` and supports `--env`, `--platform`, `--app`, `--suite`, and `--api-key`.
+- Requires a model from `--model <provider/model>` or `.finalrun/config.yaml`.
+- Supports `--env`, `--platform`, `--app`, `--suite`, and `--api-key`, with CLI flags taking precedence over config.
 
 `finalrun doctor`
 
@@ -150,7 +162,7 @@ npm run build:drivers
 
 ## Supported AI Providers
 
-`--model <provider/model>` is required. FinalRun currently supports exactly `openai`, `google`, and `anthropic`, and resolves API keys in this order:
+FinalRun requires a `provider/model` value from `--model <provider/model>` or `.finalrun/config.yaml`. It currently supports exactly `openai`, `google`, and `anthropic`, and resolves API keys in this order:
 
 - `openai/...`: `OPENAI_API_KEY`
 - `google/...`: `GOOGLE_API_KEY`

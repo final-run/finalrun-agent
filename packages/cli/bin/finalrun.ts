@@ -29,7 +29,8 @@ import {
 } from '../src/runtimePaths.js';
 import {
   ensureWorkspaceDirectories,
-  resolveEnvironmentFile,
+  loadWorkspaceConfig,
+  resolveConfiguredEnvironmentFile,
   resolveWorkspace,
 } from '../src/workspace.js';
 
@@ -55,15 +56,12 @@ program
   .action(async (selectors: string[] | undefined, options: CheckCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
-      const resolvedEnvironment = await resolveCliEnvironment(options.env);
       const normalizedSelectors = normalizeSpecSelectors(selectors);
       if (options.suite && normalizedSelectors.length > 0) {
         throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
       }
       const result = await runCheck({
-        envName: resolvedEnvironment.usesEmptyBindings
-          ? undefined
-          : resolvedEnvironment.envName,
+        envName: options.env,
         selectors: normalizedSelectors,
         suitePath: options.suite,
         platform: options.platform,
@@ -143,11 +141,14 @@ program
       if (normalizedSelectors.length === 0 && !options.suite) {
         throw new Error(TEST_SELECTION_REQUIRED_ERROR);
       }
-      const model = parseModel(options.model);
+      const workspace = await resolveWorkspace();
+      await ensureWorkspaceDirectories(workspace);
+      const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
+      const model = parseModel(options.model ?? workspaceConfig.model);
 
       const debug = options.debug === true;
       Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
-      const resolvedEnvironment = await resolveCliEnvironment(options.env);
+      const resolvedEnvironment = await resolveConfiguredEnvironmentFile(workspace, options.env);
 
       const runtimeEnv = new CliEnv();
       runtimeEnv.load(
@@ -178,7 +179,6 @@ program
 
       console.log(`Artifacts written to ${result.runDir}`);
       console.log(`Runs index available at ${result.runIndexPath}`);
-      const workspace = await resolveWorkspace();
       const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
       if (activeServer) {
         const runUrl = buildRunReportUrl(activeServer.url, result.runId);
@@ -304,12 +304,6 @@ async function runCommand(run: () => Promise<void>): Promise<void> {
     console.error(`\n\x1b[31m✖ Error:\x1b[0m ${msg}\n`);
     process.exit(1);
   }
-}
-
-async function resolveCliEnvironment(requestedEnvName?: string) {
-  const workspace = await resolveWorkspace();
-  await ensureWorkspaceDirectories(workspace);
-  return resolveEnvironmentFile(workspace.envDir, requestedEnvName);
 }
 
 async function startWorkspaceReportServer(params: {

@@ -10,7 +10,7 @@ import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
 import {
   ensureWorkspaceDirectories,
   resolveWorkspace,
-  resolveEnvironmentFile,
+  resolveConfiguredEnvironmentFile,
   resolveSuiteManifestPath,
   validateAppOverride,
   type AppOverrideValidationResult,
@@ -45,8 +45,8 @@ export async function runCheck(
 ): Promise<CheckRunnerResult> {
   const workspace = await resolveWorkspace(options.cwd);
   await ensureWorkspaceDirectories(workspace);
-  const resolvedEnvironment = await resolveEnvironmentFile(
-    workspace.envDir,
+  const resolvedEnvironment = await resolveConfiguredEnvironmentFile(
+    workspace,
     options.envName,
   );
 
