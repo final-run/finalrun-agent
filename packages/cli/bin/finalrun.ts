@@ -5,7 +5,7 @@
 import * as path from 'node:path';
 import { Command } from 'commander';
 import { Logger, LogLevel } from '@finalrun/common';
-import { CliEnv, parseModel } from '../src/env.js';
+import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
 import { runDoctorCommand } from '../src/doctorRunner.js';
@@ -129,8 +129,7 @@ program
   .option('--api-key <key>', 'API key for the LLM provider')
   .option(
     '--model <provider/model>',
-    'LLM model in provider/model format (for example openai/gpt-4o)',
-    'openai/gpt-4o',
+    `LLM model in provider/model format (for example ${MODEL_FORMAT_EXAMPLE})`,
   )
   .option('--debug', 'Enable debug logging', false)
   .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
@@ -144,6 +143,7 @@ program
       if (normalizedSelectors.length === 0 && !options.suite) {
         throw new Error(TEST_SELECTION_REQUIRED_ERROR);
       }
+      const model = parseModel(options.model);
 
       const debug = options.debug === true;
       Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
@@ -155,7 +155,6 @@ program
           ? undefined
           : resolvedEnvironment.envName,
       );
-      const model = parseModel(options.model);
       const apiKey = resolveApiKey({
         env: runtimeEnv,
         provider: model.provider,
@@ -271,7 +270,7 @@ interface DoctorCommandOptions {
 
 interface TestCommandOptions extends CheckCommandOptions {
   apiKey?: string;
-  model: string;
+  model?: string;
   debug?: boolean;
   maxIterations: string;
 }

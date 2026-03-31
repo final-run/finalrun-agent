@@ -6,6 +6,7 @@ import { Logger } from '@finalrun/common';
 import type { AIAgent } from './AIAgent.js';
 import { FEATURE_GROUNDER } from '@finalrun/common';
 import type { LLMTrace } from '../trace.js';
+import { FatalProviderError } from './providerFailure.js';
 
 export interface VisualGroundingResult {
   success: boolean;
@@ -79,6 +80,9 @@ export class VisualGrounder {
       Logger.w('Visual grounding returned unexpected format');
       return { success: false, reason: 'Unexpected response format', trace: response.trace };
     } catch (error) {
+      if (FatalProviderError.isInstance(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       Logger.e('Visual grounding error:', error);
       return { success: false, reason: message };

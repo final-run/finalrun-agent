@@ -16,6 +16,10 @@ import {
   type RuntimeBindings,
 } from '@finalrun/common';
 import { AIAgent, PlannerResponse } from './ai/AIAgent.js';
+import {
+  type TerminalFailureSignal,
+  terminalFailureFromError,
+} from './ai/providerFailure.js';
 import { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
 import {
   StepTraceBuilder,
@@ -70,6 +74,7 @@ export interface GoalResult {
   success: boolean;
   status: GoalExecutionStatus;
   message: string;
+  terminalFailure?: TerminalFailureSignal;
   analysis?: string;
   platform: string;
   startedAt: string;
@@ -320,6 +325,7 @@ export class HeadlessGoalExecutor {
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        const terminalFailure = terminalFailureFromError(error);
         Logger.e('Planner call failed:', error);
         const planningSpan = stepTrace.addSpanFromActivePhase(
           planningPhase,
@@ -349,6 +355,21 @@ export class HeadlessGoalExecutor {
           totalIterations: maxIterations,
           message: `Planner error: ${errorMsg}`,
         });
+
+        if (terminalFailure) {
+          Logger.e(terminalFailure.message);
+          return {
+            success: false,
+            status: 'failure',
+            message: terminalFailure.message,
+            terminalFailure,
+            platform: this._config.platform,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            steps: this._steps,
+            totalIterations: iteration,
+          };
+        }
         continue;
       }
 
@@ -488,6 +509,49 @@ export class HeadlessGoalExecutor {
       stepTrace.addSequentialTimings(actionResult.trace, {
         startMs: actionSpan.startMs,
       });
+
+      if (actionResult.terminalFailure) {
+        stepTrace.markFailure(actionResult.terminalFailure.message);
+        const trace = this._emitTraceSummary(stepTrace);
+        this._steps.push({
+          iteration,
+          action,
+          reason,
+          naturalLanguageAction,
+          analysis: plannerResponse.analysis,
+          thought: plannerResponse.thought,
+          actionPayload: this._buildActionPayload(plannerResponse),
+          success: false,
+          errorMessage: actionResult.terminalFailure.message,
+          screenshot: deviceState.screenshot,
+          screenWidth: deviceState.screenWidth,
+          screenHeight: deviceState.screenHeight,
+          timestamp: new Date().toISOString(),
+          durationMs: trace.totalMs,
+          trace,
+        });
+
+        Logger.e(actionResult.terminalFailure.message);
+        onProgress?.({
+          type: 'error',
+          iteration,
+          totalIterations: maxIterations,
+          message: actionResult.terminalFailure.message,
+        });
+
+        return {
+          success: false,
+          status: 'failure',
+          message: actionResult.terminalFailure.message,
+          terminalFailure: actionResult.terminalFailure,
+          analysis: plannerResponse.analysis,
+          platform: this._config.platform,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          steps: this._steps,
+          totalIterations: iteration,
+        };
+      }
 
       const postCapturePhase = startTracePhase(iteration, 'post_capture.total');
       const postActionCapture = await this._capturePostActionScreenshot(iteration);

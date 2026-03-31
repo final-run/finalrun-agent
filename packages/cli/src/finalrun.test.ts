@@ -361,6 +361,50 @@ test('finalrun test rejects mixing --suite with selectors before API key validat
   }
 });
 
+test('finalrun test requires --model before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /--model is required\. Use provider\/model, for example google\/gemini-3-flash-preview\. Supported providers: openai, google, anthropic\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test rejects unsupported providers before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml', '--model', 'bedrock/claude'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /Unsupported AI provider: "bedrock"\. Supported providers: openai, google, anthropic\./,
+    );
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('finalrun start-server reports a workspace error outside a FinalRun repo', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-workspace-'));
 

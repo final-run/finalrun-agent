@@ -1,10 +1,4 @@
-import type { CliEnv } from './env.js';
-
-const PROVIDER_ENV_VARS: Record<string, string> = {
-  openai: 'OPENAI_API_KEY',
-  google: 'GOOGLE_API_KEY',
-  anthropic: 'ANTHROPIC_API_KEY',
-};
+import { PROVIDER_ENV_VARS, type CliEnv } from './env.js';
 
 export function resolveApiKey(params: {
   env: Pick<CliEnv, 'get'>;
@@ -15,10 +9,9 @@ export function resolveApiKey(params: {
     return params.providedApiKey;
   }
 
-  const providerEnvVar = PROVIDER_ENV_VARS[params.provider];
-  const apiKey =
-    (providerEnvVar ? params.env.get(providerEnvVar) : undefined) ??
-    params.env.get('API_KEY');
+  const providerEnvVar =
+    PROVIDER_ENV_VARS[params.provider as keyof typeof PROVIDER_ENV_VARS];
+  const apiKey = providerEnvVar ? params.env.get(providerEnvVar) : undefined;
 
   if (!apiKey) {
     throw new Error(buildMissingApiKeyError(params.provider, providerEnvVar));
@@ -32,8 +25,8 @@ function buildMissingApiKeyError(
   providerEnvVar?: string,
 ): string {
   if (providerEnvVar) {
-    return `API key is required for provider "${provider}". Provide via --api-key, ${providerEnvVar}, or API_KEY.`;
+    return `API key is required for provider "${provider}". Provide via --api-key or ${providerEnvVar}.`;
   }
 
-  return `API key is required for provider "${provider}". Provide via --api-key or API_KEY.`;
+  return `API key is required for provider "${provider}". Provide via --api-key.`;
 }

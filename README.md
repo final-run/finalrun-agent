@@ -72,7 +72,7 @@ finalrun check --env dev
 Run a test:
 
 ```sh
-finalrun test .finalrun/tests/smoke.yaml --env dev --platform android --model openai/gpt-4o
+finalrun test .finalrun/tests/smoke.yaml --env dev --platform android --model google/gemini-3-flash-preview
 ```
 
 Run a suite manifest:
@@ -112,7 +112,7 @@ tests:
 `finalrun test`
 
 - Executes one or more YAML specs or a suite manifest.
-- Supports `--env`, `--platform`, `--app`, `--suite`, `--model`, and `--api-key`.
+- Requires `--model <provider/model>` and supports `--env`, `--platform`, `--app`, `--suite`, and `--api-key`.
 
 `finalrun doctor`
 
@@ -150,16 +150,16 @@ npm run build:drivers
 
 ## Supported AI Providers
 
-Provider selection comes from `--model <provider/model>`. FinalRun resolves API keys in this order:
+`--model <provider/model>` is required. FinalRun currently supports exactly `openai`, `google`, and `anthropic`, and resolves API keys in this order:
 
-- `openai/...`: `OPENAI_API_KEY`, then `API_KEY`
-- `google/...`: `GOOGLE_API_KEY`, then `API_KEY`
-- `anthropic/...`: `ANTHROPIC_API_KEY`, then `API_KEY`
+- `openai/...`: `OPENAI_API_KEY`
+- `google/...`: `GOOGLE_API_KEY`
+- `anthropic/...`: `ANTHROPIC_API_KEY`
 
 Examples:
 
 ```sh
-finalrun test .finalrun/tests/smoke.yaml --platform android --model openai/gpt-4o
+finalrun test .finalrun/tests/smoke.yaml --platform android --model google/gemini-3-flash-preview
 finalrun test .finalrun/tests/smoke.yaml --platform android --model google/gemini-2.0-flash
 finalrun test .finalrun/tests/smoke.yaml --platform ios --model anthropic/claude-3-7-sonnet
 ```
