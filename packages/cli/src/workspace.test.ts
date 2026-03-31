@@ -504,6 +504,76 @@ test('runCheck accepts empty-string secret environment values when the variable 
   }
 });
 
+test('runCheck resolves secrets from workspace-root .env.<env> without process.env', async () => {
+  const secretEnvVar = 'FINALRUN_DOTENV_SECRET_BINDING_TEST';
+  const previousSecret = process.env[secretEnvVar];
+  delete process.env[secretEnvVar];
+
+  const rootDir = createTempWorkspace({
+    envYaml: ['secrets:', `  token: \${${secretEnvVar}}`].join('\n'),
+    specs: {
+      'auth.yaml': [
+        'name: auth',
+        'steps:',
+        '  - Send ${secrets.token} to the API.',
+      ].join('\n'),
+    },
+  });
+
+  fs.writeFileSync(
+    path.join(rootDir, '.env.dev'),
+    `${secretEnvVar}=only-in-dotenv\n`,
+    'utf-8',
+  );
+
+  try {
+    const result = await runCheck({ envName: 'dev', cwd: rootDir });
+    assert.equal(result.environment.bindings.secrets.token, 'only-in-dotenv');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+    if (previousSecret === undefined) {
+      delete process.env[secretEnvVar];
+    } else {
+      process.env[secretEnvVar] = previousSecret;
+    }
+  }
+});
+
+test('runCheck loads workspace-root .env.<env> when cwd is nested under the workspace', async () => {
+  const secretEnvVar = 'FINALRUN_DOTENV_NESTED_CWD_TEST';
+  const previousSecret = process.env[secretEnvVar];
+  delete process.env[secretEnvVar];
+
+  const rootDir = createTempWorkspace({
+    envYaml: ['secrets:', `  token: \${${secretEnvVar}}`].join('\n'),
+    specs: {
+      'auth.yaml': ['name: auth', 'steps:', '  - Open login.'].join('\n'),
+    },
+  });
+
+  fs.writeFileSync(
+    path.join(rootDir, '.env.dev'),
+    `${secretEnvVar}=from-workspace-dotenv\n`,
+    'utf-8',
+  );
+
+  try {
+    const nestedCwd = path.join(rootDir, 'packages', 'app');
+    fs.mkdirSync(nestedCwd, { recursive: true });
+
+    const result = await runCheck({ envName: 'dev', cwd: nestedCwd });
+    assert.equal(result.workspace.rootDir, rootDir);
+    assert.equal(result.environment.bindings.secrets.token, 'from-workspace-dotenv');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+    if (previousSecret === undefined) {
+      delete process.env[secretEnvVar];
+    } else {
+      process.env[secretEnvVar] = previousSecret;
+    }
+  }
+});
+
 test('runCheck rejects selectors that escape .finalrun/tests', async () => {
   const rootDir = createTempWorkspace();
 
