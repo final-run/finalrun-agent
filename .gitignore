@@ -16,8 +16,6 @@ drivers/android/local.properties
 drivers/ios/.derived-data/
 drivers/ios/finalrun-ios.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/configuration/
 resources/ios/Debug-iphonesimulator/
-resources/android/*.apk
-resources/ios/*.zip
 
 # Test and coverage artifacts
 coverage/
