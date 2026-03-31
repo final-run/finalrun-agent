@@ -1,6 +1,6 @@
 ---
 name: use-finalrun-cli
-description: Use the published FinalRun CLI to install, configure, validate, run, troubleshoot, and inspect reports for repo-local mobile test workspaces. Trigger this skill for requests involving finalrun, check, test, suite, doctor, runs, start-server, or report serve.
+description: Use the published FinalRun CLI to install, configure, validate, run, troubleshoot, and inspect reports for repo-local mobile test workspaces. Trigger this skill for requests involving finalrun, check, test, suite, doctor, runs, start-server.
 ---
 
 # FinalRun CLI Guide and Operator
@@ -36,7 +36,7 @@ finalrun doctor
 3. Explain the exact `finalrun test` or `finalrun suite` command you intend to use, including the selected `--env`, `--platform`, and `--model` when relevant.
 4. Treat validation failures as blockers. Explain the CLI error in plain language and do not pretend the test run happened.
 5. Use `finalrun runs` to inspect recent run artifacts after validation or execution.
-6. Ask before starting `finalrun start-server` or `finalrun report serve`, because those commands launch background UI behavior.
+6. Ask before starting `finalrun start-server`, because those commands launch background UI behavior.
 7. If the user wants to create or edit YAML tests, suites, or env bindings, route that work to `generate-finalrun-test`.
 
 ## Missing Workspace
@@ -89,7 +89,6 @@ Ask before executing:
 - `finalrun test`
 - `finalrun suite`
 - `finalrun start-server`
-- `finalrun report serve`
 
 Why ask first:
 
@@ -134,9 +133,6 @@ Prefer `finalrun suite <path>` over `finalrun test --suite <path>`, but mention 
 - `finalrun start-server`
   - starts or reuses the local report UI for the current workspace
   - supports `--port` and `--dev`
-- `finalrun report serve`
-  - compatibility alias for `finalrun start-server`
-  - supports `--port` and `--dev`
 
 Explicit CLI flags override `.finalrun/config.yaml` defaults.
 
@@ -167,9 +163,9 @@ Explicit CLI flags override `.finalrun/config.yaml` defaults.
   - used by `check` and `test`
   - on `test`, remains a compatibility path; prefer `finalrun suite <path>`
 - `--port <n>`
-  - used by `start-server` and `report serve`
+  - used by `start-server`
 - `--dev`
-  - used by `start-server` and `report serve`
+  - used by `start-server`
   - runs the report UI in development mode
 
 ## Supported Providers and Models
@@ -181,14 +177,6 @@ Explicit CLI flags override `.finalrun/config.yaml` defaults.
 - Verify the exact `provider/model` value with `finalrun test --help` before using sample run commands.
 
 ## Common Workflows
-
-Install and verify the CLI:
-
-```sh
-npm install -g @finalrun/finalrun-agent
-finalrun --help
-finalrun doctor
-```
 
 Validate an existing workspace:
 
