@@ -36,7 +36,7 @@ export type {
 } from './grpc/GrpcDriverClient.js';
 export { GrpcDriverSetup } from './grpc/GrpcDriverSetup.js';
 export { DeviceDiscoveryService } from './discovery/DeviceDiscoveryService.js';
-export { AdbClient } from './infra/android/AdbClient.js';
+export { AdbClient, isUndeclaredPermissionGrantFailure } from './infra/android/AdbClient.js';
 export {
   SimctlClient,
   IOS_DRIVER_RUNNER_BUNDLE_ID,

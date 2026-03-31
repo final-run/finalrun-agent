@@ -1,6 +1,94 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AdbClient } from './AdbClient.js';
+import { AdbClient, isUndeclaredPermissionGrantFailure } from './AdbClient.js';
+
+function adbExecError(stderr: string): Error & { code: number; stderr: string; stdout: string } {
+  const err = new Error('Command failed') as Error & {
+    code: number;
+    stderr: string;
+    stdout: string;
+  };
+  err.code = 255;
+  err.stderr = stderr;
+  err.stdout = '';
+  return err;
+}
+
+test('isUndeclaredPermissionGrantFailure matches pm grant SecurityException stderr', () => {
+  assert.equal(
+    isUndeclaredPermissionGrantFailure(
+      "java.lang.SecurityException: Package org.wikipedia.dev has not requested permission android.permission.CAMERA",
+    ),
+    true,
+  );
+  assert.equal(isUndeclaredPermissionGrantFailure('device offline'), false);
+});
+
+test('AdbClient.togglePermissions treats undeclared permission grant as success', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      throw adbExecError(
+        "\nException occurred while executing 'grant':\njava.lang.SecurityException: Package com.example.app has not requested permission android.permission.CAMERA\n",
+      );
+    },
+  });
+
+  const result = await adbClient.togglePermissions(
+    '/platform-tools/adb',
+    'emulator-5554',
+    'com.example.app',
+    { camera: 'allow' },
+  );
+
+  assert.equal(result.success, true);
+  assert.match(execCalls[0]?.args.join(' '), /pm grant com\.example\.app android\.permission\.CAMERA/);
+});
+
+test('AdbClient.togglePermissions fails when pm grant fails for reasons other than undeclared', async () => {
+  const adbClient = new AdbClient({
+    execFileFn: async (_file, args) => {
+      if (args.includes('android.permission.CAMERA')) {
+        throw adbExecError(
+          "\nException occurred while executing 'grant':\njava.lang.SecurityException: Package com.example.app has not requested permission android.permission.CAMERA\n",
+        );
+      }
+      throw adbExecError('Error: device offline');
+    },
+  });
+
+  const result = await adbClient.togglePermissions(
+    '/platform-tools/adb',
+    'emulator-5554',
+    'com.example.app',
+    { camera: 'allow', microphone: 'allow' },
+  );
+
+  assert.equal(result.success, false);
+  assert.match(result.message ?? '', /RECORD_AUDIO|microphone|offline|Failed to update/i);
+});
+
+test('AdbClient.allowAllPermissions succeeds when every pm grant is undeclared', async () => {
+  const adbClient = new AdbClient({
+    execFileFn: async (_file, args) => {
+      if (args.includes('appops')) {
+        return { stdout: '', stderr: '' };
+      }
+      throw adbExecError(
+        "java.lang.SecurityException: Package com.minimal.app has not requested permission android.permission.CAMERA",
+      );
+    },
+  });
+
+  const result = await adbClient.allowAllPermissions(
+    '/platform-tools/adb',
+    'emulator-5554',
+    'com.minimal.app',
+  );
+
+  assert.equal(result.success, true);
+});
 
 test('AdbClient.installApp uses reinstall and grant flags for app overrides', async () => {
   const execCalls: Array<{ file: string; args: readonly string[] }> = [];
