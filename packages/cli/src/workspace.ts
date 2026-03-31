@@ -1,7 +1,9 @@
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
 import YAML from 'yaml';
+import { resolveFinalRunRootDir } from './runtimePaths.js';
 
 export interface FinalRunWorkspace {
   rootDir: string;
@@ -30,6 +32,7 @@ export interface ResolvedEnvironmentFile {
 }
 
 const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model']);
+const WORKSPACE_HASH_LENGTH = 16;
 
 export async function resolveWorkspace(
   cwd: string = process.cwd(),
@@ -45,7 +48,7 @@ export async function resolveWorkspace(
         testsDir: path.join(finalrunDir, 'tests'),
         suitesDir: path.join(finalrunDir, 'suites'),
         envDir: path.join(finalrunDir, 'env'),
-        artifactsDir: path.join(finalrunDir, 'artifacts'),
+        artifactsDir: await resolveWorkspaceArtifactsDir(currentDir),
       };
     }
 
@@ -69,6 +72,28 @@ export async function ensureWorkspaceDirectories(
   }
 
   await fs.mkdir(workspace.artifactsDir, { recursive: true });
+  await writeWorkspaceArtifactMetadata(workspace);
+}
+
+export async function createWorkspaceHash(workspaceRoot: string): Promise<string> {
+  const canonicalRoot = await resolveCanonicalWorkspaceRoot(workspaceRoot);
+  return crypto
+    .createHash('sha256')
+    .update(normalizeWorkspaceRootForHash(canonicalRoot))
+    .digest('hex')
+    .slice(0, WORKSPACE_HASH_LENGTH);
+}
+
+export function resolveWorkspaceArtifactsRootDir(): string {
+  return path.join(resolveFinalRunRootDir(), 'workspaces');
+}
+
+export async function resolveWorkspaceArtifactsDir(workspaceRoot: string): Promise<string> {
+  return path.join(
+    resolveWorkspaceArtifactsRootDir(),
+    await createWorkspaceHash(workspaceRoot),
+    'artifacts',
+  );
 }
 
 export function assertPathWithinRoot(
@@ -280,6 +305,34 @@ async function pathExists(candidatePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function writeWorkspaceArtifactMetadata(workspace: FinalRunWorkspace): Promise<void> {
+  const canonicalWorkspaceRoot = await resolveCanonicalWorkspaceRoot(workspace.rootDir);
+  const workspaceHash = await createWorkspaceHash(workspace.rootDir);
+  const metadataPath = path.join(workspace.artifactsDir, '..', 'workspace.json');
+  const metadata = {
+    schemaVersion: 1,
+    workspaceRoot: workspace.rootDir,
+    canonicalWorkspaceRoot,
+    workspaceHash,
+    artifactsDir: workspace.artifactsDir,
+  };
+
+  await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2) + '\n', 'utf-8');
+}
+
+async function resolveCanonicalWorkspaceRoot(workspaceRoot: string): Promise<string> {
+  const resolvedRoot = path.resolve(workspaceRoot);
+  try {
+    return await fs.realpath(resolvedRoot);
+  } catch {
+    return resolvedRoot;
+  }
+}
+
+function normalizeWorkspaceRootForHash(workspaceRoot: string): string {
+  return process.platform === 'win32' ? workspaceRoot.toLowerCase() : workspaceRoot;
 }
 
 async function listEnvironmentFiles(
