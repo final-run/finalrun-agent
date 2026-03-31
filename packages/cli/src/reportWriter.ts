@@ -220,6 +220,7 @@ export class ReportWriter {
       const suiteRecord: RunManifestSuiteRecord = {
         suiteId: params.suite.suiteId,
         suiteName: params.suite.name,
+        description: params.suite.description,
         workspaceSourcePath: toDisplayPath(params.workspaceRoot, params.suite.sourcePath),
         snapshotYamlPath: suiteSnapshotYamlPath,
         snapshotJsonPath: suiteSnapshotJsonPath,

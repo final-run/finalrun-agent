@@ -1,5 +1,6 @@
 export interface RepoTestSuite {
   name: string;
+  description?: string;
   tests: string[];
 }
 

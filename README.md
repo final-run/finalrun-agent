@@ -108,6 +108,7 @@ Suite manifests live under `.finalrun/suites/` and list YAML files, directories,
 
 ```yaml
 name: auth_smoke
+description: Covers the authentication smoke scenarios.
 tests:
   - auth/login.yaml
   - auth/logout.yaml

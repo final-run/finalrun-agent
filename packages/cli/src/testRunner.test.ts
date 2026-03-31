@@ -405,6 +405,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
       suiteSourcePath,
       [
         'name: login suite',
+        'description: Covers login and dashboard smoke paths.',
         'tests:',
         '  - login/valid_login.yaml',
         '  - dashboard/**',
@@ -429,6 +430,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
       specs: [spec],
       suite: {
         name: 'login suite',
+        description: 'Covers login and dashboard smoke paths.',
         tests: ['login/valid_login.yaml', 'dashboard/**'],
         sourcePath: suiteSourcePath,
         relativePath: 'login_suite.yaml',
@@ -497,8 +499,10 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
       suitePath: 'login_suite.yaml',
     });
     assert.equal(runJson.input.suite.suiteName, 'login suite');
+    assert.equal(runJson.input.suite.description, 'Covers login and dashboard smoke paths.');
     assert.deepEqual(runJson.input.suite.tests, ['login/valid_login.yaml', 'dashboard/**']);
     assert.deepEqual(runJson.input.suite.resolvedSpecIds, ['login__valid_login']);
+    assert.equal(suiteJson.description, 'Covers login and dashboard smoke paths.');
     assert.equal(suiteJson.snapshotYamlPath, 'input/suite.snapshot.yaml');
     assert.equal(resultJson.suiteName, undefined);
     await assert.rejects(() => fsp.stat(path.join(runDir, 'index.html')));

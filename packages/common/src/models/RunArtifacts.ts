@@ -192,6 +192,7 @@ export interface RunManifestEnvironmentRecord {
 export interface RunManifestSuiteRecord {
   suiteId: string;
   suiteName: string;
+  description?: string;
   workspaceSourcePath: string;
   snapshotYamlPath: string;
   snapshotJsonPath: string;
