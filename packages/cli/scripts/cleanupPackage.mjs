@@ -14,5 +14,4 @@ for (const packageName of directExternalDependencies) {
   rmSync(resolve(cliDir, 'node_modules', packageName), { recursive: true, force: true });
 }
 rmSync(resolve(cliDir, 'install-resources'), { recursive: true, force: true });
-rmSync(resolve(cliDir, 'README.md'), { force: true });
 rmSync(resolve(cliDir, 'LICENSE'), { force: true });

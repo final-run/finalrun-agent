@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.2] - 2026-04-01
+
+### Changed
+
+- Added a stable package-root `README.md` for `@finalrun/finalrun-agent` so npm can render package documentation reliably
+- Documented the `npx skills add final-run/finalrun-agent` setup flow for skill-enabled tools
+- Updated README example model identifiers to use current supported model strings
+
 ## [0.1.1] - 2026-03-31
 
 ### Changed

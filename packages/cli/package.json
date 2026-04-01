@@ -1,6 +1,6 @@
 {
   "name": "@finalrun/finalrun-agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "AI-driven mobile app testing CLI for YAML-defined tests on Android and iOS",
   "license": "Apache-2.0",
@@ -12,7 +12,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/final-run/finalrun-agent.git"
+    "url": "git+https://github.com/final-run/finalrun-agent.git",
+    "directory": "packages/cli"
   },
   "homepage": "https://github.com/final-run/finalrun-agent#readme",
   "bugs": {
