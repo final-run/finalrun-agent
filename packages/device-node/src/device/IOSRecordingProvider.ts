@@ -3,16 +3,8 @@ import * as fsp from 'node:fs/promises';
 import path from 'node:path';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import {
-  DeviceNodeResponse,
-  Logger,
-  PLATFORM_IOS,
-  type RecordingRequest,
-} from '@finalrun/common';
-import type {
-  RecordingProvider,
-  RecordingProviderResult,
-} from './RecordingProvider.js';
+import { DeviceNodeResponse, Logger, PLATFORM_IOS, type RecordingRequest } from '@finalrun/common';
+import type { RecordingProvider, RecordingProviderResult } from './RecordingProvider.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -31,10 +23,7 @@ export class IOSRecordingProvider implements RecordingProvider {
   private readonly _execFileFn: ExecFileFn;
   private readonly _spawnFn: typeof spawn;
 
-  constructor(params?: {
-    execFileFn?: ExecFileFn;
-    spawnFn?: typeof spawn;
-  }) {
+  constructor(params?: { execFileFn?: ExecFileFn; spawnFn?: typeof spawn }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
     this._spawnFn = params?.spawnFn ?? spawn;
   }
@@ -107,9 +96,7 @@ export class IOSRecordingProvider implements RecordingProvider {
   }): Promise<DeviceNodeResponse> {
     try {
       const killSent = params.process.kill('SIGINT');
-      Logger.i(
-        `IOSRecordingProvider: Sent SIGINT to xcrun simctl process: ${killSent}`,
-      );
+      Logger.i(`IOSRecordingProvider: Sent SIGINT to xcrun simctl process: ${killSent}`);
 
       if (!killSent) {
         Logger.e(
@@ -153,11 +140,9 @@ export class IOSRecordingProvider implements RecordingProvider {
     try {
       const xcrunAvailable = await this._commandExists('xcrun');
       if (!xcrunAvailable) {
-        Logger.e('IOSRecordingProvider: xcrun not found in PATH');
         return new DeviceNodeResponse({
           success: false,
-          message:
-            'xcrun not found. Please ensure Xcode command line tools are installed.',
+          message: 'xcrun not found. Please ensure Xcode command line tools are installed.',
         });
       }
 
@@ -167,9 +152,7 @@ export class IOSRecordingProvider implements RecordingProvider {
 
       const ffmpegAvailable = await this._checkFfmpegAvailability();
       if (!ffmpegAvailable) {
-        Logger.w(
-          'IOSRecordingProvider: ffmpeg not found - video compression will be disabled',
-        );
+        Logger.w('IOSRecordingProvider: ffmpeg not found - video compression will be disabled');
       }
 
       return new DeviceNodeResponse({
@@ -208,7 +191,7 @@ export class IOSRecordingProvider implements RecordingProvider {
 
   private async _compressVideo(originalFilePath: string): Promise<DeviceNodeResponse> {
     try {
-      if (!await this._checkFfmpegAvailability()) {
+      if (!(await this._checkFfmpegAvailability())) {
         return new DeviceNodeResponse({
           success: false,
           message: 'ffmpeg not available for video compression',
@@ -223,9 +206,7 @@ export class IOSRecordingProvider implements RecordingProvider {
         `${parsedPath.name}-small${parsedPath.ext}`,
       );
 
-      Logger.i(
-        `IOSRecordingProvider: Starting video compression for ${originalFilePath}`,
-      );
+      Logger.i(`IOSRecordingProvider: Starting video compression for ${originalFilePath}`);
 
       await this._execFileFn('ffmpeg', [
         '-y',

@@ -10,6 +10,7 @@ import {
   type SpecArtifactRecord,
 } from '@finalrun/common';
 import {
+  DevicePreparationError,
   executeGoalOnSession,
   isDevicePreparationError,
   prepareGoalSession,
@@ -18,11 +19,7 @@ import {
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
 import type { GoalExecutionStatus } from '@finalrun/goal-executor';
-import {
-  runCheck,
-  type CheckRunnerOptions,
-  type CheckRunnerResult,
-} from './checkRunner.js';
+import { runCheck, type CheckRunnerOptions, type CheckRunnerResult } from './checkRunner.js';
 import { ReportWriter } from './reportWriter.js';
 import { rebuildRunIndex } from './runIndex.js';
 import type { LoadedEnvironmentConfig } from './specLoader.js';
@@ -35,7 +32,6 @@ import {
 import {
   createRunId,
   ensureWorkspaceDirectories,
-  resolveEnvironmentFile,
   resolveWorkspace,
   type FinalRunWorkspace,
 } from './workspace.js';
@@ -58,6 +54,30 @@ export interface TestRunnerResult {
   specResults: SpecArtifactRecord[];
 }
 
+export type PreExecutionFailurePhase = 'validation' | 'setup';
+
+export class PreExecutionFailureError extends Error {
+  readonly phase: PreExecutionFailurePhase;
+  readonly diagnostics: DeviceInventoryDiagnostic[];
+  readonly exitCode: number;
+
+  constructor(params: {
+    phase: PreExecutionFailurePhase;
+    message: string;
+    diagnostics?: DeviceInventoryDiagnostic[];
+    exitCode?: number;
+  }) {
+    super(params.message);
+    this.name = 'PreExecutionFailureError';
+    this.phase = params.phase;
+    this.diagnostics = params.diagnostics ?? [];
+    this.exitCode = params.exitCode ?? 1;
+  }
+}
+
+const CLI_TEST_FORCE_DEVICE_SETUP_FAILURE_ENV_VAR = 'FINALRUN_CLI_TEST_FORCE_DEVICE_SETUP_FAILURE';
+const CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR = 'FINALRUN_CLI_TEST_SKIP_HOST_PREFLIGHT';
+
 export const testRunnerDependencies = {
   prepareGoalSession,
   executeGoalOnSession,
@@ -76,9 +96,7 @@ export const testRunnerDependencies = {
   },
 };
 
-export async function runTests(
-  options: TestRunnerOptions,
-): Promise<TestRunnerResult> {
+export async function runTests(options: TestRunnerOptions): Promise<TestRunnerResult> {
   Logger.init({
     level: options.debug ? LogLevel.DEBUG : LogLevel.INFO,
     resetSinks: true,
@@ -93,7 +111,6 @@ export async function runTests(
   let runDir = '';
   let logSink: ReturnType<ReportWriter['createLoggerSink']> | undefined;
   let goalSession: GoalSession | undefined;
-  const fallbackEnvName = await resolveRunEnvName(workspace.envDir, options.envName);
   const bufferedLogEntries: LogEntry[] = [];
   const bufferingSink = (entry: LogEntry) => {
     bufferedLogEntries.push(entry);
@@ -129,47 +146,22 @@ export async function runTests(
         ]),
       );
     } catch (error) {
+      if (error instanceof PreExecutionFailureError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
-      const failedRun = await writeRunTerminalArtifacts({
-        workspace,
-        envName: fallbackEnvName,
-        platform: inferPlatformHint(options.platform, options.appPath),
-        startedAt,
-        bindings: EMPTY_RUNTIME_BINDINGS,
-        message: `Run validation failed: ${message}`,
-        bufferedLogEntries,
-        cliContext: buildCliContext(options),
-        modelContext: buildModelContext(options.provider, options.modelName),
-        appContext: buildAppContext(options.appPath),
-        target: buildFallbackRunTarget(options),
-        runStatus: runAborted ? 'aborted' : 'failure',
-        failurePhase: runAborted ? undefined : 'validation',
+      throw new PreExecutionFailureError({
+        phase: 'validation',
+        message,
+        exitCode: runAborted ? 130 : 1,
       });
-      return failedRun;
     }
 
     if (runAborted) {
-      return await writeRunTerminalArtifacts({
-        workspace,
-        envName: checked.environment.envName,
-        platform: inferPlatformHint(
-          options.platform ?? checked.appOverride?.inferredPlatform,
-          checked.appOverride?.appPath ?? options.appPath,
-        ),
-        startedAt,
-        bindings: checked.environment.bindings,
+      throw new PreExecutionFailureError({
+        phase: 'setup',
         message: 'Run aborted before execution.',
-        bufferedLogEntries,
-        environment: checked.environment,
-        specs: checked.specs,
-        suite: checked.suite,
-        effectiveGoals,
-        workspaceRoot: checked.workspace.rootDir,
-        cliContext: buildCliContext(options),
-        modelContext: buildModelContext(options.provider, options.modelName),
-        appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-        target: checked.target,
-        runStatus: 'aborted',
+        exitCode: 130,
       });
     }
 
@@ -177,134 +169,108 @@ export async function runTests(
       const requestedPlatforms = resolveTestRequestedPlatforms(
         options.platform ?? checked.appOverride?.inferredPlatform,
       );
-      const preflight = await testRunnerDependencies.runHostPreflight({
-        requestedPlatforms,
-      });
+      const preflight =
+        process.env[CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR] === '1'
+          ? {
+              requestedPlatforms,
+              checks: [],
+            }
+          : await testRunnerDependencies.runHostPreflight({
+              requestedPlatforms,
+            });
       if (shouldBlockLocalRunPreflight(preflight)) {
-        const failedRun = await writeRunTerminalArtifacts({
-          workspace,
-          envName: checked.environment.envName,
-          platform: inferPlatformHint(
-            options.platform ?? checked.appOverride?.inferredPlatform,
-            checked.appOverride?.appPath ?? options.appPath,
-          ),
-          startedAt,
-          bindings: checked.environment.bindings,
+        throw new PreExecutionFailureError({
+          phase: 'setup',
           message: `Run setup failed before execution: ${formatHostPreflightReport(preflight, 'test')}`,
-          bufferedLogEntries,
-          environment: checked.environment,
-          specs: checked.specs,
-          suite: checked.suite,
-          effectiveGoals,
-          workspaceRoot: checked.workspace.rootDir,
-          cliContext: buildCliContext(options),
-          modelContext: buildModelContext(options.provider, options.modelName),
-          appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-          target: checked.target,
-          runStatus: runAborted ? 'aborted' : 'failure',
-          failurePhase: runAborted ? undefined : 'setup',
+          exitCode: runAborted ? 130 : 1,
         });
-        return failedRun;
       }
 
       if (runAborted) {
-        return await writeRunTerminalArtifacts({
-          workspace,
-          envName: checked.environment.envName,
-          platform: inferPlatformHint(
-            options.platform ?? checked.appOverride?.inferredPlatform,
-            checked.appOverride?.appPath ?? options.appPath,
-          ),
-          startedAt,
-          bindings: checked.environment.bindings,
+        throw new PreExecutionFailureError({
+          phase: 'setup',
           message: 'Run aborted before execution.',
-          bufferedLogEntries,
-          environment: checked.environment,
-          specs: checked.specs,
-          suite: checked.suite,
-          effectiveGoals,
-          workspaceRoot: checked.workspace.rootDir,
-          cliContext: buildCliContext(options),
-          modelContext: buildModelContext(options.provider, options.modelName),
-          appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-          target: checked.target,
-          runStatus: 'aborted',
+          exitCode: 130,
         });
       }
 
+      const forcedDeviceSetupFailure = process.env[CLI_TEST_FORCE_DEVICE_SETUP_FAILURE_ENV_VAR];
+      if (forcedDeviceSetupFailure) {
+        throw new DevicePreparationError(forcedDeviceSetupFailure);
+      }
       goalSession = await testRunnerDependencies.prepareGoalSession({
         platform: options.platform ?? checked.appOverride?.inferredPlatform,
         appOverridePath: checked.appOverride?.appPath,
       });
     } catch (error) {
+      if (error instanceof PreExecutionFailureError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
-      const failedRun = await writeRunTerminalArtifacts({
-        workspace,
-        envName: checked.environment.envName,
-        platform: inferPlatformHint(
-          options.platform ?? checked.appOverride?.inferredPlatform,
-          checked.appOverride?.appPath ?? options.appPath,
+      const diagnostics = isDevicePreparationError(error) ? error.diagnostics : [];
+      throw new PreExecutionFailureError({
+        phase: 'setup',
+        message: formatPreExecutionFailureMessage(
+          `Run setup failed before execution: ${message}`,
+          diagnostics,
         ),
-        startedAt,
-        bindings: checked.environment.bindings,
-        message: `Run setup failed before execution: ${message}`,
-        bufferedLogEntries,
-        diagnostics: isDevicePreparationError(error) ? error.diagnostics : [],
-        environment: checked.environment,
-        specs: checked.specs,
-        suite: checked.suite,
-        effectiveGoals,
-        workspaceRoot: checked.workspace.rootDir,
-        cliContext: buildCliContext(options),
-        modelContext: buildModelContext(options.provider, options.modelName),
-        appContext: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-        target: checked.target,
-        runStatus: runAborted ? 'aborted' : 'failure',
-        failurePhase: runAborted ? undefined : 'setup',
+        diagnostics,
+        exitCode: runAborted ? 130 : 1,
       });
-      return failedRun;
     }
 
-    ({ reportWriter, runDir } = await createReportWriter({
-      workspace,
-      envName: checked.environment.envName,
-      platform: goalSession.platform,
-      startedAt,
-      bindings: checked.environment.bindings,
-    }));
-    logSink = reportWriter.createLoggerSink();
-    flushBufferedLogEntries(bufferedLogEntries, logSink);
-    Logger.removeSink(bufferingSink);
-    Logger.addSink(logSink);
+    if (runAborted) {
+      throw new PreExecutionFailureError({
+        phase: 'setup',
+        message: 'Run aborted before execution.',
+        exitCode: 130,
+      });
+    }
 
     try {
-      await reportWriter.writeRunInputs({
-        workspaceRoot: checked.workspace.rootDir,
-        environment: checked.environment,
-        specs: checked.specs,
-        effectiveGoals,
-        cli: buildCliContext(options),
-        model: buildModelContext(options.provider, options.modelName),
-        app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
-        target: checked.target,
-        suite: checked.suite,
-      });
-      reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
-
-      if (runAborted) {
-        reportWriter.appendLogLine('Run aborted before executing any specs.');
-      }
-
       for (const spec of checked.specs) {
         if (runAborted) {
-          reportWriter.appendLogLine('Run aborted before starting the next spec.');
+          if (!reportWriter) {
+            throw new PreExecutionFailureError({
+              phase: 'setup',
+              message: 'Run aborted before execution.',
+              exitCode: 130,
+            });
+          }
           break;
+        }
+
+        if (!reportWriter) {
+          ({ reportWriter, runDir } = await createReportWriter({
+            workspace,
+            envName: checked.environment.envName,
+            platform: goalSession.platform,
+            startedAt,
+            bindings: checked.environment.bindings,
+          }));
+          logSink = reportWriter.createLoggerSink();
+          flushBufferedLogEntries(bufferedLogEntries, logSink);
+          Logger.removeSink(bufferingSink);
+          Logger.addSink(logSink);
+          await reportWriter.writeRunInputs({
+            workspaceRoot: checked.workspace.rootDir,
+            environment: checked.environment,
+            specs: checked.specs,
+            effectiveGoals,
+            cli: buildCliContext(options),
+            model: buildModelContext(options.provider, options.modelName),
+            app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+            target: checked.target,
+            suite: checked.suite,
+          });
+          reportWriter.appendLogLine(`Starting FinalRun test run ${path.basename(runDir)}`);
         }
         reportWriter.appendLogLine(`Running spec ${spec.relativePath}`);
         const specStartedAt = new Date().toISOString();
 
         try {
-          const goal = effectiveGoals.get(spec.specId) ??
+          const goal =
+            effectiveGoals.get(spec.specId) ??
             compileSpecToGoal(spec, checked.environment.bindings);
           const recordingExtension = goalSession.platform === 'android' ? '.mp4' : '.mov';
           const recordingOutputPath = path.join(
@@ -375,6 +341,9 @@ export async function runTests(
         : success
           ? 'success'
           : 'failure';
+      if (!reportWriter) {
+        throw new Error('Report writer was not initialized before execution completed.');
+      }
       await reportWriter.finalize({
         startedAt: startedAt.toISOString(),
         completedAt: new Date().toISOString(),
@@ -434,11 +403,6 @@ export function selectExecutionPlatform(
   return devices[0]!.getPlatform();
 }
 
-const EMPTY_RUNTIME_BINDINGS: RuntimeBindings = {
-  secrets: {},
-  variables: {},
-};
-
 async function createReportWriter(params: {
   workspace: FinalRunWorkspace;
   envName: string;
@@ -463,115 +427,6 @@ async function createReportWriter(params: {
   return { reportWriter, runDir };
 }
 
-async function writeRunTerminalArtifacts(params: {
-  workspace: FinalRunWorkspace;
-  envName: string;
-  platform: string;
-  startedAt: Date;
-  bindings: RuntimeBindings;
-  message: string;
-  bufferedLogEntries: LogEntry[];
-  diagnostics?: DeviceInventoryDiagnostic[];
-  environment?: LoadedEnvironmentConfig;
-  specs?: Awaited<ReturnType<typeof runCheck>>['specs'];
-  suite?: Awaited<ReturnType<typeof runCheck>>['suite'];
-  effectiveGoals?: Map<string, string>;
-  workspaceRoot?: string;
-  cliContext: ReturnType<typeof buildCliContext>;
-  modelContext: ReturnType<typeof buildModelContext>;
-  appContext: ReturnType<typeof buildAppContext>;
-  target: RunTargetRecord;
-  runStatus: GoalExecutionStatus;
-  failurePhase?: 'validation' | 'setup' | 'execution';
-}): Promise<TestRunnerResult> {
-  const { reportWriter, runDir } = await createReportWriter({
-    workspace: params.workspace,
-    envName: params.envName,
-    platform: params.platform,
-    startedAt: params.startedAt,
-    bindings: params.bindings,
-  });
-  reportWriter.setRunContext({
-    cli: params.cliContext,
-    model: params.modelContext,
-    app: params.appContext,
-    target: params.target,
-  });
-  flushBufferedLogEntries(params.bufferedLogEntries, reportWriter.createLoggerSink());
-  if (
-    params.environment &&
-    params.specs &&
-    params.effectiveGoals &&
-    params.workspaceRoot
-  ) {
-    await reportWriter.writeRunInputs({
-      workspaceRoot: params.workspaceRoot,
-      environment: params.environment,
-      specs: params.specs,
-      suite: params.suite,
-      effectiveGoals: params.effectiveGoals,
-      target: params.target,
-      cli: params.cliContext,
-      model: params.modelContext,
-      app: params.appContext,
-    });
-  }
-  reportWriter.appendLogLine(params.message);
-  if (params.diagnostics && params.diagnostics.length > 0) {
-    reportWriter.appendRawBlock(formatDiagnosticsForOutput(params.diagnostics));
-  }
-  await reportWriter.finalize({
-    startedAt: params.startedAt.toISOString(),
-    completedAt: new Date().toISOString(),
-    specs: [],
-    successOverride: params.runStatus === 'success',
-    statusOverride: params.runStatus,
-    failurePhase: params.failurePhase,
-    diagnosticsSummary:
-      params.diagnostics && params.diagnostics.length > 0
-        ? params.diagnostics.map((diagnostic) => diagnostic.summary).join(' | ')
-        : params.message,
-  });
-  await rebuildRunIndex(params.workspace.artifactsDir);
-  return {
-    success: params.runStatus === 'success',
-    status: params.runStatus,
-    runId: path.basename(runDir),
-    runDir,
-    runIndexPath: path.join(params.workspace.artifactsDir, 'runs.json'),
-    specResults: [],
-  };
-}
-
-function inferPlatformHint(
-  requestedPlatform?: string,
-  appPath?: string,
-): string {
-  if (requestedPlatform) {
-    return requestedPlatform.toLowerCase();
-  }
-  const lowerPath = appPath?.toLowerCase();
-  if (lowerPath?.endsWith('.apk')) {
-    return 'android';
-  }
-  if (lowerPath?.endsWith('.app')) {
-    return 'ios';
-  }
-  return 'unknown';
-}
-
-async function resolveRunEnvName(
-  envDir: string,
-  requestedEnvName?: string,
-): Promise<string> {
-  try {
-    const resolvedEnvironment = await resolveEnvironmentFile(envDir, requestedEnvName);
-    return resolvedEnvironment.envName;
-  } catch {
-    return requestedEnvName ?? 'none';
-  }
-}
-
 function flushBufferedLogEntries(
   entries: LogEntry[],
   sink: ReturnType<ReportWriter['createLoggerSink']>,
@@ -582,9 +437,7 @@ function flushBufferedLogEntries(
   entries.length = 0;
 }
 
-function buildCliContext(
-  options: TestRunnerOptions,
-): {
+function buildCliContext(options: TestRunnerOptions): {
   command: string;
   selectors: string[];
   suitePath?: string;
@@ -628,9 +481,7 @@ function buildModelContext(
   };
 }
 
-function buildAppContext(
-  appOverridePath?: string,
-): {
+function buildAppContext(appOverridePath?: string): {
   source: 'repo' | 'override';
   label: string;
   overridePath?: string;
@@ -648,13 +499,12 @@ function buildAppContext(
   };
 }
 
-function buildFallbackRunTarget(options: CheckRunnerOptions): RunTargetRecord {
-  if (!options.suitePath) {
-    return { type: 'direct' };
+function formatPreExecutionFailureMessage(
+  message: string,
+  diagnostics: DeviceInventoryDiagnostic[],
+): string {
+  if (diagnostics.length === 0) {
+    return message;
   }
-
-  return {
-    type: 'suite',
-    suitePath: options.suitePath,
-  };
+  return `${message}\n\n${formatDiagnosticsForOutput(diagnostics)}`;
 }

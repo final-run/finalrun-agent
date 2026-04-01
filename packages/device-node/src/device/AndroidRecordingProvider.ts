@@ -8,10 +8,7 @@ import {
   PLATFORM_ANDROID,
   type RecordingRequest,
 } from '@finalrun/common';
-import type {
-  RecordingProvider,
-  RecordingProviderResult,
-} from './RecordingProvider.js';
+import type { RecordingProvider, RecordingProviderResult } from './RecordingProvider.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,9 +40,7 @@ export class AndroidRecordingProvider implements RecordingProvider {
   }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
     this._spawnFn = params?.spawnFn ?? spawn;
-    this._delayFn =
-      params?.delayFn ??
-      ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this._delayFn = params?.delayFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this._startupSettleMs =
       params?.startupSettleMs ?? AndroidRecordingProvider.DEFAULT_STARTUP_SETTLE_MS;
   }
@@ -150,9 +145,7 @@ export class AndroidRecordingProvider implements RecordingProvider {
   }): Promise<DeviceNodeResponse> {
     try {
       const killSent = params.process.kill('SIGINT');
-      Logger.i(
-        `AndroidRecordingProvider: Sent SIGINT to scrcpy process: ${killSent}`,
-      );
+      Logger.i(`AndroidRecordingProvider: Sent SIGINT to scrcpy process: ${killSent}`);
 
       if (!killSent) {
         Logger.e(
@@ -198,7 +191,6 @@ export class AndroidRecordingProvider implements RecordingProvider {
     try {
       const scrcpyAvailable = await this._commandExists('scrcpy');
       if (!scrcpyAvailable) {
-        Logger.e('AndroidRecordingProvider: scrcpy not found in PATH');
         return new DeviceNodeResponse({
           success: false,
           message: 'scrcpy not found. Please ensure scrcpy is installed and available on PATH.',
@@ -271,7 +263,7 @@ export class AndroidRecordingProvider implements RecordingProvider {
     }
 
     const timeoutResult = this._delayFn(this._startupSettleMs).then(
-      () => ({ exited: false } as const),
+      () => ({ exited: false }) as const,
     );
     const exitResult = this._waitForExit(process).then((exitCode) => ({
       exited: true as const,

@@ -35,19 +35,13 @@ function createTempWorkspace(params?: {
   }
 
   if (params?.configYaml !== undefined) {
-    fs.writeFileSync(
-      path.join(rootDir, '.finalrun', 'config.yaml'),
-      params.configYaml,
-      'utf-8',
-    );
+    fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), params.configYaml, 'utf-8');
   }
 
   const specs = params?.specs ?? {
-    'login.yaml': (params?.specLines ?? [
-      'name: login',
-      'steps:',
-      '  - Open the login screen.',
-    ]).join('\n'),
+    'login.yaml': (
+      params?.specLines ?? ['name: login', 'steps:', '  - Open the login screen.']
+    ).join('\n'),
   };
   for (const [relativePath, contents] of Object.entries(specs)) {
     const targetPath = path.join(testsDir, relativePath);
@@ -62,9 +56,7 @@ function createTempWorkspace(params?: {
   }
 
   if (params?.includeEnvDir !== false) {
-    for (const [fileName, contents] of Object.entries(
-      params?.envFiles ?? { 'dev.yaml': '{}\n' },
-    )) {
+    for (const [fileName, contents] of Object.entries(params?.envFiles ?? { 'dev.yaml': '{}\n' })) {
       fs.writeFileSync(path.join(envDir, fileName), contents, 'utf-8');
     }
   }
@@ -112,6 +104,19 @@ const EMPTY_PROVIDER_ENV_VARS = {
   GOOGLE_API_KEY: '',
   ANTHROPIC_API_KEY: '',
 };
+
+async function assertNoRunArtifacts(cwd: string): Promise<void> {
+  const workspace = await resolveWorkspaceForHome(cwd, CLI_TEST_HOME);
+  const artifactEntries = await fsp.readdir(workspace.artifactsDir).catch(() => []);
+  assert.deepEqual(artifactEntries, []);
+  await assert.rejects(() => fsp.stat(path.join(workspace.artifactsDir, 'runs.json')));
+}
+
+function assertNoRunOutput(result: ReturnType<typeof runCli>): void {
+  assert.doesNotMatch(result.stdout, /Artifacts written to/);
+  assert.doesNotMatch(result.stdout, /Runs index available at/);
+  assert.doesNotMatch(result.stdout, /Run report available at/);
+}
 
 function createDoctorDependencies(params: {
   requestedPlatforms?: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS>;
@@ -218,22 +223,25 @@ test('runDoctorCommand reports missing Android blockers', async () => {
     printed += chunk.toString();
   });
 
-  const result = await runDoctorCommand({
-    platform: 'android',
-    output,
-  }, createDoctorDependencies({
-    reportChecks: [
-      {
-        platform: PLATFORM_ANDROID,
-        status: 'error',
-        id: 'adb',
-        title: 'adb',
-        summary: 'Required to communicate with Android devices.',
-        detail: 'ADB was not found in ANDROID_HOME, ANDROID_SDK_ROOT, or PATH.',
-        blocking: true,
-      },
-    ],
-  }));
+  const result = await runDoctorCommand(
+    {
+      platform: 'android',
+      output,
+    },
+    createDoctorDependencies({
+      reportChecks: [
+        {
+          platform: PLATFORM_ANDROID,
+          status: 'error',
+          id: 'adb',
+          title: 'adb',
+          summary: 'Required to communicate with Android devices.',
+          detail: 'ADB was not found in ANDROID_HOME, ANDROID_SDK_ROOT, or PATH.',
+          blocking: true,
+        },
+      ],
+    }),
+  );
 
   assert.equal(result.success, false);
   assert.match(printed, /Setup Required/);
@@ -247,22 +255,25 @@ test('runDoctorCommand reports missing iOS blockers', async () => {
     printed += chunk.toString();
   });
 
-  const result = await runDoctorCommand({
-    platform: 'ios',
-    output,
-  }, createDoctorDependencies({
-    reportChecks: [
-      {
-        platform: PLATFORM_IOS,
-        status: 'error',
-        id: 'xcrun',
-        title: 'xcrun',
-        summary: 'Required to access iOS simulator tooling.',
-        detail: 'xcrun was not found in PATH.',
-        blocking: true,
-      },
-    ],
-  }));
+  const result = await runDoctorCommand(
+    {
+      platform: 'ios',
+      output,
+    },
+    createDoctorDependencies({
+      reportChecks: [
+        {
+          platform: PLATFORM_IOS,
+          status: 'error',
+          id: 'xcrun',
+          title: 'xcrun',
+          summary: 'Required to access iOS simulator tooling.',
+          detail: 'xcrun was not found in PATH.',
+          blocking: true,
+        },
+      ],
+    }),
+  );
 
   assert.equal(result.success, false);
   assert.match(printed, /Setup Required/);
@@ -277,39 +288,42 @@ test('runDoctorCommand defaults to both platforms on mac and prints warnings sep
   });
 
   const observedPlatforms: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS> = [];
-  const result = await runDoctorCommand({
-    output,
-  }, {
-    hostPreflightDependencies: {
-      getPlatform: () => 'darwin',
+  const result = await runDoctorCommand(
+    {
+      output,
     },
-    async runHostPreflight(options) {
-      observedPlatforms.push(...options.requestedPlatforms);
-      return {
-        requestedPlatforms: options.requestedPlatforms,
-        checks: [
-          {
-            platform: PLATFORM_ANDROID,
-            status: 'ok',
-            id: 'adb',
-            title: 'adb',
-            summary: 'Required to communicate with Android devices.',
-            detail: '/mock/adb',
-            blocking: true,
-          },
-          {
-            platform: PLATFORM_IOS,
-            status: 'warning',
-            id: 'ffmpeg',
-            title: 'ffmpeg',
-            summary: 'Used to compress iOS recordings after capture.',
-            detail: 'ffmpeg was not found in PATH.',
-            blocking: false,
-          },
-        ],
-      };
+    {
+      hostPreflightDependencies: {
+        getPlatform: () => 'darwin',
+      },
+      async runHostPreflight(options) {
+        observedPlatforms.push(...options.requestedPlatforms);
+        return {
+          requestedPlatforms: options.requestedPlatforms,
+          checks: [
+            {
+              platform: PLATFORM_ANDROID,
+              status: 'ok',
+              id: 'adb',
+              title: 'adb',
+              summary: 'Required to communicate with Android devices.',
+              detail: '/mock/adb',
+              blocking: true,
+            },
+            {
+              platform: PLATFORM_IOS,
+              status: 'warning',
+              id: 'ffmpeg',
+              title: 'ffmpeg',
+              summary: 'Used to compress iOS recordings after capture.',
+              detail: 'ffmpeg was not found in PATH.',
+              blocking: false,
+            },
+          ],
+        };
+      },
     },
-  });
+  );
 
   assert.equal(result.success, true);
   assert.deepEqual(observedPlatforms, [PLATFORM_ANDROID, PLATFORM_IOS]);
@@ -354,11 +368,7 @@ test('finalrun check works without --env when .finalrun/env is absent and the sp
 test('finalrun check fails with actionable binding guidance when .finalrun/env is absent and the spec references env bindings', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specLines: [
-      'name: login',
-      'steps:',
-      '  - Enter ${secrets.email} on the login screen.',
-    ],
+    specLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
   });
 
   try {
@@ -468,11 +478,7 @@ test('finalrun suite resolves suite manifests without requiring the .finalrun/su
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
     suites: {
-      'login/auth_suite.yaml': [
-        'name: auth suite',
-        'tests:',
-        '  - login/auth.yaml',
-      ].join('\n'),
+      'login/auth_suite.yaml': ['name: auth suite', 'tests:', '  - login/auth.yaml'].join('\n'),
     },
   });
 
@@ -496,16 +502,16 @@ test('finalrun suite matches the legacy test --suite invocation', async () => {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
     suites: {
-      'login/auth_suite.yaml': [
-        'name: auth suite',
-        'tests:',
-        '  - login/auth.yaml',
-      ].join('\n'),
+      'login/auth_suite.yaml': ['name: auth suite', 'tests:', '  - login/auth.yaml'].join('\n'),
     },
   });
 
   try {
-    const suiteResult = runCli(['suite', 'login/auth_suite.yaml'], rootDir, EMPTY_PROVIDER_ENV_VARS);
+    const suiteResult = runCli(
+      ['suite', 'login/auth_suite.yaml'],
+      rootDir,
+      EMPTY_PROVIDER_ENV_VARS,
+    );
     const legacyResult = runCli(
       ['test', '--suite', 'login/auth_suite.yaml'],
       rootDir,
@@ -542,7 +548,10 @@ test('finalrun test rejects mixing --suite with selectors before API key validat
   try {
     const result = runCli(['test', '--suite', 'login_suite.yaml', 'login.yaml'], rootDir);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Pass either --suite <path> or positional test selectors, not both/);
+    assert.match(
+      result.stderr,
+      /Pass either --suite <path> or positional test selectors, not both/,
+    );
     assert.doesNotMatch(result.stderr, /API key is required/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -722,6 +731,149 @@ test('finalrun test rejects unsupported providers before resolving the workspace
     );
     assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
     assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prints blocked Android preflight failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const result = runCli(
+      ['test', 'login.yaml', '--platform', 'android', '--model', 'openai/gpt-4o'],
+      rootDir,
+      {
+        OPENAI_API_KEY: 'test-key',
+        PATH: '',
+      },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Run setup failed before execution:/);
+    assert.match(result.stderr, /Local device setup is blocked for android\./i);
+    assert.match(result.stderr, /scrcpy not found/i);
+    assert.match(result.stderr, /finalrun doctor --platform android/);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prints missing spec selector failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const result = runCli(['test', 'missing.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+      OPENAI_API_KEY: 'test-key',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Spec selector not found:/);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun suite prints missing manifest failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace({
+    includeSuitesDir: true,
+  });
+
+  try {
+    const result = runCli(['suite', 'missing_suite.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+      OPENAI_API_KEY: 'test-key',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Suite manifest not found:/);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prints invalid YAML failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace({
+    specs: {
+      'login.yaml': 'name: login\nsteps: [\n',
+    },
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+      OPENAI_API_KEY: 'test-key',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Invalid YAML in/);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prints unresolved env binding failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace({
+    includeEnvDir: false,
+    specLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
+  });
+
+  try {
+    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+      OPENAI_API_KEY: 'test-key',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no environment configuration was resolved/);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prints unsupported app override failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace();
+  const badAppPath = path.join(rootDir, 'fake-app.txt');
+  fs.writeFileSync(badAppPath, 'not an app bundle', 'utf-8');
+
+  try {
+    const result = runCli(
+      ['test', 'login.yaml', '--model', 'openai/gpt-4o', '--app', badAppPath],
+      rootDir,
+      {
+        OPENAI_API_KEY: 'test-key',
+      },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Unsupported --app override/);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun test prints device setup failures raw and does not create a run', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const result = runCli(
+      ['test', 'login.yaml', '--model', 'openai/gpt-4o', '--platform', 'android'],
+      rootDir,
+      {
+        OPENAI_API_KEY: 'test-key',
+        FINALRUN_CLI_TEST_SKIP_HOST_PREFLIGHT: '1',
+        FINALRUN_CLI_TEST_FORCE_DEVICE_SETUP_FAILURE:
+          'No runnable devices or startable targets were found.',
+      },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Run setup failed before execution:/);
+    assert.match(result.stderr, /No runnable devices or startable targets were found\./);
+    assertNoRunOutput(result);
+    await assertNoRunArtifacts(rootDir);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
