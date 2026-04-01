@@ -60,6 +60,12 @@ holds YAML specs, **environment binding** files (`.finalrun/env/*.yaml`), and co
 **Secret values and API keys** belong in workspace-root **`.env`** files (see
 [Important: Environment variables and `.env` files](#important-environment-variables-and-env-files)), not in YAML.
 
+## Watch Demo
+
+[![Watch the FinalRun demo](https://img.youtube.com/vi/q6CFoN-ohT4/hqdefault.jpg)](https://www.youtube.com/watch?v=q6CFoN-ohT4)
+
+Watch the demo on YouTube: https://www.youtube.com/watch?v=q6CFoN-ohT4
+
 ## Quick Start
 
 1. Create a `.finalrun/` workspace in the mobile app repo you want to test.
