@@ -13,7 +13,13 @@ import {
 import type { GoalResult } from '@finalrun/goal-executor';
 import { ReportWriter } from './reportWriter.js';
 import { DevicePreparationError } from './goalRunner.js';
-import { runTests, selectExecutionPlatform, testRunnerDependencies } from './testRunner.js';
+import {
+  PreExecutionFailureError,
+  runTests,
+  selectExecutionPlatform,
+  testRunnerDependencies,
+} from './testRunner.js';
+import { resolveWorkspace } from './workspace.js';
 
 function createDevice(platform: string): { getPlatform(): string } {
   return {
@@ -58,10 +64,7 @@ function createGoalResult(params?: Partial<GoalResult>): GoalResult {
   };
 }
 
-function createGoalSession(params?: {
-  platform?: string;
-  cleanup?: () => Promise<void>;
-}) {
+function createGoalSession(params?: { platform?: string; cleanup?: () => Promise<void> }) {
   return {
     platform: params?.platform ?? 'android',
     deviceInfo: {} as never,
@@ -86,6 +89,13 @@ test.afterEach(() => {
   testRunnerDependencies.runHostPreflight = originalRunHostPreflight;
 });
 
+async function assertNoRunArtifacts(cwd: string): Promise<void> {
+  const workspace = await resolveWorkspace(cwd);
+  const artifactEntries = await fsp.readdir(workspace.artifactsDir).catch(() => []);
+  assert.deepEqual(artifactEntries, []);
+  await assert.rejects(() => fsp.stat(path.join(workspace.artifactsDir, 'runs.json')));
+}
+
 test('selectExecutionPlatform requires an explicit platform when Android and iOS devices are both available', () => {
   assert.throws(
     () => selectExecutionPlatform([createDevice('android'), createDevice('ios')]),
@@ -94,10 +104,7 @@ test('selectExecutionPlatform requires an explicit platform when Android and iOS
 });
 
 test('selectExecutionPlatform honors the requested platform when it is available', () => {
-  const platform = selectExecutionPlatform(
-    [createDevice('android'), createDevice('ios')],
-    'ios',
-  );
+  const platform = selectExecutionPlatform([createDevice('android'), createDevice('ios')], 'ios');
 
   assert.equal(platform, 'ios');
 });
@@ -238,7 +245,12 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
     );
     await fsp.writeFile(
       envPath,
-      ['secrets:', '  email: ${FINALRUN_TEST_EMAIL_SECRET}', 'variables:', '  language: Spanish'].join('\n'),
+      [
+        'secrets:',
+        '  email: ${FINALRUN_TEST_EMAIL_SECRET}',
+        'variables:',
+        '  language: Spanish',
+      ].join('\n'),
       'utf-8',
     );
     await fsp.writeFile(recordingPath, 'fake-video-data', 'utf-8');
@@ -356,13 +368,14 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
 test('ReportWriter persists suite snapshots and suite metadata without changing per-spec result files', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-report-'));
   const workspaceRoot = path.join(runDir, 'workspace');
-  const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'login', 'valid_login.yaml');
-  const suiteSourcePath = path.join(
+  const specSourcePath = path.join(
     workspaceRoot,
     '.finalrun',
-    'suites',
-    'login_suite.yaml',
+    'tests',
+    'login',
+    'valid_login.yaml',
   );
+  const suiteSourcePath = path.join(workspaceRoot, '.finalrun', 'suites', 'login_suite.yaml');
   const writer = new ReportWriter({
     runDir,
     envName: 'none',
@@ -435,7 +448,10 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
         suiteId: 'login_suite',
       },
       effectiveGoals: new Map([
-        [spec.specId, 'Test Name: valid login\n\nSteps:\n1. Open login.\n2. Submit valid credentials.'],
+        [
+          spec.specId,
+          'Test Name: valid login\n\nSteps:\n1. Open login.\n2. Submit valid credentials.',
+        ],
       ]),
       target: {
         type: 'suite',
@@ -576,11 +592,7 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
   );
   fs.writeFileSync(
     path.join(testsDir, 'login.yaml'),
-    [
-      'name: login',
-      'steps:',
-      '  - Enter ${secrets.email} on the login screen.',
-    ].join('\n'),
+    ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'].join('\n'),
     'utf-8',
   );
 
@@ -620,13 +632,7 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     const runJsonPath = path.join(result.runDir, 'run.json');
     const resultPath = path.join(result.runDir, 'tests', 'login', 'result.json');
     const stepPath = path.join(result.runDir, 'tests', 'login', 'steps', '001.json');
-    const screenshotPath = path.join(
-      result.runDir,
-      'tests',
-      'login',
-      'screenshots',
-      '001.jpg',
-    );
+    const screenshotPath = path.join(result.runDir, 'tests', 'login', 'screenshots', '001.jpg');
     const runnerLogPath = path.join(result.runDir, 'runner.log');
 
     for (const target of [
@@ -761,9 +767,7 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
       invokedCommand: 'suite',
     });
 
-    const runJson = JSON.parse(
-      await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8'),
-    );
+    const runJson = JSON.parse(await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8'));
     assert.equal(runJson.input.cli.command, 'finalrun suite smoke.yaml');
     assert.equal(runJson.input.cli.suitePath, 'smoke.yaml');
     assert.deepEqual(runJson.input.cli.selectors, []);
@@ -866,8 +870,7 @@ test('runTests uses mov artifact recording output paths for iOS specs', async ()
     keepPartialOnFailure?: boolean;
   }> = [];
 
-  testRunnerDependencies.prepareGoalSession = async () =>
-    createGoalSession({ platform: 'ios' });
+  testRunnerDependencies.prepareGoalSession = async () => createGoalSession({ platform: 'ios' });
   testRunnerDependencies.executeGoalOnSession = async (_session, config) => {
     if (config.recording) {
       recordingConfigs.push({
@@ -999,8 +1002,7 @@ test('runTests stops remaining specs after a terminal AI provider failure', asyn
   const originalExecuteGoalOnSession = testRunnerDependencies.executeGoalOnSession;
   let cleanupCalls = 0;
   const executedCases: string[] = [];
-  const terminalFailureMessage =
-    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized';
+  const terminalFailureMessage = 'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized';
 
   testRunnerDependencies.prepareGoalSession = async () =>
     createGoalSession({
@@ -1260,7 +1262,7 @@ test('runTests requests a forced exit after a second SIGINT', async () => {
   }
 });
 
-test('runTests writes top-level artifacts when validation fails before platform resolution', async () => {
+test('runTests rejects validation failures before platform resolution without creating run artifacts', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-validation-failure-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
@@ -1278,39 +1280,30 @@ test('runTests writes top-level artifacts when validation fails before platform 
   );
 
   try {
-    const result = await runTests({
-      envName: 'dev',
-      cwd: rootDir,
-      selectors: ['login.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4o',
-    });
-
-    assert.equal(result.success, false);
-    assert.equal(result.specResults.length, 0);
-
-    const summaryPath = path.join(result.runDir, 'summary.json');
-    const runJsonPath = path.join(result.runDir, 'run.json');
-    const runnerLogPath = path.join(result.runDir, 'runner.log');
-
-    for (const target of [summaryPath, runJsonPath, runnerLogPath, result.runIndexPath]) {
-      const stats = await fsp.stat(target);
-      assert.equal(stats.isFile(), true);
-    }
-
-    const summaryJson = await fsp.readFile(summaryPath, 'utf-8');
-    const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
-
-    assert.equal(summaryJson.includes('"success": false'), true);
-    assert.equal(runnerLog.includes('Run validation failed'), true);
-    await assert.rejects(() => fsp.stat(path.join(result.runDir, 'index.html')));
+    await assert.rejects(
+      () =>
+        runTests({
+          envName: 'dev',
+          cwd: rootDir,
+          selectors: ['login.yaml'],
+          apiKey: 'test-key',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PreExecutionFailureError);
+        assert.equal(error.phase, 'validation');
+        assert.match(error.message, /unsupported key "app"/);
+        return true;
+      },
+    );
+    await assertNoRunArtifacts(rootDir);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('runTests writes failure artifacts when no selectors are provided', async () => {
+test('runTests rejects validation failures before creating run artifacts', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-missing-selectors-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
@@ -1324,28 +1317,29 @@ test('runTests writes failure artifacts when no selectors are provided', async (
   );
 
   try {
-    const result = await runTests({
-      envName: 'dev',
-      cwd: rootDir,
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4o',
-    });
-
-    assert.equal(result.success, false);
-    assert.equal(result.specResults.length, 0);
-
-    const runnerLogPath = path.join(result.runDir, 'runner.log');
-    const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
-    assert.equal(runnerLog.includes('At least one test selector is required'), true);
-    const runIndexStats = await fsp.stat(result.runIndexPath);
-    assert.equal(runIndexStats.isFile(), true);
+    await assert.rejects(
+      () =>
+        runTests({
+          envName: 'dev',
+          cwd: rootDir,
+          apiKey: 'test-key',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PreExecutionFailureError);
+        assert.equal(error.phase, 'validation');
+        assert.match(error.message, /At least one test selector is required/);
+        return true;
+      },
+    );
+    await assertNoRunArtifacts(rootDir);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('runTests persists buffered setup logs and raw command transcripts when device setup fails early', async () => {
+test('runTests surfaces device setup diagnostics before execution without creating run artifacts', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-setup-buffering-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
@@ -1380,29 +1374,26 @@ test('runTests persists buffered setup logs and raw command transcripts when dev
   };
 
   try {
-    const result = await runTests({
-      envName: 'dev',
-      cwd: rootDir,
-      selectors: ['login.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4o',
-    });
-
-    assert.equal(result.success, false);
-    const runnerLogPath = path.join(result.runDir, 'runner.log');
-    const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
-
-    assert.match(runnerLog, /Buffered setup log before runner\.log exists/);
-    assert.match(runnerLog, /Run setup failed before execution/);
-    assert.match(runnerLog, /Command: adb devices -l/);
-    assert.match(runnerLog, /stderr:\nadb executable missing/);
-    const runJson = await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8');
-    assert.match(runJson, /"failurePhase": "setup"/);
-    const specSnapshotStats = await fsp.stat(
-      path.join(result.runDir, 'input', 'specs', 'login.yaml'),
+    await assert.rejects(
+      () =>
+        runTests({
+          envName: 'dev',
+          cwd: rootDir,
+          selectors: ['login.yaml'],
+          apiKey: 'test-key',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PreExecutionFailureError);
+        assert.equal(error.phase, 'setup');
+        assert.match(error.message, /Run setup failed before execution/);
+        assert.match(error.message, /Command: adb devices -l/);
+        assert.match(error.message, /stderr:\nadb executable missing/);
+        return true;
+      },
     );
-    assert.equal(specSnapshotStats.isFile(), true);
+    await assertNoRunArtifacts(rootDir);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -1444,23 +1435,27 @@ test('runTests fails before prepareGoalSession when Android host preflight is bl
   });
 
   try {
-    const result = await runTests({
-      envName: 'dev',
-      cwd: rootDir,
-      selectors: ['login.yaml'],
-      platform: 'android',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4o',
-    });
-
-    assert.equal(result.success, false);
+    await assert.rejects(
+      () =>
+        runTests({
+          envName: 'dev',
+          cwd: rootDir,
+          selectors: ['login.yaml'],
+          platform: 'android',
+          apiKey: 'test-key',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PreExecutionFailureError);
+        assert.equal(error.phase, 'setup');
+        assert.match(error.message, /Local device setup is blocked for android\./i);
+        assert.match(error.message, /finalrun doctor --platform android/);
+        return true;
+      },
+    );
     assert.equal(prepareCalls, 0);
-    const runJson = await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8');
-    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
-    assert.match(runJson, /"failurePhase": "setup"/);
-    assert.match(runnerLog, /Local device setup is blocked for android\./i);
-    assert.match(runnerLog, /finalrun doctor --platform android/);
+    await assertNoRunArtifacts(rootDir);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -1502,21 +1497,27 @@ test('runTests fails before prepareGoalSession when iOS host preflight is blocke
   });
 
   try {
-    const result = await runTests({
-      envName: 'dev',
-      cwd: rootDir,
-      selectors: ['login.yaml'],
-      platform: 'ios',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4o',
-    });
-
-    assert.equal(result.success, false);
+    await assert.rejects(
+      () =>
+        runTests({
+          envName: 'dev',
+          cwd: rootDir,
+          selectors: ['login.yaml'],
+          platform: 'ios',
+          apiKey: 'test-key',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PreExecutionFailureError);
+        assert.equal(error.phase, 'setup');
+        assert.match(error.message, /Local device setup is blocked for ios\./i);
+        assert.match(error.message, /finalrun doctor --platform ios/);
+        return true;
+      },
+    );
     assert.equal(prepareCalls, 0);
-    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
-    assert.match(runnerLog, /Local device setup is blocked for ios\./i);
-    assert.match(runnerLog, /finalrun doctor --platform ios/);
+    await assertNoRunArtifacts(rootDir);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -1543,9 +1544,10 @@ test('runTests continues when one platform is healthy and the other is blocked',
     prepareCalls += 1;
     return createGoalSession({ platform: 'ios' });
   };
-  testRunnerDependencies.executeGoalOnSession = async () => createGoalResult({
-    platform: 'ios',
-  });
+  testRunnerDependencies.executeGoalOnSession = async () =>
+    createGoalResult({
+      platform: 'ios',
+    });
   testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
     requestedPlatforms,
     checks: [
@@ -1633,20 +1635,26 @@ test('runTests fails when both platforms are blocked and no platform is specifie
   });
 
   try {
-    const result = await runTests({
-      envName: 'dev',
-      cwd: rootDir,
-      selectors: ['login.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4o',
-    });
-
-    assert.equal(result.success, false);
+    await assert.rejects(
+      () =>
+        runTests({
+          envName: 'dev',
+          cwd: rootDir,
+          selectors: ['login.yaml'],
+          apiKey: 'test-key',
+          provider: 'openai',
+          modelName: 'gpt-4o',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PreExecutionFailureError);
+        assert.equal(error.phase, 'setup');
+        assert.match(error.message, /Local device setup is blocked for Android and iOS\./);
+        assert.match(error.message, /Run 'finalrun doctor'/);
+        return true;
+      },
+    );
     assert.equal(prepareCalls, 0);
-    const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
-    assert.match(runnerLog, /Local device setup is blocked for Android and iOS\./);
-    assert.match(runnerLog, /Run 'finalrun doctor'/);
+    await assertNoRunArtifacts(rootDir);
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     await fsp.rm(rootDir, { recursive: true, force: true });

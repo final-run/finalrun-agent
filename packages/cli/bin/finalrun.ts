@@ -16,17 +16,11 @@ import {
   resolveHealthyWorkspaceReportServer,
   startOrReuseWorkspaceReportServer,
 } from '../src/reportServerManager.js';
-import {
-  normalizeSpecSelectors,
-  TEST_SELECTION_REQUIRED_ERROR,
-} from '../src/testSelection.js';
-import { runTests } from '../src/testRunner.js';
+import { normalizeSpecSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import { PreExecutionFailureError, runTests } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
-import {
-  initializeCliRuntimeEnvironment,
-  resolveCliPackageVersion,
-} from '../src/runtimePaths.js';
+import { initializeCliRuntimeEnvironment, resolveCliPackageVersion } from '../src/runtimePaths.js';
 import {
   ensureWorkspaceDirectories,
   loadWorkspaceConfig,
@@ -68,10 +62,13 @@ program
         appPath: options.app,
       });
 
-      const envSummary = result.environment.envName === 'none'
-        ? 'using no env bindings.'
-        : `using env ${result.environment.envName}.`;
-      console.log(`Validated ${result.specs.length} spec(s) in ${result.workspace.testsDir} ${envSummary}`);
+      const envSummary =
+        result.environment.envName === 'none'
+          ? 'using no env bindings.'
+          : `using env ${result.environment.envName}.`;
+      console.log(
+        `Validated ${result.specs.length} spec(s) in ${result.workspace.testsDir} ${envSummary}`,
+      );
     });
   });
 
@@ -131,7 +128,10 @@ program
   )
   .option('--debug', 'Enable debug logging', false)
   .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
-  .argument('[selectors...]', 'Workspace-relative YAML files, directories, or globs under .finalrun/tests')
+  .argument(
+    '[selectors...]',
+    'Workspace-relative YAML files, directories, or globs under .finalrun/tests',
+  )
   .action(async (selectors: string[] | undefined, options: TestCommandOptions) => {
     await runTestCommand({
       invokedCommand: 'test',
@@ -273,7 +273,7 @@ async function runTestCommand(params: {
   suitePath?: string;
   options: TestCommandOptions;
 }): Promise<void> {
-  await runCommand(async () => {
+  try {
     const normalizedSelectors = normalizeSpecSelectors(params.selectors);
     const normalizedSuitePath = params.suitePath?.trim() || params.options.suite;
     if (normalizedSuitePath && normalizedSelectors.length > 0) {
@@ -289,13 +289,14 @@ async function runTestCommand(params: {
 
     const debug = params.options.debug === true;
     Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
-    const resolvedEnvironment = await resolveConfiguredEnvironmentFile(workspace, params.options.env);
+    const resolvedEnvironment = await resolveConfiguredEnvironmentFile(
+      workspace,
+      params.options.env,
+    );
 
     const runtimeEnv = new CliEnv();
     runtimeEnv.load(
-      resolvedEnvironment.usesEmptyBindings
-        ? undefined
-        : resolvedEnvironment.envName,
+      resolvedEnvironment.usesEmptyBindings ? undefined : resolvedEnvironment.envName,
     );
     const apiKey = resolveApiKey({
       env: runtimeEnv,
@@ -304,9 +305,7 @@ async function runTestCommand(params: {
     });
 
     const result = await runTests({
-      envName: resolvedEnvironment.usesEmptyBindings
-        ? undefined
-        : resolvedEnvironment.envName,
+      envName: resolvedEnvironment.usesEmptyBindings ? undefined : resolvedEnvironment.envName,
       selectors: normalizedSelectors,
       suitePath: normalizedSuitePath,
       platform: params.options.platform,
@@ -336,7 +335,13 @@ async function runTestCommand(params: {
       console.log('Start the local report UI with `finalrun start-server`.');
     }
     process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
-  });
+  } catch (error) {
+    if (error instanceof PreExecutionFailureError) {
+      exitWithRawStderr(error.message, error.exitCode);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    exitWithRawStderr(message, 1);
+  }
 }
 
 async function runCommand(run: () => Promise<void>): Promise<void> {
@@ -362,9 +367,7 @@ async function startWorkspaceReportServer(params: {
     dev: params.dev,
   });
   const workspaceUrl = buildWorkspaceReportUrl(server.url);
-  console.log(
-    `${server.reused ? 'Reusing' : 'Started'} FinalRun report server at ${workspaceUrl}`,
-  );
+  console.log(`${server.reused ? 'Reusing' : 'Started'} FinalRun report server at ${workspaceUrl}`);
   await openUrlBestEffort(workspaceUrl);
 }
 
@@ -375,4 +378,10 @@ async function openUrlBestEffort(url: string): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`Could not open the browser automatically: ${message}`);
   }
+}
+
+function exitWithRawStderr(message: string, exitCode: number): never {
+  const rendered = message.endsWith('\n') ? message : `${message}\n`;
+  process.stderr.write(rendered);
+  process.exit(exitCode);
 }
