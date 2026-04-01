@@ -1,6 +1,40 @@
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://finalrun.app/">
+    <img alt="FinalRun logo" height="90" src="./.github/resources/Logo.png">
+  </a>
+</p>
 
-# finalrun-agent
+<p align="center">
+  <a aria-label="npm package version" href="https://www.npmjs.com/package/@finalrun/finalrun-agent" target="_blank">
+    <img alt="npm version" src="https://img.shields.io/npm/v/@finalrun/finalrun-agent.svg?style=flat-square&label=npm&labelColor=000000&color=4630EB" />
+  </a>
+  <a aria-label="License: Apache-2.0" href="LICENSE">
+    <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square&color=33CC12" />
+  </a>
+</p>
+
+<p align="center">
+  <a aria-label="FinalRun website" href="https://finalrun.app/"><b>finalrun.app</b></a>
+  &ensp;•&ensp;
+  <a aria-label="FinalRun blog" href="https://blogs.finalrun.app/">Blog</a>
+  &ensp;•&ensp;
+  <a aria-label="Cloud device waitlist" href="https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor" target="_blank">Cloud Device Waitlist</a>
+  &ensp;•&ensp;
+  <a aria-label="FinalRun Slack community" href="https://join.slack.com/t/finalrun-community/shared_invite/zt-38qg6q9fq-9L87nNF8aX4HZ8_pn9KBgw" target="_blank">Slack</a>
+</p>
+
+<h6 align="center">Follow us on</h6>
+<p align="center">
+  <a aria-label="Follow FinalRun on X" href="https://x.com/get_final_run" target="_blank">
+    <img alt="FinalRun on X" src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" />
+  </a>&nbsp;
+  <a aria-label="FinalRun on GitHub" href="https://github.com/final-run" target="_blank">
+    <img alt="FinalRun on GitHub" src="https://img.shields.io/badge/GitHub-222222?style=for-the-badge&logo=github&logoColor=white" />
+  </a>&nbsp;
+  <a aria-label="Follow FinalRun on LinkedIn" href="https://linkedin.com/company/finalrun/" target="_blank">
+    <img alt="FinalRun on LinkedIn" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" />
+  </a>
+</p>
 
 `finalrun-agent` is an AI-driven CLI for mobile app testing. You define repo-local tests in YAML, run them against Android or iOS targets, and inspect local run artifacts from the terminal.
 
