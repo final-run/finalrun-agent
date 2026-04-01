@@ -44,7 +44,7 @@ Install the npm package globally:
 npm install -g @finalrun/finalrun-agent
 ```
 
-If you're using Codex and want to add the FinalRun skills from this repo:
+If you're using Codex, Claude Code, or another tool that supports skills, add the FinalRun skills from this repo:
 
 ```sh
 npx skills add final-run/finalrun-agent
