@@ -147,5 +147,4 @@ for (const relativeAssetPath of installAssets) {
   cpSync(sourcePath, targetPath);
 }
 
-cpSync(resolve(repoRoot, 'README.md'), resolve(cliDir, 'README.md'));
 cpSync(resolve(repoRoot, 'LICENSE'), resolve(cliDir, 'LICENSE'));
