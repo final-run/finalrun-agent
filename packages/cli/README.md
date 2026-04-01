@@ -62,7 +62,7 @@ holds YAML specs, **environment binding** files (`.finalrun/env/*.yaml`), and co
 
 ## Watch Demo
 
-[![Watch the FinalRun demo](https://img.youtube.com/vi/q6CFoN-ohT4/hqdefault.jpg)](https://www.youtube.com/watch?v=q6CFoN-ohT4)
+[![Watch the FinalRun demo](https://img.youtube.com/vi/q6CFoN-ohT4/maxresdefault.jpg)](https://www.youtube.com/watch?v=q6CFoN-ohT4)
 
 Watch the demo on YouTube: https://www.youtube.com/watch?v=q6CFoN-ohT4
 
