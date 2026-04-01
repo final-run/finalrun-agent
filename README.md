@@ -72,7 +72,8 @@ Watch the demo on YouTube: https://www.youtube.com/watch?v=q6CFoN-ohT4
 2. Add at least one YAML spec under `.finalrun/tests/`.
 3. Configure the AI provider key you want to use.
 4. Validate the workspace with `finalrun check`.
-5. Run a test with `finalrun test`.
+5. If you plan to run locally on Android or iOS, verify host readiness with `finalrun doctor`.
+6. Run a test with `finalrun test`.
 
 Example workspace layout (workspace root is the directory that contains `.finalrun/`):
 
@@ -128,6 +129,12 @@ Validate the workspace:
 
 ```sh
 finalrun check --env dev
+```
+
+Check local host readiness for Android or iOS runs:
+
+```sh
+finalrun doctor
 ```
 
 Run a test:
@@ -250,14 +257,57 @@ finalrun suite --help
 
 ## Prerequisites
 
+Using FinalRun has two layers of setup:
+
+- `finalrun check` requires the CLI, a `.finalrun/` workspace, and any needed config or secrets.
+- Local `finalrun test` and `finalrun suite` runs additionally require host tooling for the target platform.
+- `finalrun doctor` is the source of truth for local host readiness.
+
+### Required for all usage
+
 - Node.js `>=20`
 - `npm`
-- Android local testing:
-  - `adb` available through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`
-- iOS local testing when needed:
-  - Xcode command line tools with `xcrun`
+- Install the published CLI: `npm install -g @finalrun/finalrun-agent`
+- Run from a repository that contains `.finalrun/`
+- At minimum, `.finalrun/tests/` must exist
+- For `finalrun test` and `finalrun suite`: a configured model from `--model <provider/model>` or `.finalrun/config.yaml`
+- For `finalrun test` and `finalrun suite`: the matching provider API key in `process.env`, `.env`, or `.env.<name>`
 
-Native driver artifacts are built from this repo during development with:
+`finalrun check` does not require Android or iOS host tools.
+
+### Required for Android local runs
+
+- `adb` available through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`
+- `emulator` on `PATH`; the current Android preflight requires it to discover and boot Android Virtual Devices
+- `scrcpy` on `PATH`; FinalRun uses it for Android screen recording during local runs and treats it as required
+- Bundled FinalRun Android driver assets present; the published CLI installs them automatically
+
+### Required for iOS local runs
+
+- macOS
+- Xcode command line tools with `xcrun`
+- `xcrun simctl`
+- `unzip`
+- `/bin/bash`
+- `plutil`
+- Bundled FinalRun iOS driver archives present; the published CLI installs them automatically
+
+### Optional helpers
+
+- `avdmanager` enriches Android Virtual Device metadata
+- `ffmpeg` compresses iOS recordings after capture
+- `applesimutils` enables simulator permission helpers
+- `lsof`, `ps`, and `kill` help with stale iOS driver cleanup
+
+Verify local host readiness with:
+
+```sh
+finalrun doctor
+finalrun doctor --platform android
+finalrun doctor --platform ios
+```
+
+If you're developing from this repo instead of using the published package, build the native driver artifacts with:
 
 ```sh
 npm run build:drivers
@@ -276,7 +326,6 @@ Keys are read from **`process.env`** and from workspace-root **`.env` / `.env.<n
 Examples:
 
 ```sh
-finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
 finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
 finalrun suite smoke.yaml --platform ios --model anthropic/claude-sonnet-4-6
 ```
