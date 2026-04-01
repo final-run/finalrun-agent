@@ -1,6 +1,6 @@
 {
   "name": "@finalrun/report-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Local FinalRun report app",
   "scripts": {

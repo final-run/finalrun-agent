@@ -130,7 +130,7 @@ test('CliFilePathUtil downloads the Android driver asset from the manifest into 
     fs.writeFileSync(
       manifestPath,
       JSON.stringify({
-        version: '0.1.0',
+        version: '0.1.1',
         assets: [
           {
             kind: 'android-driver-apk',

@@ -87,7 +87,7 @@ test('installBundledAssets no-ops when the packaged install resources are absent
   try {
     fs.writeFileSync(
       path.join(packageRoot, 'package.json'),
-      JSON.stringify({ name: '@finalrun/finalrun-agent', version: '0.1.0' }, null, 2),
+      JSON.stringify({ name: '@finalrun/finalrun-agent', version: '0.1.1' }, null, 2),
       'utf-8',
     );
 
