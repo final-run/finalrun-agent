@@ -230,11 +230,14 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
     try {
       for (const spec of checked.specs) {
         if (runAborted) {
-          throw new PreExecutionFailureError({
-            phase: 'setup',
-            message: 'Run aborted before execution.',
-            exitCode: 130,
-          });
+          if (!reportWriter) {
+            throw new PreExecutionFailureError({
+              phase: 'setup',
+              message: 'Run aborted before execution.',
+              exitCode: 130,
+            });
+          }
+          break;
         }
 
         if (!reportWriter) {
