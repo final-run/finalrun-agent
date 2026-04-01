@@ -51,7 +51,11 @@ export async function runCheck(
   );
 
   const runtimeEnv = new CliEnv();
-  runtimeEnv.load(undefined, { includeDotEnv: false });
+  if (resolvedEnvironment.usesEmptyBindings) {
+    runtimeEnv.load(undefined, { includeDotEnv: false, cwd: workspace.rootDir });
+  } else {
+    runtimeEnv.load(resolvedEnvironment.envName, { cwd: workspace.rootDir });
+  }
 
   const environment = await loadEnvironmentConfig(
     resolvedEnvironment.envPath,

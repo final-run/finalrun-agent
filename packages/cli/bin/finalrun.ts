@@ -296,7 +296,10 @@ async function runTestCommand(params: {
 
     const runtimeEnv = new CliEnv();
     runtimeEnv.load(
-      resolvedEnvironment.usesEmptyBindings ? undefined : resolvedEnvironment.envName,
+      resolvedEnvironment.usesEmptyBindings
+        ? undefined
+        : resolvedEnvironment.envName,
+      { cwd: workspace.rootDir },
     );
     const apiKey = resolveApiKey({
       env: runtimeEnv,

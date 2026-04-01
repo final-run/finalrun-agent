@@ -14,8 +14,11 @@ The package installs the `finalrun` command and also exposes `finalrun-agent` as
 
 During global installation, FinalRun stages its native driver assets under
 `~/.finalrun/assets/<version>/`. Run artifacts are stored separately under
-`~/.finalrun/workspaces/<workspace-hash>/artifacts`, while repository-local `.finalrun/`
-directories remain dedicated to YAML specs, env files, and config.
+`~/.finalrun/workspaces/<workspace-hash>/artifacts`. In your app repo, `.finalrun/`
+holds YAML specs, **environment binding** files (`.finalrun/env/*.yaml`), and config.
+
+**Secret values and API keys** belong in workspace-root **`.env`** files (see
+[Important: Environment variables and `.env` files](#important-environment-variables-and-env-files)), not in YAML.
 
 ## Quick Start
 
@@ -25,9 +28,11 @@ directories remain dedicated to YAML specs, env files, and config.
 4. Validate the workspace with `finalrun check`.
 5. Run a test with `finalrun test`.
 
-Example workspace layout:
+Example workspace layout (workspace root is the directory that contains `.finalrun/`):
 
 ```text
+.env                 # optional; shared defaults (do not commit — see .gitignore below)
+.env.dev             # optional; values when using env name "dev" (do not commit)
 .finalrun/
   config.yaml
   tests/
@@ -91,6 +96,41 @@ Run a suite manifest:
 finalrun suite smoke.yaml --env dev --platform ios --model google/gemini-2.0-flash
 ```
 
+## Environment variables and `.env` files
+
+> [!IMPORTANT]
+> Store **real secrets and API keys** only in workspace-root **`.env`** and **`.env.<name>`** files (the same folder that contains `.finalrun/`), not in `.finalrun/env/*.yaml` (that file only lists **placeholder** names like `${MY_VAR}`). Add **`.env`** and **`.env.*`** to your **`.gitignore`** so those files are never committed.
+
+### Where to put files
+
+- **Workspace root** is the folder that contains `.finalrun/`. FinalRun finds it by walking up from your shell’s current directory, so dotenv paths are anchored to that root (not to `cwd` when you run from a subfolder).
+- **Workspace root — dotenv (secrets and provider keys):**
+  - **`.env`** — optional; values merged for all runs (see load order below).
+  - **`.env.<name>`** — optional; used when that environment is active (e.g. `.env.dev` for `dev` from `--env dev` or `env: dev` in `.finalrun/config.yaml`). The name matches `.finalrun/env/<name>.yaml`, not the filename alone.
+- **`.finalrun/env/<name>.yaml` — bindings only:** declares `secrets` as placeholders like `${TEST_USER_EMAIL}` and `variables` as plain values. The CLI resolves each `secrets` placeholder from the **shell environment** and from workspace-root `.env` / `.env.<name>` (see below). Do not put real secrets inside this YAML.
+
+### Load order and usage
+
+For a resolved environment name `N`, the CLI loads variables from `.env.N`, then fills missing keys from `.env`, then applies **`process.env`** (which wins if the same name is set in both a file and the environment).
+
+That single workspace-root dotenv setup is used for:
+
+- Resolving **`${secrets.*}`** references defined in `.finalrun/env/*.yaml`.
+- Reading **AI provider API keys** (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) for `finalrun test` and `finalrun suite`.
+
+When no FinalRun environment is in use (env-free workspace), the CLI does not require a `.env.N` file for YAML bindings; you can still use `process.env` or `.env` for keys if applicable.
+
+### Git: keep secrets out of the repo
+
+**Do not commit** `.env` files. Add the following to your app repository’s **`.gitignore`** (or equivalent):
+
+```gitignore
+.env
+.env.*
+```
+
+That ignores `.env`, `.env.dev`, `.env.staging`, and similar. The `finalrun-agent` monorepo uses the same pattern in its root `.gitignore`.
+
 ## YAML Test Specs
 
 FinalRun specs are plain YAML files stored under `.finalrun/tests/`.
@@ -101,7 +141,7 @@ FinalRun specs are plain YAML files stored under `.finalrun/tests/`.
 
 Environment placeholders are supported:
 
-- `${secrets.*}` resolves from environment-variable-backed secrets
+- `${secrets.*}` resolves from OS environment variables and workspace-root **`.env` / `.env.<name>`** files (see [Important: Environment variables and `.env` files](#important-environment-variables-and-env-files))
 - `${variables.*}` resolves from non-sensitive values in `.finalrun/env/*.yaml`
 
 Suite manifests live under `.finalrun/suites/` and list YAML files, directories, or globs that resolve under `.finalrun/tests/`.
@@ -184,6 +224,8 @@ FinalRun requires a `provider/model` value from `--model <provider/model>` or `.
 - `openai/...`: `OPENAI_API_KEY`
 - `google/...`: `GOOGLE_API_KEY`
 - `anthropic/...`: `ANTHROPIC_API_KEY`
+
+Keys are read from **`process.env`** and from workspace-root **`.env` / `.env.<name>`** (same rules as in [Important: Environment variables and `.env` files](#important-environment-variables-and-env-files)). You can still pass `--api-key` to override.
 
 Examples:
 
