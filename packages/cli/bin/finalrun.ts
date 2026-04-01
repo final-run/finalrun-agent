@@ -340,10 +340,11 @@ async function runTestCommand(params: {
     process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
   } catch (error) {
     if (error instanceof PreExecutionFailureError) {
-      exitWithRawStderr(error.message, error.exitCode);
+      await exitWithRawStderr(error.message, error.exitCode);
+    } else {
+      const message = error instanceof Error ? error.message : String(error);
+      await exitWithRawStderr(message, 1);
     }
-    const message = error instanceof Error ? error.message : String(error);
-    exitWithRawStderr(message, 1);
   }
 }
 
@@ -383,8 +384,16 @@ async function openUrlBestEffort(url: string): Promise<void> {
   }
 }
 
-function exitWithRawStderr(message: string, exitCode: number): never {
+async function exitWithRawStderr(message: string, exitCode: number): Promise<never> {
   const rendered = message.endsWith('\n') ? message : `${message}\n`;
-  process.stderr.write(rendered);
+  await new Promise<void>((resolve, reject) => {
+    process.stderr.write(rendered, (writeError) => {
+      if (writeError) {
+        reject(writeError);
+        return;
+      }
+      resolve();
+    });
+  });
   process.exit(exitCode);
 }

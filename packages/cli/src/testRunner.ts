@@ -146,6 +146,9 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
         ]),
       );
     } catch (error) {
+      if (error instanceof PreExecutionFailureError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       throw new PreExecutionFailureError({
         phase: 'validation',
@@ -200,6 +203,9 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
         appOverridePath: checked.appOverride?.appPath,
       });
     } catch (error) {
+      if (error instanceof PreExecutionFailureError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       const diagnostics = isDevicePreparationError(error) ? error.diagnostics : [];
       throw new PreExecutionFailureError({
