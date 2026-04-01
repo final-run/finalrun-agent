@@ -133,7 +133,7 @@ finalrun test smoke.yaml --env dev --platform android --model google/gemini-3-fl
 Run a suite manifest:
 
 ```sh
-finalrun suite smoke.yaml --env dev --platform ios --model google/gemini-2.0-flash
+finalrun suite smoke.yaml --env dev --platform ios --model google/gemini-3-flash-preview
 ```
 
 ## Environment variables and `.env` files
@@ -271,8 +271,8 @@ Examples:
 
 ```sh
 finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
-finalrun test smoke.yaml --platform android --model google/gemini-2.0-flash
-finalrun suite smoke.yaml --platform ios --model anthropic/claude-3-7-sonnet
+finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
+finalrun suite smoke.yaml --platform ios --model anthropic/claude-sonnet-4-6
 ```
 
 ## Development
