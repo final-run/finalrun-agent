@@ -30,7 +30,6 @@ export type { RepoTestSpec, LoadedRepoTestSpec } from './models/RepoTestSpec.js'
 export type { RepoTestSuite, LoadedRepoTestSuite } from './models/RepoTestSuite.js';
 export type {
   PlannerThoughtRecord,
-  ActionPayloadRecord,
   FailurePhase,
   BindingReferenceRecord,
   ReportServerStateRecord,
@@ -45,10 +44,8 @@ export type {
   RunManifestEnvironmentRecord,
   RunManifestSelectedSpecRecord,
   RunManifestSuiteRecord,
-  RunManifestCliRecord,
   RunManifestModelRecord,
   RunManifestAppRecord,
-  RunManifestCountRecord,
   RunManifestRecord,
   RunIndexEntryRecord,
   RunIndexRecord,

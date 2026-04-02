@@ -16,6 +16,7 @@ function createRunManifest(
     schemaVersion: 1,
     run: {
       runId,
+      command: 'finalrun test login.yaml',
       success,
       status: success ? 'success' : 'failure',
       startedAt: '2026-03-23T18:00:00.000Z',
@@ -32,20 +33,10 @@ function createRunManifest(
         source: 'repo',
         label: 'repo app',
       },
-      selectors: ['login.yaml'],
+      tagFilter: null,
       target,
-      counts: {
-        specs: {
-          total: 1,
-          passed: success ? 1 : 0,
-          failed: success ? 0 : 1,
-        },
-        steps: {
-          total: 1,
-          passed: success ? 1 : 0,
-          failed: success ? 0 : 1,
-        },
-      },
+      totalTests: 1,
+      completedTests: 1,
       firstFailure: success
         ? undefined
         : {
@@ -58,15 +49,8 @@ function createRunManifest(
     input: {
       environment: {
         envName: 'dev',
-        variables: {},
-        secretReferences: [],
       },
       specs: [],
-      cli: {
-        command: 'finalrun test',
-        selectors: ['login.yaml'],
-        debug: false,
-      },
     },
     specs: [],
     paths: {
@@ -99,7 +83,6 @@ test('rebuildRunIndex writes runs.json from run.json files', async () => {
 
     const runsJson = JSON.parse(await fsp.readFile(runsJsonPath, 'utf-8'));
     assert.equal(runsJson.runs[0]?.firstFailure?.message, 'button not found');
-    assert.equal(runsJson.runs[0]?.paths.runJson, `${runId}/run.json`);
   } finally {
     await fsp.rm(artifactsDir, { recursive: true, force: true });
   }
@@ -145,6 +128,7 @@ test('formatRunIndexForConsole prints ABORT for aborted runs', () => {
     runs: [
       {
         runId: '2026-03-23T18-00-00.000Z-dev-android',
+        command: 'finalrun test login.yaml',
         success: false,
         status: 'aborted',
         startedAt: '2026-03-23T18:00:00.000Z',
@@ -154,14 +138,10 @@ test('formatRunIndexForConsole prints ABORT for aborted runs', () => {
         platform: 'android',
         modelLabel: 'openai/gpt-4o',
         appLabel: 'repo app',
-        specCount: 2,
+        totalTests: 2,
+        completedTests: 2,
         passedCount: 0,
         failedCount: 1,
-        stepCount: 1,
-        paths: {
-          runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
-          log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
-        },
       },
     ],
   });

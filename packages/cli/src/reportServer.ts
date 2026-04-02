@@ -318,13 +318,10 @@ export async function buildReportRunManifestViewModel(
       manifest.specs.map(async (spec) => await toSpecViewModel(runId, spec, readSnapshotYamlText)),
     ),
     paths: {
-      ...manifest.paths,
-      runJson: buildRunScopedArtifactPath(runId, manifest.paths.runJson),
-      summaryJson: buildRunScopedArtifactPath(runId, manifest.paths.summaryJson),
-      log: buildRunScopedArtifactPath(runId, manifest.paths.log),
-      runContextJson: manifest.paths.runContextJson
-        ? buildRunScopedArtifactPath(runId, manifest.paths.runContextJson)
-        : undefined,
+      runJson: buildRunScopedArtifactPath(runId, 'run.json'),
+      summaryJson: buildRunScopedArtifactPath(runId, 'summary.json'),
+      log: buildRunScopedArtifactPath(runId, 'runner.log'),
+      runContextJson: buildRunScopedArtifactPath(runId, 'input/run-context.json'),
     },
   };
 }
@@ -433,11 +430,10 @@ async function enrichRunIndexEntry(
     displayName: deriveRunDisplayName(run, manifest),
     displayKind: deriveRunDisplayKind(run, manifest),
     triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
-    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.specCount,
+    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.totalTests,
     paths: {
-      ...run.paths,
-      log: buildArtifactRoute(run.paths.log),
-      runJson: buildArtifactRoute(run.paths.runJson),
+      log: buildArtifactRoute(`${run.runId}/runner.log`),
+      runJson: buildArtifactRoute(`${run.runId}/run.json`),
     },
   };
 }
@@ -471,7 +467,7 @@ function deriveRunDisplayKind(
     return 'suite';
   }
 
-  const selectedCount = manifest?.input.specs.length ?? run.specCount;
+  const selectedCount = manifest?.input.specs.length ?? run.totalTests;
   if (selectedCount === 1) {
     return 'single_spec';
   }

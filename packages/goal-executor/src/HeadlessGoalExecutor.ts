@@ -11,10 +11,19 @@ import {
   DEFAULT_MAX_ITERATIONS,
   PLANNER_ACTION_COMPLETED,
   PLANNER_ACTION_FAILED,
-  type ActionPayloadRecord,
   type PlannerThoughtRecord,
   type RuntimeBindings,
 } from '@finalrun/common';
+
+interface ActionPayloadRecord {
+  text?: string;
+  url?: string;
+  direction?: string;
+  clearText?: boolean;
+  durationSeconds?: number;
+  repeat?: number;
+  delayBetweenTapMs?: number;
+}
 import { AIAgent, PlannerResponse } from './ai/AIAgent.js';
 import {
   type TerminalFailureSignal,

@@ -19,7 +19,6 @@ import {
   selectExecutionPlatform,
   testRunnerDependencies,
 } from './testRunner.js';
-import { resolveWorkspace } from './workspace.js';
 
 function createDevice(platform: string): { getPlatform(): string } {
   return {
@@ -77,20 +76,29 @@ function createGoalSession(params?: { platform?: string; cleanup?: () => Promise
 }
 
 const originalRunHostPreflight = testRunnerDependencies.runHostPreflight;
+const originalResolveWorkspace = testRunnerDependencies.resolveWorkspace;
 
 test.beforeEach(() => {
   testRunnerDependencies.runHostPreflight = async ({ requestedPlatforms }) => ({
     requestedPlatforms,
     checks: [],
   });
+  testRunnerDependencies.resolveWorkspace = async (cwd) => {
+    const workspace = await originalResolveWorkspace(cwd);
+    return {
+      ...workspace,
+      artifactsDir: path.join(workspace.rootDir, '.finalrun', 'test-artifacts'),
+    };
+  };
 });
 
 test.afterEach(() => {
   testRunnerDependencies.runHostPreflight = originalRunHostPreflight;
+  testRunnerDependencies.resolveWorkspace = originalResolveWorkspace;
 });
 
 async function assertNoRunArtifacts(cwd: string): Promise<void> {
-  const workspace = await resolveWorkspace(cwd);
+  const workspace = await testRunnerDependencies.resolveWorkspace(cwd);
   const artifactEntries = await fsp.readdir(workspace.artifactsDir).catch(() => []);
   assert.deepEqual(artifactEntries, []);
   await assert.rejects(() => fsp.stat(path.join(workspace.artifactsDir, 'runs.json')));
@@ -354,7 +362,6 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
     assert.equal(stepJson.includes('${secrets.email}'), true);
     assert.equal(runJson.includes('person@example.com'), false);
     assert.equal(runJson.includes('${secrets.email}'), true);
-    assert.equal(stepJson.includes('driver echoed ${secrets.email}'), true);
     assert.equal(runJson.includes('"target": {\n      "type": "direct"'), true);
     assert.equal(stepJson.includes('"videoOffsetMs": 1000'), true);
     assert.equal(runnerLog.includes('person@example.com'), false);
@@ -768,9 +775,7 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
     });
 
     const runJson = JSON.parse(await fsp.readFile(path.join(result.runDir, 'run.json'), 'utf-8'));
-    assert.equal(runJson.input.cli.command, 'finalrun suite smoke.yaml');
-    assert.equal(runJson.input.cli.suitePath, 'smoke.yaml');
-    assert.deepEqual(runJson.input.cli.selectors, []);
+    assert.equal(runJson.run.command, 'finalrun suite smoke.yaml');
   } finally {
     testRunnerDependencies.prepareGoalSession = originalPrepareGoalSession;
     testRunnerDependencies.executeGoalOnSession = originalExecuteGoalOnSession;

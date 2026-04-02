@@ -23,6 +23,10 @@ export interface ReportIndexRunRecord extends RunIndexEntryRecord {
   displayKind: 'suite' | 'single_spec' | 'multi_spec' | 'fallback';
   triggeredFrom: 'Suite' | 'Direct';
   selectedSpecCount: number;
+  paths: {
+    runJson: string;
+    log: string;
+  };
 }
 
 export interface ReportIndexViewModel {

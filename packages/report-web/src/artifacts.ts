@@ -296,6 +296,12 @@ async function enrichRunManifestRecord(
         snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
       })),
     ),
+    paths: {
+      runJson: buildArtifactRoute(`${runId}/run.json`),
+      summaryJson: buildArtifactRoute(`${runId}/summary.json`),
+      log: buildArtifactRoute(`${runId}/runner.log`),
+      runContextJson: buildArtifactRoute(`${runId}/input/run-context.json`),
+    },
   };
 }
 
@@ -346,7 +352,7 @@ async function enrichRunIndexEntry(
     displayName: deriveRunDisplayName(run, manifest),
     displayKind: deriveRunDisplayKind(run, manifest),
     triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
-    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.specCount,
+    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.totalTests,
   };
 }
 
@@ -379,7 +385,7 @@ function deriveRunDisplayKind(
     return 'suite';
   }
 
-  const selectedCount = manifest?.input.specs.length ?? run.specCount;
+  const selectedCount = manifest?.input.specs.length ?? run.totalTests;
   if (selectedCount === 1) {
     return 'single_spec';
   }

@@ -78,14 +78,11 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
             suiteName: 'Smoke Suite',
             suitePath: 'smoke.yaml',
           },
-          specCount: 2,
+          command: 'finalrun test smoke.yaml',
+          totalTests: 2,
+          completedTests: 2,
           passedCount: 1,
           failedCount: 1,
-          stepCount: 4,
-          paths: {
-            runJson: 'suite-run/run.json',
-            log: 'suite-run/runner.log',
-          },
         },
         {
           runId: 'direct-run',
@@ -101,14 +98,11 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           target: {
             type: 'direct',
           },
-          specCount: 3,
+          command: 'finalrun test login.yaml checkout.yaml',
+          totalTests: 3,
+          completedTests: 3,
           passedCount: 3,
           failedCount: 0,
-          stepCount: 6,
-          paths: {
-            runJson: 'direct-run/run.json',
-            log: 'direct-run/runner.log',
-          },
         },
         {
           runId: 'early-failure-run',
@@ -124,14 +118,11 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           target: {
             type: 'direct',
           },
-          specCount: 0,
+          command: 'finalrun test login.yaml',
+          totalTests: 0,
+          completedTests: 0,
           passedCount: 0,
           failedCount: 0,
-          stepCount: 0,
-          paths: {
-            runJson: 'early-failure-run/run.json',
-            log: 'early-failure-run/runner.log',
-          },
         },
       ],
     });

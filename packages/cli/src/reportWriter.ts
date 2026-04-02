@@ -11,7 +11,6 @@ import {
   type LogEntry,
   type LoggerSink,
   type RunManifestAppRecord,
-  type RunManifestCliRecord,
   type RunManifestEnvironmentRecord,
   type RunManifestFirstFailureRecord,
   type RunManifestModelRecord,
@@ -32,6 +31,17 @@ import {
 import type { GoalResult, StepResult } from '@finalrun/goal-executor';
 import type { LoadedEnvironmentConfig } from './specLoader.js';
 
+// Internal CLI context — not written to run.json, used only during the run
+interface CliContext {
+  command: string;
+  selectors: string[];
+  suitePath?: string;
+  requestedPlatform?: string;
+  appOverridePath?: string;
+  debug: boolean;
+  maxIterations?: number;
+}
+
 interface SpecSnapshotState {
   authored: {
     name: string;
@@ -44,7 +54,6 @@ interface SpecSnapshotState {
   snapshotYamlPath: string;
   snapshotJsonPath: string;
   workspaceSourcePath: string;
-  effectiveGoal: string;
 }
 
 export class ReportWriter {
@@ -62,7 +71,7 @@ export class ReportWriter {
   private _inputSuite?: RunManifestSuiteRecord;
   private _inputSpecs: RunManifestSelectedSpecRecord[] = [];
   private readonly _specSnapshots = new Map<string, SpecSnapshotState>();
-  private _cliContext: RunManifestCliRecord = {
+  private _cliContext: CliContext = {
     command: 'finalrun test',
     selectors: [],
     debug: false,
@@ -96,8 +105,6 @@ export class ReportWriter {
     this._runnerLogPath = path.join(this._runDir, 'runner.log');
     this._inputEnvironment = {
       envName: params.envName,
-      variables: params.bindings.variables,
-      secretReferences: [],
     };
   }
 
@@ -137,7 +144,7 @@ export class ReportWriter {
   }
 
   setRunContext(params: {
-    cli: RunManifestCliRecord;
+    cli: CliContext;
     model: RunManifestModelRecord;
     app: RunManifestAppRecord;
     target?: RunTargetRecord;
@@ -155,7 +162,7 @@ export class ReportWriter {
     suite?: LoadedRepoTestSuite;
     effectiveGoals: Map<string, string>;
     target: RunTargetRecord;
-    cli: RunManifestCliRecord;
+    cli: CliContext;
     model: RunManifestModelRecord;
     app: RunManifestAppRecord;
   }): Promise<void> {
@@ -187,16 +194,8 @@ export class ReportWriter {
 
     const envSnapshotYamlPath = path.posix.join('input', 'env.snapshot.yaml');
     const envSnapshotJsonPath = path.posix.join('input', 'env.json');
-    const workspaceEnvPath = params.environment.envPath
-      ? toDisplayPath(params.workspaceRoot, params.environment.envPath)
-      : undefined;
     this._inputEnvironment = {
       envName: params.environment.envName,
-      workspaceEnvPath,
-      snapshotYamlPath: envSnapshotYamlPath,
-      snapshotJsonPath: envSnapshotJsonPath,
-      variables: params.environment.config.variables,
-      secretReferences: params.environment.secretReferences,
     };
     await fsp.writeFile(
       path.join(this._runDir, envSnapshotYamlPath),
@@ -208,7 +207,15 @@ export class ReportWriter {
     );
     await fsp.writeFile(
       path.join(this._runDir, envSnapshotJsonPath),
-      JSON.stringify(this._inputEnvironment, null, 2),
+      JSON.stringify(
+        {
+          envName: params.environment.envName,
+          variables: params.environment.config.variables,
+          secretReferences: params.environment.secretReferences,
+        },
+        null,
+        2,
+      ),
       'utf-8',
     );
 
@@ -252,7 +259,6 @@ export class ReportWriter {
         assertions: spec.assertions,
       };
       const workspaceSourcePath = toDisplayPath(params.workspaceRoot, spec.sourcePath);
-      const effectiveGoal = params.effectiveGoals.get(spec.specId) ?? '';
       await fsp.copyFile(spec.sourcePath, path.join(this._runDir, snapshotYamlPath));
       await fsp.writeFile(
         path.join(this._runDir, snapshotJsonPath),
@@ -276,7 +282,6 @@ export class ReportWriter {
         snapshotYamlPath,
         snapshotJsonPath,
         workspaceSourcePath,
-        effectiveGoal,
       });
       selectedSpecs.push({
         specId: spec.specId,
@@ -304,8 +309,6 @@ export class ReportWriter {
     await fsp.mkdir(screenshotDir, { recursive: true });
 
     const recordingRelative = await this._copyRecordingArtifact(spec.specId, result.recording);
-    const recordingStartedAt = result.recording?.startedAt;
-    const recordingCompletedAt = result.recording?.completedAt;
 
     const steps: StepArtifactRecord[] = [];
     for (const [index, step] of result.steps.entries()) {
@@ -325,7 +328,7 @@ export class ReportWriter {
         stepNumber,
         bindings,
         screenshotFile: screenshotRelative,
-        videoOffsetMs: computeVideoOffsetMs(step.timestamp, recordingStartedAt),
+        videoOffsetMs: computeVideoOffsetMs(step.timestamp, result.recording?.startedAt),
         stepJsonFile: stepJsonRelative,
       });
       steps.push(artifactStep);
@@ -339,13 +342,11 @@ export class ReportWriter {
     const specRecord: SpecArtifactRecord = {
       specId: spec.specId,
       specName: spec.name,
-      sourcePath: spec.sourcePath,
       relativePath: spec.relativePath,
       success: result.success,
       status: resolveSpecArtifactStatus(result),
       message: redactResolvedValue(result.message, bindings) ?? result.message,
       analysis: redactResolvedValue(result.analysis, bindings),
-      platform: result.platform,
       startedAt: result.startedAt,
       completedAt: result.completedAt,
       durationMs: Math.max(
@@ -353,8 +354,6 @@ export class ReportWriter {
         new Date(result.completedAt).getTime() - new Date(result.startedAt).getTime(),
       ),
       recordingFile: recordingRelative,
-      recordingStartedAt,
-      recordingCompletedAt,
       steps,
     };
 
@@ -459,7 +458,6 @@ export class ReportWriter {
       redactResolvedValue(params.message, params.bindings) ?? params.message;
     const failureStep: StepArtifactRecord = {
       stepNumber: 1,
-      iteration: 1,
       actionType: 'run_failure',
       naturalLanguageAction: 'Run setup failed before the first recorded agent action.',
       reason: failureMessage,
@@ -500,13 +498,11 @@ export class ReportWriter {
     const specRecord: SpecArtifactRecord = {
       specId: params.spec.specId,
       specName: params.spec.name,
-      sourcePath: params.spec.sourcePath,
       relativePath: params.spec.relativePath,
       success: false,
       status: 'error',
       message: failureMessage,
       analysis: undefined,
-      platform: params.platform,
       startedAt: params.startedAt,
       completedAt: params.completedAt,
       durationMs: Math.max(
@@ -535,19 +531,13 @@ export class ReportWriter {
     diagnosticsSummary?: string;
   }): RunManifestRecord {
     const specRecords = params.specs.map((spec) => this._toRunManifestSpec(spec));
-    const stepTotal = specRecords.reduce(
-      (total, spec) => total + spec.counts.executionStepsTotal,
-      0,
-    );
-    const stepPassed = specRecords.reduce(
-      (total, spec) => total + spec.counts.executionStepsPassed,
-      0,
-    );
+    const passedCount = specRecords.filter((spec) => spec.success).length;
     const firstFailure = findRunFirstFailure(specRecords, params.diagnosticsSummary);
     return {
       schemaVersion: 1,
       run: {
         runId: this._runId,
+        command: this._cliContext.command,
         success: params.success,
         status: params.status,
         failurePhase: params.failurePhase,
@@ -561,20 +551,10 @@ export class ReportWriter {
         platform: this._platform,
         model: this._modelContext,
         app: this._appContext,
-        selectors: this._cliContext.selectors,
+        tagFilter: null,
         target: this._runTarget,
-        counts: {
-          specs: {
-            total: specRecords.length,
-            passed: specRecords.filter((spec) => spec.success).length,
-            failed: specRecords.filter((spec) => !spec.success).length,
-          },
-          steps: {
-            total: stepTotal,
-            passed: stepPassed,
-            failed: stepTotal - stepPassed,
-          },
-        },
+        totalTests: specRecords.length,
+        completedTests: passedCount + (specRecords.length - passedCount),
         firstFailure,
         diagnosticsSummary: params.diagnosticsSummary,
       },
@@ -582,7 +562,6 @@ export class ReportWriter {
         environment: this._inputEnvironment,
         suite: this._inputSuite,
         specs: this._inputSpecs,
-        cli: this._cliContext,
       },
       specs: specRecords,
       paths: {
@@ -597,7 +576,6 @@ export class ReportWriter {
   private _toRunManifestSpec(spec: SpecArtifactRecord): RunManifestSpecRecord {
     const snapshot = this._specSnapshots.get(spec.specId);
     const steps = spec.steps.map((step) => ({ ...step })) as RunManifestStepRecord[];
-    const passedSteps = steps.filter((step) => step.success).length;
     const firstFailureStep = steps.find((step) => !step.success);
     const firstFailure = firstFailureStep
       ? {
@@ -616,7 +594,7 @@ export class ReportWriter {
 
     return {
       ...spec,
-      workspaceSourcePath: snapshot?.workspaceSourcePath ?? spec.sourcePath,
+      workspaceSourcePath: snapshot?.workspaceSourcePath ?? '',
       snapshotYamlPath: snapshot?.snapshotYamlPath ?? '',
       snapshotJsonPath: snapshot?.snapshotJsonPath ?? '',
       bindingReferences: snapshot?.bindingReferences ?? { variables: [], secrets: [] },
@@ -625,12 +603,6 @@ export class ReportWriter {
         setup: [],
         steps: [],
         assertions: [],
-      },
-      effectiveGoal: snapshot?.effectiveGoal ?? '',
-      counts: {
-        executionStepsTotal: steps.length,
-        executionStepsPassed: passedSteps,
-        executionStepsFailed: steps.length - passedSteps,
       },
       firstFailure,
       previewScreenshotPath: selectPreviewScreenshotPath(steps),
@@ -756,7 +728,6 @@ function toStepArtifactRecord(
 ): StepArtifactRecord & { stepJsonFile: string } {
   return {
     stepNumber: params.stepNumber,
-    iteration: step.iteration,
     actionType: step.action,
     naturalLanguageAction: redactResolvedValue(
       step.naturalLanguageAction || step.reason,
@@ -771,13 +742,6 @@ function toStepArtifactRecord(
           act: redactResolvedValue(step.thought.act, params.bindings),
         }
       : undefined,
-    actionPayload: step.actionPayload
-      ? {
-          ...step.actionPayload,
-          text: redactResolvedValue(step.actionPayload.text, params.bindings),
-          url: redactResolvedValue(step.actionPayload.url, params.bindings),
-        }
-      : undefined,
     success: step.success,
     status: step.success ? 'success' : 'failure',
     errorMessage: redactResolvedValue(step.errorMessage, params.bindings),
@@ -786,7 +750,6 @@ function toStepArtifactRecord(
     screenshotFile: params.screenshotFile,
     videoOffsetMs: params.videoOffsetMs,
     stepJsonFile: params.stepJsonFile,
-    timing: redactTiming(step.timing, params.bindings),
     trace: redactTrace(step.trace, params.bindings),
   };
 }
@@ -834,23 +797,6 @@ function redactTrace(
     ...trace,
     failureReason: redactResolvedValue(trace.failureReason, bindings),
     spans: trace.spans.map((span) => ({
-      ...span,
-      detail: redactResolvedValue(span.detail, bindings),
-    })),
-  };
-}
-
-function redactTiming(
-  timing: StepResult['timing'],
-  bindings: RuntimeBindings,
-): StepArtifactRecord['timing'] {
-  if (!timing) {
-    return undefined;
-  }
-
-  return {
-    ...timing,
-    spans: timing.spans.map((span) => ({
       ...span,
       detail: redactResolvedValue(span.detail, bindings),
     })),

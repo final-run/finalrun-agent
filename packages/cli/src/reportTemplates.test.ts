@@ -20,6 +20,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
     runs: [
       {
         runId: '2026-03-24T18-00-00.000Z-dev-android',
+        command: 'finalrun test --suite login_suite.yaml',
         success: false,
         status: 'failure',
         startedAt: '2026-03-24T18:00:00.000Z',
@@ -35,26 +36,27 @@ function createRunIndexViewModel(): ReportIndexViewModel {
           suiteName: 'login suite',
           suitePath: 'login_suite.yaml',
         },
-        specCount: 2,
+        totalTests: 2,
+        completedTests: 2,
         passedCount: 1,
         failedCount: 1,
-        stepCount: 4,
         firstFailure: {
           specId: 'login',
           specName: 'login',
           message: 'button not found',
         },
-        paths: {
-          runJson: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/run.json',
-          log: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/runner.log',
-        },
         displayName: 'login suite',
         displayKind: 'suite',
         triggeredFrom: 'Suite',
         selectedSpecCount: 2,
+        paths: {
+          runJson: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/run.json',
+          log: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/runner.log',
+        },
       },
       {
         runId: '2026-03-24T19-00-00.000Z-dev-android',
+        command: 'finalrun test',
         success: true,
         status: 'success',
         startedAt: '2026-03-24T19:00:00.000Z',
@@ -67,18 +69,18 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         target: {
           type: 'direct',
         },
-        specCount: 3,
+        totalTests: 3,
+        completedTests: 3,
         passedCount: 3,
         failedCount: 0,
-        stepCount: 6,
-        paths: {
-          runJson: '/artifacts/2026-03-24T19-00-00.000Z-dev-android/run.json',
-          log: '/artifacts/2026-03-24T19-00-00.000Z-dev-android/runner.log',
-        },
         displayName: 'valid login +2 more',
         displayKind: 'multi_spec',
         triggeredFrom: 'Direct',
         selectedSpecCount: 3,
+        paths: {
+          runJson: '/artifacts/2026-03-24T19-00-00.000Z-dev-android/run.json',
+          log: '/artifacts/2026-03-24T19-00-00.000Z-dev-android/runner.log',
+        },
       },
     ],
   };
@@ -89,6 +91,7 @@ function createSuiteRunManifest(): RunManifestRecord {
     schemaVersion: 1,
     run: {
       runId: '2026-03-24T18-00-00.000Z-dev-android',
+      command: 'finalrun test --suite login_suite.yaml',
       success: false,
       status: 'failure',
       failurePhase: 'execution',
@@ -106,25 +109,15 @@ function createSuiteRunManifest(): RunManifestRecord {
         source: 'repo',
         label: 'repo app',
       },
-      selectors: [],
+      tagFilter: null,
       target: {
         type: 'suite',
         suiteId: 'login_suite',
         suiteName: 'login suite',
         suitePath: 'login_suite.yaml',
       },
-      counts: {
-        specs: {
-          total: 2,
-          passed: 0,
-          failed: 1,
-        },
-        steps: {
-          total: 1,
-          passed: 0,
-          failed: 1,
-        },
-      },
+      totalTests: 2,
+      completedTests: 1,
       firstFailure: {
         specId: 'login',
         specName: 'login',
@@ -135,15 +128,6 @@ function createSuiteRunManifest(): RunManifestRecord {
     input: {
       environment: {
         envName: 'dev',
-        variables: {
-          locale: 'en-US',
-        },
-        secretReferences: [
-          {
-            key: 'email',
-            envVar: 'FINALRUN_TEST_EMAIL',
-          },
-        ],
       },
       suite: {
         suiteId: 'login_suite',
@@ -180,24 +164,16 @@ function createSuiteRunManifest(): RunManifestRecord {
           },
         },
       ],
-      cli: {
-        command: 'finalrun test --suite login_suite.yaml',
-        selectors: [],
-        suitePath: 'login_suite.yaml',
-        debug: false,
-      },
     },
     specs: [
       {
         specId: 'login',
         specName: 'valid login',
-        sourcePath: '/repo/.finalrun/tests/login/valid_login.yaml',
         relativePath: 'login/valid_login.yaml',
         success: false,
         status: 'failure',
         message: 'button not found',
         analysis: 'button not found',
-        platform: 'android',
         startedAt: '2026-03-24T18:00:00.000Z',
         completedAt: '2026-03-24T18:00:10.000Z',
         durationMs: 10000,
@@ -205,7 +181,6 @@ function createSuiteRunManifest(): RunManifestRecord {
         steps: [
           {
             stepNumber: 1,
-            iteration: 1,
             actionType: 'tap',
             naturalLanguageAction: 'Tap login',
             reason: 'Open the login form.',
@@ -221,10 +196,6 @@ function createSuiteRunManifest(): RunManifestRecord {
             thought: {
               plan: 'Open the login form.',
               think: 'The login CTA is the fastest way to reach the authenticated screen.',
-            },
-            actionPayload: {
-              direction: 'down',
-              repeat: 1,
             },
             trace: {
               step: 1,
@@ -254,12 +225,6 @@ function createSuiteRunManifest(): RunManifestRecord {
           setup: [],
           steps: ['Tap login'],
           assertions: ['Dashboard is visible'],
-        },
-        effectiveGoal: 'Tap login',
-        counts: {
-          executionStepsTotal: 1,
-          executionStepsPassed: 0,
-          executionStepsFailed: 1,
         },
         firstFailure: {
           specId: 'login',
@@ -292,32 +257,19 @@ function createSingleSpecManifest(): RunManifestRecord {
       runId: '2026-03-24T20-00-00.000Z-dev-android',
       success: true,
       status: 'success',
+      command: 'finalrun test login/valid_login.yaml',
+      tagFilter: null,
       target: {
         type: 'direct',
       },
-      counts: {
-        specs: {
-          total: 1,
-          passed: 1,
-          failed: 0,
-        },
-        steps: {
-          total: 1,
-          passed: 1,
-          failed: 0,
-        },
-      },
+      totalTests: 1,
+      completedTests: 1,
       firstFailure: undefined,
     },
     input: {
       ...suiteManifest.input,
       suite: undefined,
       specs: [suiteManifest.input.specs[0]],
-      cli: {
-        command: 'finalrun test login/valid_login.yaml',
-        selectors: ['login/valid_login.yaml'],
-        debug: false,
-      },
     },
     specs: [
       {
@@ -622,14 +574,11 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
             suiteName: 'Smoke Suite',
             suitePath: 'smoke.yaml',
           },
-          specCount: 2,
+          command: 'finalrun test smoke.yaml',
+          totalTests: 2,
+          completedTests: 2,
           passedCount: 1,
           failedCount: 1,
-          stepCount: 4,
-          paths: {
-            runJson: 'suite-run/run.json',
-            log: 'suite-run/runner.log',
-          },
         },
         {
           runId: 'direct-run',
@@ -645,14 +594,11 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           target: {
             type: 'direct',
           },
-          specCount: 3,
+          command: 'finalrun test login.yaml checkout.yaml',
+          totalTests: 3,
+          completedTests: 3,
           passedCount: 3,
           failedCount: 0,
-          stepCount: 6,
-          paths: {
-            runJson: 'direct-run/run.json',
-            log: 'direct-run/runner.log',
-          },
         },
         {
           runId: 'early-failure-run',
@@ -668,14 +614,11 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           target: {
             type: 'direct',
           },
-          specCount: 0,
+          command: 'finalrun test login.yaml',
+          totalTests: 0,
+          completedTests: 0,
           passedCount: 0,
           failedCount: 0,
-          stepCount: 0,
-          paths: {
-            runJson: 'early-failure-run/run.json',
-            log: 'early-failure-run/runner.log',
-          },
         },
       ],
     };

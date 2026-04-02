@@ -24,11 +24,10 @@ export async function rebuildRunIndex(
       continue;
     }
 
-    const target = manifest.run.target ?? {
-      type: 'direct' as const,
-    };
+    const passedCount = manifest.specs.filter((spec) => spec.success).length;
     runs.push({
       runId: manifest.run.runId,
+      command: manifest.run.command,
       success: manifest.run.success,
       status: manifest.run.status,
       failurePhase: manifest.run.failurePhase,
@@ -39,19 +38,15 @@ export async function rebuildRunIndex(
       platform: manifest.run.platform,
       modelLabel: manifest.run.model.label,
       appLabel: manifest.run.app.label,
-      target,
-      specCount: manifest.run.counts.specs.total,
-      passedCount: manifest.run.counts.specs.passed,
-      failedCount: manifest.run.counts.specs.failed,
-      stepCount: manifest.run.counts.steps.total,
+      target: manifest.run.target,
+      totalTests: manifest.run.totalTests,
+      completedTests: manifest.run.completedTests,
+      passedCount,
+      failedCount: manifest.run.totalTests - passedCount,
       firstFailure: manifest.run.firstFailure,
       previewScreenshotPath: manifest.run.firstFailure?.screenshotPath
         ? path.posix.join(runId, manifest.run.firstFailure.screenshotPath)
         : undefined,
-      paths: {
-        runJson: path.posix.join(runId, manifest.paths.runJson),
-        log: path.posix.join(runId, manifest.paths.log),
-      },
     });
   }
 
@@ -89,7 +84,7 @@ export function formatRunIndexForConsole(index: RunIndexRecord): string {
   const lines = ['Status  Env       Platform  Specs     Duration  Run ID'];
   for (const run of index.runs) {
     lines.push(
-      `${pad(resolveRunStatusLabel(run), 6)}  ${pad(run.envName, 8)}  ${pad(run.platform, 8)}  ${pad(`${run.passedCount}/${run.specCount}`, 8)}  ${pad(formatDuration(run.durationMs), 8)}  ${run.runId}`,
+      `${pad(resolveRunStatusLabel(run), 6)}  ${pad(run.envName, 8)}  ${pad(run.platform, 8)}  ${pad(`${run.passedCount}/${run.totalTests}`, 8)}  ${pad(formatDuration(run.durationMs), 8)}  ${run.runId}`,
     );
   }
   return lines.join('\n');

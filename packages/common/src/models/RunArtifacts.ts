@@ -1,23 +1,9 @@
-import type {
-  RepoVariableValue,
-  SecretReference,
-} from './RepoEnvironment.js';
 import type { RepoTestSpec } from './RepoTestSpec.js';
 
 export interface PlannerThoughtRecord {
   plan?: string;
   think?: string;
   act?: string;
-}
-
-export interface ActionPayloadRecord {
-  text?: string;
-  url?: string;
-  direction?: string;
-  clearText?: boolean;
-  durationSeconds?: number;
-  repeat?: number;
-  delayBetweenTapMs?: number;
 }
 
 export interface ArtifactTraceSpan {
@@ -37,29 +23,17 @@ export interface ArtifactStepTrace {
   failureReason?: string;
 }
 
-export interface ArtifactTimingMetadata {
-  totalMs: number;
-  spans: Array<{
-    name: string;
-    durationMs: number;
-    status: 'success' | 'failure';
-    detail?: string;
-  }>;
-}
-
 export type StepArtifactStatus = 'success' | 'failure';
 export type SpecArtifactStatus = 'success' | 'failure' | 'error' | 'aborted';
 export type RunArtifactStatus = 'success' | 'failure' | 'aborted';
 
 export interface StepArtifactRecord {
   stepNumber: number;
-  iteration: number;
   actionType: string;
   naturalLanguageAction: string;
   reason: string;
   analysis?: string;
   thought?: PlannerThoughtRecord;
-  actionPayload?: ActionPayloadRecord;
   success: boolean;
   status: StepArtifactStatus;
   errorMessage?: string;
@@ -69,25 +43,20 @@ export interface StepArtifactRecord {
   videoOffsetMs?: number;
   stepJsonFile?: string;
   trace?: ArtifactStepTrace;
-  timing?: ArtifactTimingMetadata;
 }
 
 export interface SpecArtifactRecord {
   specId: string;
   specName: string;
-  sourcePath: string;
   relativePath: string;
   success: boolean;
   status: SpecArtifactStatus;
   message: string;
   analysis?: string;
-  platform: string;
   startedAt: string;
   completedAt: string;
   durationMs: number;
   recordingFile?: string;
-  recordingStartedAt?: string;
-  recordingCompletedAt?: string;
   steps: StepArtifactRecord[];
 }
 
@@ -123,7 +92,7 @@ export interface RunSummaryRecord {
   failedCount: number;
   stepCount?: number;
   target?: RunTargetRecord;
-  variables: Record<string, RepoVariableValue>;
+  variables: Record<string, unknown>;
   tests: Array<{
     specId: string;
     specName: string;
@@ -168,12 +137,6 @@ export interface RunManifestSpecRecord extends SpecArtifactRecord {
   snapshotJsonPath: string;
   bindingReferences: BindingReferenceRecord;
   authored: RepoTestSpec;
-  effectiveGoal: string;
-  counts: {
-    executionStepsTotal: number;
-    executionStepsPassed: number;
-    executionStepsFailed: number;
-  };
   firstFailure?: RunManifestFirstFailureRecord;
   previewScreenshotPath?: string;
   resultJsonPath: string;
@@ -182,11 +145,6 @@ export interface RunManifestSpecRecord extends SpecArtifactRecord {
 
 export interface RunManifestEnvironmentRecord {
   envName: string;
-  workspaceEnvPath?: string;
-  snapshotYamlPath?: string;
-  snapshotJsonPath?: string;
-  variables: Record<string, RepoVariableValue>;
-  secretReferences: SecretReference[];
 }
 
 export interface RunManifestSuiteRecord {
@@ -210,16 +168,6 @@ export interface RunManifestSelectedSpecRecord {
   bindingReferences: BindingReferenceRecord;
 }
 
-export interface RunManifestCliRecord {
-  command: string;
-  selectors: string[];
-  suitePath?: string;
-  requestedPlatform?: string;
-  appOverridePath?: string;
-  debug: boolean;
-  maxIterations?: number;
-}
-
 export interface RunManifestModelRecord {
   provider: string;
   modelName: string;
@@ -232,16 +180,11 @@ export interface RunManifestAppRecord {
   overridePath?: string;
 }
 
-export interface RunManifestCountRecord {
-  total: number;
-  passed: number;
-  failed: number;
-}
-
 export interface RunManifestRecord {
   schemaVersion: 1;
   run: {
     runId: string;
+    command: string;
     success: boolean;
     status: RunArtifactStatus;
     failurePhase?: FailurePhase;
@@ -252,12 +195,10 @@ export interface RunManifestRecord {
     platform: string;
     model: RunManifestModelRecord;
     app: RunManifestAppRecord;
-    selectors: string[];
+    tagFilter: string | null;
     target?: RunTargetRecord;
-    counts: {
-      specs: RunManifestCountRecord;
-      steps: RunManifestCountRecord;
-    };
+    totalTests: number;
+    completedTests: number;
     firstFailure?: RunManifestFirstFailureRecord;
     diagnosticsSummary?: string;
   };
@@ -265,7 +206,6 @@ export interface RunManifestRecord {
     environment: RunManifestEnvironmentRecord;
     suite?: RunManifestSuiteRecord;
     specs: RunManifestSelectedSpecRecord[];
-    cli: RunManifestCliRecord;
   };
   specs: RunManifestSpecRecord[];
   paths: {
@@ -278,6 +218,7 @@ export interface RunManifestRecord {
 
 export interface RunIndexEntryRecord {
   runId: string;
+  command: string;
   success: boolean;
   status: RunArtifactStatus;
   failurePhase?: FailurePhase;
@@ -289,16 +230,12 @@ export interface RunIndexEntryRecord {
   modelLabel: string;
   appLabel: string;
   target?: RunTargetRecord;
-  specCount: number;
+  totalTests: number;
+  completedTests: number;
   passedCount: number;
   failedCount: number;
-  stepCount: number;
   firstFailure?: RunManifestFirstFailureRecord;
   previewScreenshotPath?: string;
-  paths: {
-    runJson: string;
-    log: string;
-  };
 }
 
 export interface RunIndexRecord {
