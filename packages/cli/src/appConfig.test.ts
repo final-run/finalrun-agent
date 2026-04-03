@@ -41,8 +41,8 @@ test('resolveAppConfig rejects conflicting requested and inferred platforms', ()
     () =>
       resolveAppConfig({
         workspaceApp: {
-          android: { packageName: 'org.wikipedia' },
-          ios: { bundleId: 'org.wikipedia' },
+          packageName: 'org.wikipedia.android',
+          bundleId: 'org.wikipedia.ios',
         },
         envName: 'none',
         requestedPlatform: 'ios',
@@ -53,6 +53,50 @@ test('resolveAppConfig rejects conflicting requested and inferred platforms', ()
       }),
     /App override platform is "android", but the selected platform is "ios"\./,
   );
+});
+
+test('resolveAppConfig infers android from the override platform when both identifiers are configured', () => {
+  const resolved = resolveAppConfig({
+    workspaceApp: {
+      packageName: 'org.wikipedia.android',
+      bundleId: 'org.wikipedia.ios',
+    },
+    envName: 'none',
+    appOverride: {
+      appPath: '/tmp/wikipedia.apk',
+      inferredPlatform: 'android',
+    },
+  });
+
+  assert.deepEqual(resolved, {
+    platform: 'android',
+    identifier: 'org.wikipedia.android',
+    identifierKind: 'packageName',
+    name: undefined,
+    sourceEnvName: undefined,
+  });
+});
+
+test('resolveAppConfig treats env app config as a full replacement', () => {
+  const resolved = resolveAppConfig({
+    workspaceApp: {
+      name: 'Wikipedia',
+      packageName: 'org.wikipedia.android',
+      bundleId: 'org.wikipedia.ios',
+    },
+    environmentApp: {
+      packageName: 'org.wikipedia.beta',
+    },
+    envName: 'staging',
+  });
+
+  assert.deepEqual(resolved, {
+    platform: 'android',
+    identifier: 'org.wikipedia.beta',
+    identifierKind: 'packageName',
+    name: undefined,
+    sourceEnvName: 'staging',
+  });
 });
 
 test('resolveAppOverrideIdentifier falls back to ANDROID_SDK_ROOT when ANDROID_HOME has no tools', async () => {

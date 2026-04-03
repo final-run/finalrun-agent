@@ -70,7 +70,7 @@ function buildWorkspaceConfigYaml(configYaml?: string | null): string | undefine
     return undefined;
   }
 
-  const defaultAppConfig = ['app:', '  android:', '    packageName: org.wikipedia'].join('\n');
+  const defaultAppConfig = ['app:', '  packageName: org.wikipedia'].join('\n');
   if (configYaml === undefined) {
     return `${defaultAppConfig}\n`;
   }

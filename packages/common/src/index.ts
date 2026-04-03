@@ -21,8 +21,6 @@ export { DeviceNodeResponse } from './models/DeviceNodeResponse.js';
 export { DeviceAppInfo } from './models/DeviceAppInfo.js';
 export { RecordingRequest } from './models/RecordingRequest.js';
 export type {
-  RepoAndroidAppConfig,
-  RepoIOSAppConfig,
   RepoAppConfig,
   RepoEnvironmentConfig,
   RepoVariableValue,

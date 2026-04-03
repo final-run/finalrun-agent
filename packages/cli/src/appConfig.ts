@@ -5,15 +5,11 @@ import { promisify } from 'node:util';
 import {
   PLATFORM_ANDROID,
   PLATFORM_IOS,
-  type RepoAndroidAppConfig,
   type RepoAppConfig,
-  type RepoIOSAppConfig,
 } from '@finalrun/common';
 
 const execFileAsync = promisify(execFile);
-const APP_TOP_LEVEL_KEYS = new Set(['android', 'ios']);
-const ANDROID_APP_KEYS = new Set(['name', 'packageName']);
-const IOS_APP_KEYS = new Set(['name', 'bundleId']);
+const APP_TOP_LEVEL_KEYS = new Set(['name', 'packageName', 'bundleId']);
 
 type SupportedPlatform = typeof PLATFORM_ANDROID | typeof PLATFORM_IOS;
 
@@ -40,23 +36,24 @@ export function readRepoAppConfig(
   }
 
   assertPlainObject(value, label);
+  if (value['android'] !== undefined || value['ios'] !== undefined) {
+    throw new Error(
+      `${label} uses an unsupported nested format. Use app.name, app.packageName, and app.bundleId.`,
+    );
+  }
   assertAllowedKeys(value, APP_TOP_LEVEL_KEYS, label);
 
-  const android = value['android'] !== undefined
-    ? readAndroidAppConfig(value['android'], `${label} android`)
-    : undefined;
-  const ios = value['ios'] !== undefined
-    ? readIOSAppConfig(value['ios'], `${label} ios`)
-    : undefined;
+  const app = {
+    name: readOptionalTrimmedString(value['name'], `${label} name`),
+    packageName: readOptionalTrimmedString(value['packageName'], `${label} packageName`),
+    bundleId: readOptionalTrimmedString(value['bundleId'], `${label} bundleId`),
+  };
 
-  if (!android && !ios) {
-    throw new Error(`${label} must define at least one platform.`);
+  if (!app.packageName && !app.bundleId) {
+    throw new Error(`${label} must define at least one of packageName or bundleId.`);
   }
 
-  return {
-    android,
-    ios,
-  };
+  return app;
 }
 
 export function resolveAppConfig(params: {
@@ -67,61 +64,48 @@ export function resolveAppConfig(params: {
   appOverride?: ValidatedAppOverrideLike;
 }): ResolvedAppConfig {
   const workspaceApp = params.workspaceApp;
-  if (!workspaceApp?.android && !workspaceApp?.ios) {
+  if (!workspaceApp?.packageName && !workspaceApp?.bundleId) {
     throw new Error(
-      '.finalrun/config.yaml must define app.android.packageName and/or app.ios.bundleId. App config is required for FinalRun runs.',
+      '.finalrun/config.yaml must define app.packageName and/or app.bundleId. App config is required for FinalRun runs.',
     );
   }
 
-  if (params.environmentApp?.android && !workspaceApp.android) {
-    throw new Error(
-      `Environment "${params.envName}" overrides app.android.packageName, but .finalrun/config.yaml does not define app.android.packageName.`,
-    );
-  }
-  if (params.environmentApp?.ios && !workspaceApp.ios) {
-    throw new Error(
-      `Environment "${params.envName}" overrides app.ios.bundleId, but .finalrun/config.yaml does not define app.ios.bundleId.`,
-    );
-  }
+  const effectiveApp = params.environmentApp ?? workspaceApp;
 
   const platform = resolveSelectedPlatform({
     requestedPlatform: params.requestedPlatform,
     inferredPlatform: params.appOverride?.inferredPlatform,
-    workspaceApp,
+    app: effectiveApp,
   });
 
   if (platform === PLATFORM_ANDROID) {
-    const baseConfig = workspaceApp.android;
-    if (!baseConfig) {
+    if (!effectiveApp.packageName) {
       throw new Error(
-        'No app config found for platform "android". Add app.android.packageName to .finalrun/config.yaml or choose a different --platform.',
+        'No app config found for platform "android". Add app.packageName to .finalrun/config.yaml or choose a different --platform.',
       );
     }
-    const overrideConfig = params.environmentApp?.android;
     const resolved = {
       platform,
-      identifier: overrideConfig?.packageName ?? baseConfig.packageName,
+      identifier: effectiveApp.packageName,
       identifierKind: 'packageName' as const,
-      name: overrideConfig?.name ?? baseConfig.name,
-      sourceEnvName: overrideConfig ? params.envName : undefined,
+      name: effectiveApp.name,
+      sourceEnvName: params.environmentApp ? params.envName : undefined,
     };
     validateResolvedOverrideMatch(params.appOverride, resolved);
     return resolved;
   }
 
-  const baseConfig = workspaceApp.ios;
-  if (!baseConfig) {
+  if (!effectiveApp.bundleId) {
     throw new Error(
-      'No app config found for platform "ios". Add app.ios.bundleId to .finalrun/config.yaml or choose a different --platform.',
+      'No app config found for platform "ios". Add app.bundleId to .finalrun/config.yaml or choose a different --platform.',
     );
   }
-  const overrideConfig = params.environmentApp?.ios;
   const resolved = {
     platform,
-    identifier: overrideConfig?.bundleId ?? baseConfig.bundleId,
+    identifier: effectiveApp.bundleId,
     identifierKind: 'bundleId' as const,
-    name: overrideConfig?.name ?? baseConfig.name,
-    sourceEnvName: overrideConfig ? params.envName : undefined,
+    name: effectiveApp.name,
+    sourceEnvName: params.environmentApp ? params.envName : undefined,
   };
   validateResolvedOverrideMatch(params.appOverride, resolved);
   return resolved;
@@ -143,36 +127,10 @@ export async function resolveAppOverrideIdentifier(
   return await resolveIOSBundleId(appOverride.appPath);
 }
 
-function readAndroidAppConfig(
-  value: unknown,
-  label: string,
-): RepoAndroidAppConfig {
-  assertPlainObject(value, label);
-  assertAllowedKeys(value, ANDROID_APP_KEYS, label);
-
-  return {
-    name: readOptionalTrimmedString(value['name'], `${label} name`),
-    packageName: readRequiredTrimmedString(value['packageName'], `${label} packageName`),
-  };
-}
-
-function readIOSAppConfig(
-  value: unknown,
-  label: string,
-): RepoIOSAppConfig {
-  assertPlainObject(value, label);
-  assertAllowedKeys(value, IOS_APP_KEYS, label);
-
-  return {
-    name: readOptionalTrimmedString(value['name'], `${label} name`),
-    bundleId: readRequiredTrimmedString(value['bundleId'], `${label} bundleId`),
-  };
-}
-
 function resolveSelectedPlatform(params: {
   requestedPlatform?: string;
   inferredPlatform?: string;
-  workspaceApp: RepoAppConfig;
+  app: RepoAppConfig;
 }): SupportedPlatform {
   const requestedPlatform = normalizePlatform(
     params.requestedPlatform,
@@ -204,8 +162,8 @@ function resolveSelectedPlatform(params: {
   }
 
   const configuredPlatforms = [
-    params.workspaceApp.android ? PLATFORM_ANDROID : null,
-    params.workspaceApp.ios ? PLATFORM_IOS : null,
+    params.app.packageName ? PLATFORM_ANDROID : null,
+    params.app.bundleId ? PLATFORM_IOS : null,
   ].filter((platform): platform is SupportedPlatform => platform !== null);
 
   if (configuredPlatforms.length === 1) {
@@ -213,7 +171,7 @@ function resolveSelectedPlatform(params: {
   }
 
   throw new Error(
-    'Both Android and iOS apps are configured. Pass --platform android or --platform ios.',
+    'Both Android and iOS app identifiers are configured. Pass --platform android or --platform ios.',
   );
 }
 
@@ -486,16 +444,5 @@ function readOptionalTrimmedString(
     throw new Error(`${label} must not be empty.`);
   }
 
-  return normalizedValue;
-}
-
-function readRequiredTrimmedString(
-  value: unknown,
-  label: string,
-): string {
-  const normalizedValue = readOptionalTrimmedString(value, label);
-  if (!normalizedValue) {
-    throw new Error(`${label} must be a string.`);
-  }
   return normalizedValue;
 }

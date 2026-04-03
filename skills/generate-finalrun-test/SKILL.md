@@ -27,12 +27,12 @@ You are an expert QA Automation Engineer. Generate FinalRun YAML artifacts with 
 
 **App configuration (required):**
 - FinalRun runs require `.finalrun/config.yaml` to define the default app identity for the repo.
-- Use `app.android.packageName` for Android and `app.ios.bundleId` for iOS.
+- Use `app.packageName` for Android and `app.bundleId` for iOS.
 - Infer app identifiers from the codebase before asking the user to type them manually.
 - Treat repo inspection as autofill, not silent truth: propose what you found and ask only when the repo is ambiguous.
 - Ask whether the app identifier changes by environment.
 - If the identifier is the same everywhere, keep app identity only in `.finalrun/config.yaml`.
-- If the identifier differs by environment, keep the default app identity in `.finalrun/config.yaml` and put only the env-specific override under `.finalrun/env/<env>.yaml`.
+- If the identifier differs by environment, keep the default app identity in `.finalrun/config.yaml` and replace it with a full env-specific `app` block under `.finalrun/env/<env>.yaml`.
 ## Workflow Steps
 
 ### Step 1 — Deep Dive & Analysis
@@ -72,34 +72,24 @@ Same package everywhere:
 
 ```yaml
 app:
-  android:
-    name: ExampleApp
-    packageName: com.example.app
-  ios:
-    name: ExampleApp
-    bundleId: com.example.app
+  name: ExampleApp
+  packageName: com.example.app
+  bundleId: com.example.app
 ```
 
 Different package by environment:
 
 ```yaml
 app:
-  android:
-    name: ExampleApp
-    packageName: com.example.app
-  ios:
-    name: ExampleApp
-    bundleId: com.example.app
+  name: ExampleApp
+  packageName: com.example.app
+  bundleId: com.example.app
 ```
 
 ```yaml
 app:
-  android:
-    name: ExampleApp
-    packageName: com.example.app.staging
-  ios:
-    name: ExampleApp
-    bundleId: com.example.app.staging
+  packageName: com.example.app.staging
+  bundleId: com.example.app.staging
 ```
 
 ### Step 3 — Planning & Folder Discovery

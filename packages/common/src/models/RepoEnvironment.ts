@@ -1,18 +1,9 @@
 export type RepoVariableValue = string | number | boolean;
 
-export interface RepoAndroidAppConfig {
-  name?: string;
-  packageName: string;
-}
-
-export interface RepoIOSAppConfig {
-  name?: string;
-  bundleId: string;
-}
-
 export interface RepoAppConfig {
-  android?: RepoAndroidAppConfig;
-  ios?: RepoIOSAppConfig;
+  name?: string;
+  packageName?: string;
+  bundleId?: string;
 }
 
 export interface RepoEnvironmentConfig {

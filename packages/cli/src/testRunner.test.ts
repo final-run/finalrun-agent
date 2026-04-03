@@ -82,10 +82,10 @@ function writeWorkspaceConfig(
 ): void {
   const lines = ['app:'];
   if (platforms === 'android' || platforms === 'both') {
-    lines.push('  android:', '    packageName: org.wikipedia');
+    lines.push('  packageName: org.wikipedia');
   }
   if (platforms === 'ios' || platforms === 'both') {
-    lines.push('  ios:', '    bundleId: org.wikipedia');
+    lines.push('  bundleId: org.wikipedia');
   }
   fs.mkdirSync(path.join(rootDir, '.finalrun'), { recursive: true });
   fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), `${lines.join('\n')}\n`, 'utf-8');
@@ -1294,7 +1294,7 @@ test('runTests requires base app config even when the env file contains an app o
   fs.mkdirSync(envDir, { recursive: true });
   fs.writeFileSync(
     path.join(envDir, 'dev.yaml'),
-    ['app:', '  android:', '    packageName: org.wikipedia'].join('\n'),
+    ['app:', '  packageName: org.wikipedia'].join('\n'),
     'utf-8',
   );
   fs.writeFileSync(
@@ -1319,7 +1319,7 @@ test('runTests requires base app config even when the env file contains an app o
         assert.equal(error.phase, 'validation');
         assert.match(
           error.message,
-          /\.finalrun\/config\.yaml must define app\.android\.packageName and\/or app\.ios\.bundleId/,
+          /\.finalrun\/config\.yaml must define app\.packageName and\/or app\.bundleId/,
         );
         return true;
       },
@@ -1683,7 +1683,7 @@ test('runTests requires --platform when both Android and iOS apps are configured
         assert.equal(error.phase, 'validation');
         assert.match(
           error.message,
-          /Both Android and iOS apps are configured\. Pass --platform android or --platform ios\./,
+          /Both Android and iOS app identifiers are configured\. Pass --platform android or --platform ios\./,
         );
         return true;
       },
