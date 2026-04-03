@@ -54,7 +54,7 @@ export const FEATURE_SET_LOCATION_GROUNDER = 'benchmark-set-location-grounder';
 // ============================================================================
 // Defaults
 // ============================================================================
-export const DEFAULT_MAX_ITERATIONS = 50;
+export const DEFAULT_MAX_ITERATIONS = 110;
 export const DEFAULT_GRPC_PORT_START = 50051;
 export const DEFAULT_ACTION_TIMEOUT = 30;
 export const DEFAULT_STABILITY_CHECK_DELAY_MS = 500;

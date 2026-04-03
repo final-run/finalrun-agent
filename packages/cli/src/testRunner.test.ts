@@ -302,7 +302,7 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
         command: 'finalrun test',
         selectors: ['auth/login.yaml'],
         debug: false,
-        maxIterations: 50,
+        maxIterations: 110,
       },
       model: {
         provider: 'openai',

@@ -128,7 +128,7 @@ program
     `LLM model in provider/model format (for example ${MODEL_FORMAT_EXAMPLE})`,
   )
   .option('--debug', 'Enable debug logging', false)
-  .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
+  .option('--max-iterations <n>', 'Maximum iterations before giving up', '110')
   .argument(
     '[selectors...]',
     'Workspace-relative YAML files, directories, or globs under .finalrun/tests',
@@ -153,7 +153,7 @@ program
     `LLM model in provider/model format (for example ${MODEL_FORMAT_EXAMPLE})`,
   )
   .option('--debug', 'Enable debug logging', false)
-  .option('--max-iterations <n>', 'Maximum iterations before giving up', '50')
+  .option('--max-iterations <n>', 'Maximum iterations before giving up', '110')
   .argument('<suitePath>', 'Workspace-relative YAML file under .finalrun/suites')
   .action(async (suitePath: string, options: TestCommandOptions) => {
     await runTestCommand({
@@ -317,7 +317,7 @@ async function runTestCommand(params: {
       apiKey,
       provider: model.provider,
       modelName: model.modelName,
-      maxIterations: parseInt(params.options.maxIterations, 10) || 50,
+      maxIterations: parseInt(params.options.maxIterations, 10) || 110,
       debug,
       invokedCommand: params.invokedCommand,
     });
