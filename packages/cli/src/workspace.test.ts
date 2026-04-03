@@ -16,7 +16,7 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
-  configYaml?: string;
+  configYaml?: string | null;
   specs?: Record<string, string>;
   suites?: Record<string, string>;
 }): string {
@@ -35,10 +35,11 @@ function createTempWorkspace(params?: {
     fs.mkdirSync(suitesDir, { recursive: true });
   }
 
-  if (params?.configYaml !== undefined) {
+  const configYaml = buildWorkspaceConfigYaml(params?.configYaml);
+  if (configYaml !== undefined) {
     fs.writeFileSync(
       path.join(rootDir, '.finalrun', 'config.yaml'),
-      params.configYaml,
+      configYaml,
       'utf-8',
     );
   }
@@ -68,6 +69,22 @@ function createTempWorkspace(params?: {
   }
 
   return rootDir;
+}
+
+function buildWorkspaceConfigYaml(configYaml?: string | null): string | undefined {
+  if (configYaml === null) {
+    return undefined;
+  }
+
+  const defaultAppConfig = ['app:', '  packageName: org.wikipedia'].join('\n');
+  if (configYaml === undefined) {
+    return `${defaultAppConfig}\n`;
+  }
+  if (/^app:/m.test(configYaml)) {
+    return configYaml;
+  }
+  const trimmedConfig = configYaml.trimEnd();
+  return `${trimmedConfig}\n${defaultAppConfig}\n`;
 }
 
 async function withTempHome<T>(callback: (homeDir: string) => Promise<T>): Promise<T> {
@@ -338,16 +355,148 @@ test('runCheck preserves the missing-env error when .finalrun/config.yaml points
   }
 });
 
-test('runCheck rejects legacy env app keys', async () => {
+test('runCheck requires app config in .finalrun/config.yaml', async () => {
   const rootDir = createTempWorkspace({
-    envYaml: ['app:', '  android:', '    packageName: org.wikipedia'].join('\n'),
+    configYaml: null,
   });
 
   try {
     await assert.rejects(
-      () => runCheck({ envName: 'dev', cwd: rootDir }),
-      /contains unsupported key "app"/,
+      () => runCheck({ cwd: rootDir }),
+      /\.finalrun\/config\.yaml must define app\.packageName and\/or app\.bundleId/,
     );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck accepts env app overrides and resolves the env-specific identifier', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['env: staging', 'app:', '  packageName: org.wikipedia'].join('\n'),
+    envFiles: {
+      'staging.yaml': ['app:', '  packageName: org.wikipedia.beta'].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'staging');
+    assert.equal(result.resolvedApp.platform, 'android');
+    assert.equal(result.resolvedApp.identifier, 'org.wikipedia.beta');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck fails when both Android and iOS apps are configured without an explicit platform', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: [
+      'app:',
+      '  packageName: org.wikipedia',
+      '  bundleId: org.wikipedia',
+    ].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /Both Android and iOS app identifiers are configured\. Pass --platform android or --platform ios\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck fails when the requested platform is missing from the app config', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['app:', '  packageName: org.wikipedia'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir, platform: 'ios' }),
+      /No app config found for platform "ios"/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck fails when an iOS app override bundle ID does not match config', async () => {
+  const rootDir = createTempWorkspace({
+    includeEnvDir: false,
+    configYaml: ['app:', '  bundleId: org.wikipedia'].join('\n'),
+  });
+  const appBundlePath = path.join(rootDir, 'Wikipedia.app');
+  fs.mkdirSync(appBundlePath, { recursive: true });
+  fs.writeFileSync(
+    path.join(appBundlePath, 'Info.plist'),
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+      '<plist version="1.0">',
+      '<dict>',
+      '  <key>CFBundleIdentifier</key>',
+      '  <string>org.wikipedia.beta</string>',
+      '</dict>',
+      '</plist>',
+    ].join('\n'),
+    'utf-8',
+  );
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir, appPath: appBundlePath }),
+      /Configured iOS bundle ID is "org\.wikipedia", but the override app resolved to "org\.wikipedia\.beta"/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects nested app config and points to the flat schema', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['app:', '  android:', '    packageName: org.wikipedia'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /\.finalrun\/config\.yaml app uses an unsupported nested format\. Use app\.name, app\.packageName, and app\.bundleId\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects empty app identifiers in workspace config', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['app:', '  packageName: ""'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /\.finalrun\/config\.yaml app packageName must not be empty\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck treats env app config as a full replacement', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['env: staging', 'app:', '  packageName: org.wikipedia', '  bundleId: org.wikipedia.ios'].join('\n'),
+    envFiles: {
+      'staging.yaml': ['app:', '  packageName: org.wikipedia.beta'].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'staging');
+    assert.equal(result.resolvedApp.platform, 'android');
+    assert.equal(result.resolvedApp.identifier, 'org.wikipedia.beta');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -427,7 +576,7 @@ test('runCheck rejects unknown keys in .finalrun/config.yaml', async () => {
   try {
     await assert.rejects(
       () => runCheck({ cwd: rootDir }),
-      /config\.yaml contains unsupported key "region"\. Supported keys: env, model\./,
+      /config\.yaml contains unsupported key "region"\. Supported keys: env, model, app\./,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });

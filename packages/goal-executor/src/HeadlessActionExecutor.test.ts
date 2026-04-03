@@ -273,6 +273,122 @@ test('HeadlessActionExecutor traces launchApp with prep, ground, and device span
   assertTraceNames(result.trace, ['action.prep', 'action.ground', 'action.device']);
 });
 
+test('HeadlessActionExecutor does not default primary app relaunches to reinstall', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions, {
+    availableApps: [
+      { packageName: 'org.wikimedia.wikipedia', name: 'Wikipedia' },
+    ],
+  });
+  const aiAgent = createAiAgent(async () => ({
+    output: { packageName: 'org.wikimedia.wikipedia' },
+    raw: '{}',
+  }));
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+    appIdentifier: 'org.wikimedia.wikipedia',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_LAUNCH_APP,
+    reason: 'Reopen Wikipedia.',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  assert.equal(
+    (executedActions[0] as LaunchAppAction).shouldUninstallBeforeLaunch,
+    false,
+  );
+});
+
+test('HeadlessActionExecutor ignores malformed grounder boolean flags and preserves defaults', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions, {
+    availableApps: [
+      { packageName: 'org.wikimedia.wikipedia', name: 'Wikipedia' },
+    ],
+  });
+  const aiAgent = createAiAgent(async () => ({
+    output: {
+      packageName: 'org.wikimedia.wikipedia',
+      allowAllPermissions: 'false',
+      shouldUninstallBeforeLaunch: 'false',
+      clearState: 'true',
+      stopAppBeforeLaunch: 1,
+    },
+    raw: '{}',
+  }));
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+    appIdentifier: 'org.wikimedia.wikipedia',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_LAUNCH_APP,
+    reason: 'Reopen Wikipedia.',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  const action = executedActions[0] as LaunchAppAction;
+  assert.equal(action.allowAllPermissions, true);
+  assert.equal(action.shouldUninstallBeforeLaunch, false);
+  assert.equal(action.clearState, false);
+  assert.equal(action.stopAppBeforeLaunch, false);
+});
+
+test('HeadlessActionExecutor honors explicit grounder boolean flags for app launches', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions, {
+    availableApps: [
+      { packageName: 'org.wikimedia.wikipedia', name: 'Wikipedia' },
+    ],
+  });
+  const aiAgent = createAiAgent(async () => ({
+    output: {
+      packageName: 'org.wikimedia.wikipedia',
+      allowAllPermissions: false,
+      shouldUninstallBeforeLaunch: true,
+      clearState: true,
+      stopAppBeforeLaunch: true,
+    },
+    raw: '{}',
+  }));
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+    appIdentifier: 'org.wikimedia.wikipedia',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_LAUNCH_APP,
+    reason: 'Reinstall and relaunch Wikipedia.',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  const action = executedActions[0] as LaunchAppAction;
+  assert.equal(action.allowAllPermissions, false);
+  assert.equal(action.shouldUninstallBeforeLaunch, true);
+  assert.equal(action.clearState, true);
+  assert.equal(action.stopAppBeforeLaunch, true);
+});
+
 test('HeadlessActionExecutor traces wait actions without calling the device', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);

@@ -1,4 +1,3 @@
-// Port of goal_executor/lib/src/HeadlessActionExecutor.dart
 // Executes individual device actions: ground → coordinates → execute on device.
 
 import { v4 as uuidv4 } from 'uuid';
@@ -118,25 +117,27 @@ class TimedActionPhaseFailure extends Error {
 /**
  * Executes individual actions: ground UI element → compute coordinates → device action.
  *
- * Dart equivalent: HeadlessActionExecutor in goal_executor/lib/src/HeadlessActionExecutor.dart
  */
 export class HeadlessActionExecutor {
   private _agent: Agent;
   private _aiAgent: AIAgent;
   private _visualGrounder: VisualGrounder;
   private _platform: string;
+  private _appIdentifier?: string;
   private _runtimeBindings?: RuntimeBindings;
 
   constructor(params: {
     agent: Agent;
     aiAgent: AIAgent;
     platform: string;
+    appIdentifier?: string;
     runtimeBindings?: RuntimeBindings;
   }) {
     this._agent = params.agent;
     this._aiAgent = params.aiAgent;
     this._visualGrounder = new VisualGrounder(params.aiAgent);
     this._platform = params.platform;
+    this._appIdentifier = params.appIdentifier;
     this._runtimeBindings = params.runtimeBindings;
   }
 
@@ -559,10 +560,12 @@ export class HeadlessActionExecutor {
 
     const action = new LaunchAppAction({
       appUpload: new AppUpload({ id: '', platform: this._platform, packageName }),
-      allowAllPermissions: (output['allowAllPermissions'] as boolean) ?? true,
-      shouldUninstallBeforeLaunch: (output['shouldUninstallBeforeLaunch'] as boolean) ?? true,
-      clearState: (output['clearState'] as boolean) ?? false,
-      stopAppBeforeLaunch: (output['stopAppBeforeLaunch'] as boolean) ?? false,
+      allowAllPermissions: readOptionalBoolean(output, 'allowAllPermissions') ?? true,
+      shouldUninstallBeforeLaunch:
+        readOptionalBoolean(output, 'shouldUninstallBeforeLaunch') ??
+        (packageName === this._appIdentifier ? false : true),
+      clearState: readOptionalBoolean(output, 'clearState') ?? false,
+      stopAppBeforeLaunch: readOptionalBoolean(output, 'stopAppBeforeLaunch') ?? false,
       permissions: (output['permissions'] as Record<string, string>) ?? {},
     });
 
@@ -1158,4 +1161,12 @@ export class HeadlessActionExecutor {
   private _delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+}
+
+function readOptionalBoolean(
+  record: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
 }

@@ -1,6 +1,6 @@
 ---
 name: generate-finalrun-test
-description: Generate test and suite specifications in the strict FinalRun YAML format. Handles automated test planning, folder grouping by feature, environment bindings in .finalrun/env/*.yaml, and validation via finalrun check.
+description: Generate test and suite specifications in the strict FinalRun YAML format. Handles automated test planning, folder grouping by feature, repo app configuration, environment-specific overrides in .finalrun/env/*.yaml, and validation via finalrun check.
 ---
 
 # FinalRun Test and Suite Generator
@@ -25,18 +25,72 @@ You are an expert QA Automation Engineer. Generate FinalRun YAML artifacts with 
 - **Secrets in YAML** use the FinalRun form `secrets.logical_key: "${SHELL_ENV_VAR}"` (placeholder only). Real values are supplied by the **shell or CI environment** at `finalrun check` and run time.
 - **Do not** assert or require that `.finalrun/.env.*` files exist; do not treat secret storage files as part of validation. Do not read or write `.env.*` files.
 
+**App configuration (required):**
+- FinalRun runs require `.finalrun/config.yaml` to define the default app identity for the repo.
+- Use `app.packageName` for Android and `app.bundleId` for iOS.
+- Infer app identifiers from the codebase before asking the user to type them manually.
+- Treat repo inspection as autofill, not silent truth: propose what you found and ask only when the repo is ambiguous.
+- Ask whether the app identifier changes by environment.
+- If the identifier is the same everywhere, keep app identity only in `.finalrun/config.yaml`.
+- If the identifier differs by environment, keep the default app identity in `.finalrun/config.yaml` and replace it with a full env-specific `app` block under `.finalrun/env/<env>.yaml`.
 ## Workflow Steps
 
 ### Step 1 — Deep Dive & Analysis
 Read the user's request. Read relevant application source code to thoroughly understand the user-facing functionality, UI elements, and validation points that need to be tested.
 
-### Step 2 — Environment bindings (required when tests use `${variables.*}` or `${secrets.*}`)
-- **Inspect:** Read `.finalrun/env/*.yaml` if present so you reuse existing keys.
-- **Scaffold:** If the folder is missing or empty, create the env files the user needs (ask which names: `dev`, `staging`, `prod`, …).
+### Step 1A — Infer app identity (name, bundle ID, package name) from the repo
+Inspect the code base files and infer them when possible. take decision on whether the repo of for android, ios or cross-platform. If you find multiple identifiers, propose the best candidate and ask the user to confirm which one is correct. If the repo structure makes it clear that different environments use different app identifiers, propose the inferred values for each env and ask the user to confirm.
+
+- **Inference rules:**
+  - If one identifier is clearly the repo default, write it to `.finalrun/config.yaml`.
+  - If env-specific identifiers are clearly derivable, keep the default in `.finalrun/config.yaml` and put only the differing value in `.finalrun/env/<env>.yaml`.
+  - Reuse existing env names from `.finalrun/env/*.yaml` before inventing new ones.
+- **Guardrails:**
+  - Do **not** treat Android `namespace` as the app package unless there is no better source.
+  - Do **not** infer env names from every flavor automatically; `free` / `paid` are not the same as `dev` / `staging` / `prod`.
+  - Do **not** silently overwrite an existing `.finalrun/config.yaml` app block. Show the proposed change first.
+  - Ask the user only when multiple app modules/targets are plausible or the identifiers cannot be resolved confidently.
+
+### Step 2 — Environment profiles (required when tests use `${variables.*}` or `${secrets.*}`, or when app identity differs by environment)
+- **Inspect:** Read `.finalrun/config.yaml` and `.finalrun/env/*.yaml` if present so you reuse the existing app config and binding keys.
+- **Scaffold:** If the folder is missing or empty, create the env files the user needs (ask which names: `dev`, `staging`, `prod`, …) only when the tests need env-specific bindings or env-specific app overrides.
+- **App setup:**
+  - Ensure `.finalrun/config.yaml` has the default repo app identity.
+  - Prefer repo-derived app identity over manual entry whenever the codebase makes it clear.
+  - Ask whether the app identifier changes by environment only if the repo structure does not make that obvious.
+  - If yes, add only the env-specific `app` override to `.finalrun/env/<env>.yaml`.
+  - If no, keep the app identity only in `.finalrun/config.yaml`.
 - **Declare bindings in YAML:**
   - Add `variables.*` for non-secret values used in tests.
   - Add `secrets.*` as `"${ENV_VAR}"` placeholders (choose stable `ENV_VAR` names; document which exports the user must set).
 - **Which env files to update:** **Ask the user.** Default recommendation: add the same keys to **every** `.finalrun/env/*.yaml` so all environments stay aligned unless they explicitly want a subset.
+- **Allowed env file shapes:** `.finalrun/env/<env>.yaml` may contain `app`, `variables`, `secrets`, or any combination of them.
+
+**Recommended generated config shapes:**
+
+Same package everywhere:
+
+```yaml
+app:
+  name: ExampleApp
+  packageName: com.example.app
+  bundleId: com.example.app
+```
+
+Different package by environment:
+
+```yaml
+app:
+  name: ExampleApp
+  packageName: com.example.app
+  bundleId: com.example.app
+```
+
+```yaml
+app:
+  packageName: com.example.app.staging
+  bundleId: com.example.app.staging
+```
 
 ### Step 3 — Planning & Folder Discovery
 Before creating any test code, you **must** look into the existing test directories to avoid duplicates and adhere to feature-based grouping.
@@ -56,6 +110,8 @@ Present the proposed testing modifications to the user for validation.
 - List the exact target paths you intend to touch.
 - Detail the **Setup & Idempotent Cleanup** strategy (as described below) you intend to use.
 - **Setup checklist:** List every `${variables.*}` and `${secrets.*}` the tests will use, and confirm the matching entries you will add to `.finalrun/env/*.yaml` (secret rows as `${ENV_VAR}` only).
+- **Effective app checklist:** State which app identifier FinalRun should use for each env/platform affected by the change.
+- **Inference checklist:** State which app identifiers were inferred from the repo, which files they came from, and whether any user confirmation is still needed.
 
 > [!CAUTION]  
 > **Do NOT write final test/suite `.yaml` until the user explicitly approves the proposed plan and answers your questions.**

@@ -186,6 +186,62 @@ test('HeadlessGoalExecutor continues after a transient capture failure and recov
   );
 });
 
+test('HeadlessGoalExecutor passes pre-context and app knowledge through to the planner', async () => {
+  const agent = createAgent([
+    new DeviceNodeResponse({
+      success: true,
+      data: {
+        screenshot: 'image',
+        hierarchy: '[]',
+        screenWidth: 1080,
+        screenHeight: 2400,
+      },
+    }),
+  ]);
+
+  let plannerRequest:
+    | {
+        preContext?: string;
+        appKnowledge?: string;
+      }
+    | undefined;
+  const aiAgent = {
+    async plan(request: {
+      preContext?: string;
+      appKnowledge?: string;
+    }) {
+      plannerRequest = request;
+      return {
+        act: PLANNER_ACTION_COMPLETED,
+        reason: 'Done',
+        remember: [],
+      };
+    },
+  } as unknown as AIAgent;
+
+  const executor = new HeadlessGoalExecutor({
+    goal: 'Open the app',
+    platform: 'android',
+    maxIterations: 1,
+    agent,
+    aiAgent,
+    preContext: 'The CLI already launched Android package "org.wikipedia".',
+    appKnowledge: 'This app opens to the Explore screen.',
+  });
+
+  const result = await executor.executeGoal();
+
+  assert.equal(result.success, true);
+  assert.equal(
+    plannerRequest?.preContext,
+    'The CLI already launched Android package "org.wikipedia".',
+  );
+  assert.equal(
+    plannerRequest?.appKnowledge,
+    'This app opens to the Explore screen.',
+  );
+});
+
 test('HeadlessGoalExecutor aborts immediately on fatal capture/setup failure', async () => {
   const agent = createAgent([
     new DeviceNodeResponse({

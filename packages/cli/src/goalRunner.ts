@@ -1,8 +1,11 @@
-// Port of mobile_cli/lib/goal_runner.dart
 // Orchestrates: detect device → set up → execute goal.
 
 import {
+  AppUpload,
+  DeviceActionRequest,
   DeviceInfo,
+  GetAppListAction,
+  LaunchAppAction,
   Logger,
   PLATFORM_ANDROID,
   RecordingRequest,
@@ -17,6 +20,7 @@ import {
   type GoalRecordingResult,
 } from '@finalrun/goal-executor';
 import type { GoalResult } from '@finalrun/goal-executor';
+import type { ResolvedAppConfig } from './appConfig.js';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
   type DeviceSelectionIO,
@@ -58,6 +62,7 @@ export interface GoalRunnerConfig {
   debug?: boolean;
   platform?: string;
   appOverridePath?: string;
+  app?: ResolvedAppConfig;
   runtimeBindings?: RuntimeBindings;
   abortSignal?: AbortSignal;
   recording?: {
@@ -71,6 +76,7 @@ export interface GoalRunnerConfig {
 export interface GoalSessionConfig {
   platform?: string;
   appOverridePath?: string;
+  app?: ResolvedAppConfig;
 }
 
 export interface GoalRunnerDependencies {
@@ -89,6 +95,8 @@ export interface GoalSession {
   device: GoalRunnerDevice;
   deviceInfo: DeviceInfo;
   platform: string;
+  app?: ResolvedAppConfig;
+  launchSummary?: string;
   cleanup(): Promise<void>;
 }
 
@@ -243,11 +251,18 @@ export async function prepareGoalSession(
       }
     }
 
+    let launchSummary: string | undefined;
+    if (config.app) {
+      launchSummary = await ensureAppReady(device, config.app);
+    }
+
     return {
       deviceNode,
       device,
       deviceInfo,
       platform,
+      app: config.app,
+      launchSummary,
       cleanup,
     };
   } catch (error) {
@@ -289,6 +304,8 @@ export async function executeGoalOnSession(
       maxIterations: config.maxIterations,
       agent: session.device,
       aiAgent,
+      preContext: session.launchSummary,
+      appIdentifier: session.app?.identifier,
       runtimeBindings: config.runtimeBindings,
     });
     if (config.abortSignal?.aborted) {
@@ -431,7 +448,6 @@ export async function executeGoalOnSession(
 /**
  * Top-level orchestrator for running a goal from the CLI.
  *
- * Dart equivalent: runGoal() in mobile_cli/lib/goal_runner.dart
  */
 export async function runGoal(
   config: GoalRunnerConfig,
@@ -442,6 +458,7 @@ export async function runGoal(
     {
       platform: config.platform,
       appOverridePath: config.appOverridePath,
+      app: config.app,
     },
     dependencies,
   );
@@ -455,6 +472,70 @@ export async function runGoal(
       Logger.w('Failed to clean up device resources:', error);
     }
   }
+}
+
+async function ensureAppReady(
+  device: GoalRunnerDevice,
+  app: ResolvedAppConfig,
+): Promise<string> {
+  const appListResponse = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: `prelaunch-app-list-${app.platform}`,
+      action: new GetAppListAction(),
+      timeout: 10,
+    }),
+  );
+  if (!appListResponse.success) {
+    throw new Error(
+      `Failed to inspect installed apps before launching ${formatAppReference(app)}: ${appListResponse.message ?? 'unknown app list error'}`,
+    );
+  }
+
+  const installedApps =
+    ((appListResponse.data?.['apps'] as Array<{ packageName: string; name: string }>) ?? []);
+  const isInstalled = installedApps.some((installedApp) => installedApp.packageName === app.identifier);
+  if (!isInstalled) {
+    throw new Error(
+      `${formatAppReference(app)} is not installed on the selected device. Pass --app <path> to install it or install it manually before running FinalRun.`,
+    );
+  }
+
+  Logger.i(`Prelaunching ${formatAppReference(app)}...`);
+  const launchResponse = await device.executeAction(
+    new DeviceActionRequest({
+      requestId: `prelaunch-launch-${app.platform}`,
+      action: new LaunchAppAction({
+        appUpload: new AppUpload({
+          id: '',
+          platform: app.platform,
+          packageName: app.identifier,
+        }),
+        allowAllPermissions: true,
+        shouldUninstallBeforeLaunch: false,
+        clearState: false,
+        stopAppBeforeLaunch: false,
+      }),
+      timeout: 30,
+    }),
+  );
+  if (!launchResponse.success) {
+    throw new Error(
+      `Failed to launch ${formatAppReference(app)} before execution: ${launchResponse.message ?? 'unknown launch error'}`,
+    );
+  }
+
+  return [
+    `The CLI already launched ${formatAppReference(app)} before the goal started.`,
+    launchResponse.message ? `Driver response: ${launchResponse.message}` : undefined,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join(' ');
+}
+
+function formatAppReference(app: ResolvedAppConfig): string {
+  return app.platform === PLATFORM_ANDROID
+    ? `Android package "${app.identifier}"`
+    : `iOS bundle ID "${app.identifier}"`;
 }
 
 function createRecordingFailureResult(params: {

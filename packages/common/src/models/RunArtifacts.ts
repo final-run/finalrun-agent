@@ -1,4 +1,5 @@
 import type {
+  RepoAppConfig,
   RepoVariableValue,
   SecretReference,
 } from './RepoEnvironment.js';
@@ -185,6 +186,7 @@ export interface RunManifestEnvironmentRecord {
   workspaceEnvPath?: string;
   snapshotYamlPath?: string;
   snapshotJsonPath?: string;
+  app?: RepoAppConfig;
   variables: Record<string, RepoVariableValue>;
   secretReferences: SecretReference[];
 }
@@ -227,8 +229,12 @@ export interface RunManifestModelRecord {
 }
 
 export interface RunManifestAppRecord {
-  source: 'repo' | 'override';
+  source: 'repo' | 'override' | 'config';
   label: string;
+  identifier?: string;
+  identifierKind?: 'packageName' | 'bundleId';
+  name?: string;
+  sourceEnvName?: string;
   overridePath?: string;
 }
 
