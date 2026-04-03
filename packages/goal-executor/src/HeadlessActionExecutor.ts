@@ -125,18 +125,21 @@ export class HeadlessActionExecutor {
   private _aiAgent: AIAgent;
   private _visualGrounder: VisualGrounder;
   private _platform: string;
+  private _primaryAppIdentifier?: string;
   private _runtimeBindings?: RuntimeBindings;
 
   constructor(params: {
     agent: Agent;
     aiAgent: AIAgent;
     platform: string;
+    primaryAppIdentifier?: string;
     runtimeBindings?: RuntimeBindings;
   }) {
     this._agent = params.agent;
     this._aiAgent = params.aiAgent;
     this._visualGrounder = new VisualGrounder(params.aiAgent);
     this._platform = params.platform;
+    this._primaryAppIdentifier = params.primaryAppIdentifier;
     this._runtimeBindings = params.runtimeBindings;
   }
 
@@ -560,7 +563,9 @@ export class HeadlessActionExecutor {
     const action = new LaunchAppAction({
       appUpload: new AppUpload({ id: '', platform: this._platform, packageName }),
       allowAllPermissions: (output['allowAllPermissions'] as boolean) ?? true,
-      shouldUninstallBeforeLaunch: (output['shouldUninstallBeforeLaunch'] as boolean) ?? true,
+      shouldUninstallBeforeLaunch:
+        (output['shouldUninstallBeforeLaunch'] as boolean | undefined) ??
+        (packageName === this._primaryAppIdentifier ? false : true),
       clearState: (output['clearState'] as boolean) ?? false,
       stopAppBeforeLaunch: (output['stopAppBeforeLaunch'] as boolean) ?? false,
       permissions: (output['permissions'] as Record<string, string>) ?? {},

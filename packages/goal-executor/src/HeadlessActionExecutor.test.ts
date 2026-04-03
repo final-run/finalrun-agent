@@ -273,6 +273,40 @@ test('HeadlessActionExecutor traces launchApp with prep, ground, and device span
   assertTraceNames(result.trace, ['action.prep', 'action.ground', 'action.device']);
 });
 
+test('HeadlessActionExecutor does not default primary app relaunches to reinstall', async () => {
+  const executedActions: unknown[] = [];
+  const agent = createAgent(executedActions, {
+    availableApps: [
+      { packageName: 'org.wikimedia.wikipedia', name: 'Wikipedia' },
+    ],
+  });
+  const aiAgent = createAiAgent(async () => ({
+    output: { packageName: 'org.wikimedia.wikipedia' },
+    raw: '{}',
+  }));
+
+  const executor = new HeadlessActionExecutor({
+    agent,
+    aiAgent,
+    platform: 'android',
+    primaryAppIdentifier: 'org.wikimedia.wikipedia',
+  });
+
+  const result = await executor.executeAction({
+    action: PLANNER_ACTION_LAUNCH_APP,
+    reason: 'Reopen Wikipedia.',
+    screenWidth: 1080,
+    screenHeight: 2400,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(executedActions.length, 1);
+  assert.equal(
+    (executedActions[0] as LaunchAppAction).shouldUninstallBeforeLaunch,
+    false,
+  );
+});
+
 test('HeadlessActionExecutor traces wait actions without calling the device', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);

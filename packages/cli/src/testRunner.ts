@@ -16,6 +16,10 @@ import {
   prepareGoalSession,
   type GoalSession,
 } from './goalRunner.js';
+import {
+  formatResolvedPrimaryAppSummary,
+  type ResolvedPrimaryAppConfig,
+} from './appConfig.js';
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
 import type { GoalExecutionStatus } from '@finalrun/goal-executor';
@@ -167,8 +171,9 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
 
     try {
       const requestedPlatforms = resolveTestRequestedPlatforms(
-        options.platform ?? checked.appOverride?.inferredPlatform,
+        checked.resolvedApp.platform,
       );
+      Logger.i(formatResolvedPrimaryAppSummary(checked.resolvedApp));
       const preflight =
         process.env[CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR] === '1'
           ? {
@@ -199,8 +204,9 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
         throw new DevicePreparationError(forcedDeviceSetupFailure);
       }
       goalSession = await testRunnerDependencies.prepareGoalSession({
-        platform: options.platform ?? checked.appOverride?.inferredPlatform,
+        platform: checked.resolvedApp.platform,
         appOverridePath: checked.appOverride?.appPath,
+        primaryApp: checked.resolvedApp,
       });
     } catch (error) {
       if (error instanceof PreExecutionFailureError) {
@@ -259,7 +265,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
             effectiveGoals,
             cli: buildCliContext(options),
             model: buildModelContext(options.provider, options.modelName),
-            app: buildAppContext(checked.appOverride?.appPath ?? options.appPath),
+            app: buildAppContext(checked.resolvedApp, checked.appOverride?.appPath ?? options.appPath),
             target: checked.target,
             suite: checked.suite,
           });
@@ -481,20 +487,27 @@ function buildModelContext(
   };
 }
 
-function buildAppContext(appOverridePath?: string): {
-  source: 'repo' | 'override';
+function buildAppContext(
+  resolvedApp: ResolvedPrimaryAppConfig,
+  appOverridePath?: string,
+): {
+  source: 'config';
   label: string;
+  identifier: string;
+  identifierKind: 'packageName' | 'bundleId';
+  name?: string;
+  sourceEnvName?: string;
   overridePath?: string;
 } {
-  if (!appOverridePath) {
-    return {
-      source: 'repo',
-      label: 'repo app',
-    };
-  }
   return {
-    source: 'override',
-    label: path.basename(appOverridePath),
+    source: 'config',
+    label: resolvedApp.name
+      ? `${resolvedApp.name} (${resolvedApp.identifier})`
+      : resolvedApp.identifier,
+    identifier: resolvedApp.identifier,
+    identifierKind: resolvedApp.identifierKind,
+    name: resolvedApp.name,
+    sourceEnvName: resolvedApp.sourceEnvName,
     overridePath: appOverridePath,
   };
 }

@@ -195,12 +195,14 @@ export class ReportWriter {
       workspaceEnvPath,
       snapshotYamlPath: envSnapshotYamlPath,
       snapshotJsonPath: envSnapshotJsonPath,
+      app: params.environment.config.app,
       variables: params.environment.config.variables,
       secretReferences: params.environment.secretReferences,
     };
     await fsp.writeFile(
       path.join(this._runDir, envSnapshotYamlPath),
       YAML.stringify({
+        app: params.environment.config.app,
         secrets: params.environment.config.secrets,
         variables: params.environment.config.variables,
       }),

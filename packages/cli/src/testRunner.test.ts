@@ -76,6 +76,21 @@ function createGoalSession(params?: { platform?: string; cleanup?: () => Promise
   };
 }
 
+function writeWorkspaceConfig(
+  rootDir: string,
+  platforms: 'android' | 'ios' | 'both' = 'android',
+): void {
+  const lines = ['app:'];
+  if (platforms === 'android' || platforms === 'both') {
+    lines.push('  android:', '    packageName: org.wikipedia');
+  }
+  if (platforms === 'ios' || platforms === 'both') {
+    lines.push('  ios:', '    bundleId: org.wikipedia');
+  }
+  fs.mkdirSync(path.join(rootDir, '.finalrun'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), `${lines.join('\n')}\n`, 'utf-8');
+}
+
 const originalRunHostPreflight = testRunnerDependencies.runHostPreflight;
 
 test.beforeEach(() => {
@@ -578,6 +593,7 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
 
 test('runTests finalizes top-level artifacts when shared-session execution throws before a spec completes', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-runner-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   const secretEnvVar = 'FINALRUN_TEST_EMAIL_SECRET';
@@ -675,6 +691,7 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
 
 test('runTests succeeds without env config when the repo is env-free', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-env-free-runner-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   fs.mkdirSync(testsDir, { recursive: true });
   fs.writeFileSync(
@@ -730,6 +747,7 @@ test('runTests succeeds without env config when the repo is env-free', async () 
 
 test('runTests records the suite subcommand in run metadata when invoked via finalrun suite', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-command-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const suitesDir = path.join(rootDir, '.finalrun', 'suites');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -781,6 +799,7 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
 
 test('runTests prepares one shared session for multiple specs and cleans it up once', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -851,6 +870,7 @@ test('runTests prepares one shared session for multiple specs and cleans it up o
 
 test('runTests uses mov artifact recording output paths for iOS specs', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-ios-recording-output-'));
+  writeWorkspaceConfig(rootDir, 'ios');
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -910,6 +930,7 @@ test('runTests uses mov artifact recording output paths for iOS specs', async ()
 
 test('runTests stops the batch after a shared-session failure and cleans up once', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-failure-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -977,6 +998,7 @@ test('runTests stops the batch after a shared-session failure and cleans up once
 
 test('runTests stops remaining specs after a terminal AI provider failure', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-terminal-provider-failure-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1087,6 +1109,7 @@ test('runTests stops remaining specs after a terminal AI provider failure', asyn
 
 test('runTests aborts the batch after SIGINT and marks the active run as aborted', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-abort-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1195,6 +1218,7 @@ test('runTests aborts the batch after SIGINT and marks the active run as aborted
 
 test('runTests requests a forced exit after a second SIGINT', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-force-exit-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1262,7 +1286,7 @@ test('runTests requests a forced exit after a second SIGINT', async () => {
   }
 });
 
-test('runTests rejects validation failures before platform resolution without creating run artifacts', async () => {
+test('runTests requires base app config even when the env file contains an app override', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-validation-failure-'));
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
@@ -1293,7 +1317,10 @@ test('runTests rejects validation failures before platform resolution without cr
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
         assert.equal(error.phase, 'validation');
-        assert.match(error.message, /unsupported key "app"/);
+        assert.match(
+          error.message,
+          /\.finalrun\/config\.yaml must define app\.android\.packageName and\/or app\.ios\.bundleId/,
+        );
         return true;
       },
     );
@@ -1305,6 +1332,7 @@ test('runTests rejects validation failures before platform resolution without cr
 
 test('runTests rejects validation failures before creating run artifacts', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-missing-selectors-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1341,6 +1369,7 @@ test('runTests rejects validation failures before creating run artifacts', async
 
 test('runTests surfaces device setup diagnostics before execution without creating run artifacts', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-setup-buffering-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1402,6 +1431,7 @@ test('runTests surfaces device setup diagnostics before execution without creati
 
 test('runTests fails before prepareGoalSession when Android host preflight is blocked', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-android-preflight-failure-'));
+  writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1464,6 +1494,7 @@ test('runTests fails before prepareGoalSession when Android host preflight is bl
 
 test('runTests fails before prepareGoalSession when iOS host preflight is blocked', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-ios-preflight-failure-'));
+  writeWorkspaceConfig(rootDir, 'ios');
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1526,6 +1557,7 @@ test('runTests fails before prepareGoalSession when iOS host preflight is blocke
 
 test('runTests continues when one platform is healthy and the other is blocked', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-preflight-partial-'));
+  writeWorkspaceConfig(rootDir, 'ios');
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1591,8 +1623,9 @@ test('runTests continues when one platform is healthy and the other is blocked',
   }
 });
 
-test('runTests fails when both platforms are blocked and no platform is specified', async () => {
+test('runTests requires --platform when both Android and iOS apps are configured', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-preflight-both-blocked-'));
+  writeWorkspaceConfig(rootDir, 'both');
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
   const envDir = path.join(rootDir, '.finalrun', 'env');
   fs.mkdirSync(testsDir, { recursive: true });
@@ -1647,9 +1680,11 @@ test('runTests fails when both platforms are blocked and no platform is specifie
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
-        assert.equal(error.phase, 'setup');
-        assert.match(error.message, /Local device setup is blocked for Android and iOS\./);
-        assert.match(error.message, /Run 'finalrun doctor'/);
+        assert.equal(error.phase, 'validation');
+        assert.match(
+          error.message,
+          /Both Android and iOS apps are configured\. Pass --platform android or --platform ios\./,
+        );
         return true;
       },
     );

@@ -40,6 +40,9 @@ export interface GoalExecutorConfig {
   maxIterations?: number;
   agent: Agent;
   aiAgent: AIAgent;
+  preContext?: string;
+  appKnowledge?: string;
+  primaryAppIdentifier?: string;
   runtimeBindings?: RuntimeBindings;
 }
 
@@ -167,6 +170,7 @@ export class HeadlessGoalExecutor {
       agent: config.agent,
       aiAgent: config.aiAgent,
       platform: config.platform,
+      primaryAppIdentifier: config.primaryAppIdentifier,
       runtimeBindings: config.runtimeBindings,
     });
   }
@@ -321,6 +325,8 @@ export class HeadlessGoalExecutor {
           hierarchy: deviceState.hierarchy,
           history: history || undefined,
           remember: remember.length > 0 ? remember : undefined,
+          preContext: this._config.preContext,
+          appKnowledge: this._config.appKnowledge,
           traceStep: iteration,
         });
       } catch (error) {

@@ -1,8 +1,13 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
+import {
+  PLATFORM_ANDROID,
+  PLATFORM_IOS,
+  type RepoAppConfig,
+} from '@finalrun/common';
 import YAML from 'yaml';
+import { readRepoAppConfig } from './appConfig.js';
 import { resolveFinalRunRootDir } from './runtimePaths.js';
 
 export interface FinalRunWorkspace {
@@ -17,11 +22,13 @@ export interface FinalRunWorkspace {
 export interface AppOverrideValidationResult {
   appPath: string;
   inferredPlatform: string;
+  resolvedIdentifier?: string;
 }
 
 export interface WorkspaceConfig {
   env?: string;
   model?: string;
+  app?: RepoAppConfig;
 }
 
 export interface ResolvedEnvironmentFile {
@@ -31,7 +38,7 @@ export interface ResolvedEnvironmentFile {
   usesEmptyBindings: boolean;
 }
 
-const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model']);
+const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app']);
 const WORKSPACE_HASH_LENGTH = 16;
 
 export async function resolveWorkspace(
@@ -284,6 +291,7 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
     model: readOptionalTrimmedString(parsed['model'], `${configPath} model`, {
       allowEmpty: true,
     }),
+    app: readRepoAppConfig(parsed['app'], `${configPath} app`),
   };
 }
 

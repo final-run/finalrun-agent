@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import {
+  DeviceActionRequest,
   DeviceInfo,
   DeviceNodeResponse,
+  GetAppListAction,
+  LaunchAppAction,
   Logger,
   PLATFORM_ANDROID,
   type DeviceInventoryDiagnostic,
@@ -110,6 +113,11 @@ function createDependencies(params: {
   ) => DeviceInventoryDiagnostic | null | Promise<DeviceInventoryDiagnostic | null>;
   onInstallAndroidApp?: (adbPath: string, deviceId: string, appPath: string) => boolean | Promise<boolean>;
   onInstallIOSApp?: (deviceId: string, appPath: string) => boolean | Promise<boolean>;
+  availableApps?: Array<{ packageName: string; name: string }>;
+  deviceActions?: unknown[];
+  onExecuteDeviceAction?: (
+    request: DeviceActionRequest,
+  ) => DeviceNodeResponse | Promise<DeviceNodeResponse>;
   selectionInput?: string;
 }): GoalRunnerDependencies {
   const printedResults: GoalResult[] = [];
@@ -124,6 +132,29 @@ function createDependencies(params: {
   });
   let inventoryCallCount = 0;
   const device = {
+    async executeAction(request: DeviceActionRequest) {
+      if (params.onExecuteDeviceAction) {
+        return await params.onExecuteDeviceAction(request);
+      }
+      if (request.action instanceof GetAppListAction) {
+        return new DeviceNodeResponse({
+          success: true,
+          data: {
+            apps: params.availableApps ?? [],
+          },
+        });
+      }
+
+      params.deviceActions?.push(request.action);
+      if (request.action instanceof LaunchAppAction) {
+        return new DeviceNodeResponse({
+          success: true,
+          message: `Launched ${request.action.appUpload.packageName}`,
+        });
+      }
+
+      return new DeviceNodeResponse({ success: true });
+    },
     async startRecording(request: RecordingRequest) {
       return await (params.startRecording ??
         (async () =>
@@ -374,6 +405,66 @@ test('prepareGoalSession installs the Android app override once during shared se
   }
 });
 
+test('prepareGoalSession prelaunches the configured primary app and stores the launch summary', async () => {
+  const deviceActions: unknown[] = [];
+  const dependencies = createDependencies({
+    availableApps: [
+      { packageName: 'org.wikipedia', name: 'Wikipedia' },
+    ],
+    deviceActions,
+  });
+
+  const session = await prepareGoalSession(
+    {
+      platform: PLATFORM_ANDROID,
+      primaryApp: {
+        platform: PLATFORM_ANDROID,
+        identifier: 'org.wikipedia',
+        identifierKind: 'packageName',
+      },
+    },
+    dependencies,
+  );
+
+  try {
+    assert.equal(session.primaryApp?.identifier, 'org.wikipedia');
+    assert.match(
+      session.launchSummary ?? '',
+      /already launched Android package "org\.wikipedia" before the goal started/,
+    );
+    assert.equal(deviceActions.length, 1);
+    assert.ok(deviceActions[0] instanceof LaunchAppAction);
+    assert.equal(
+      (deviceActions[0] as LaunchAppAction).shouldUninstallBeforeLaunch,
+      false,
+    );
+  } finally {
+    await session.cleanup();
+  }
+});
+
+test('prepareGoalSession fails when the configured primary app is not installed', async () => {
+  const dependencies = createDependencies({
+    availableApps: [],
+  });
+
+  await assert.rejects(
+    () =>
+      prepareGoalSession(
+        {
+          platform: PLATFORM_ANDROID,
+          primaryApp: {
+            platform: PLATFORM_ANDROID,
+            identifier: 'org.wikipedia',
+            identifierKind: 'packageName',
+          },
+        },
+        dependencies,
+      ),
+    /Android package "org\.wikipedia" is not installed on the selected device/,
+  );
+});
+
 test('prepareGoalSession logs a compact summary when one target is auto-selected', async () => {
   const androidEntry = createInventoryEntryFromDevice(createAndroidDeviceInfo());
   const shutdownEntry = createStartableIOSEntry();
@@ -610,6 +701,60 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
     await session.cleanup();
     assert.equal(cleanupCalls, 1);
   }
+});
+
+test('executeGoalOnSession forwards the prelaunch summary and primary app identifier to the executor', async () => {
+  let capturedConfig:
+    | {
+        preContext?: string;
+        primaryAppIdentifier?: string;
+      }
+    | undefined;
+  const dependencies = createDependencies({});
+  dependencies.createExecutor = (params) => {
+    capturedConfig = {
+      preContext: params.preContext,
+      primaryAppIdentifier: params.primaryAppIdentifier,
+    };
+    return {
+      abort() {},
+      async executeGoal() {
+        return createAndroidGoalResult();
+      },
+    };
+  };
+
+  const session = {
+    platform: 'android' as const,
+    deviceInfo: {} as never,
+    deviceNode: {} as never,
+    device: {} as never,
+    primaryApp: {
+      platform: 'android' as const,
+      identifier: 'org.wikipedia',
+      identifierKind: 'packageName' as const,
+    },
+    launchSummary: 'The CLI already launched Android package "org.wikipedia".',
+    async cleanup() {
+      return undefined;
+    },
+  };
+
+  await executeGoalOnSession(
+    session,
+    {
+      goal: 'Spec 1',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4.1',
+    },
+    dependencies,
+  );
+
+  assert.deepEqual(capturedConfig, {
+    preContext: 'The CLI already launched Android package "org.wikipedia".',
+    primaryAppIdentifier: 'org.wikipedia',
+  });
 });
 
 test('runGoal still performs isolated setup and cleanup for single-spec execution', async () => {

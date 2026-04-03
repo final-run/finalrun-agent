@@ -16,7 +16,7 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
-  configYaml?: string;
+  configYaml?: string | null;
   specLines?: string[];
   specs?: Record<string, string>;
   suites?: Record<string, string>;
@@ -34,8 +34,9 @@ function createTempWorkspace(params?: {
     fs.mkdirSync(suitesDir, { recursive: true });
   }
 
-  if (params?.configYaml !== undefined) {
-    fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), params.configYaml, 'utf-8');
+  const configYaml = buildWorkspaceConfigYaml(params?.configYaml);
+  if (configYaml !== undefined) {
+    fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), configYaml, 'utf-8');
   }
 
   const specs = params?.specs ?? {
@@ -62,6 +63,22 @@ function createTempWorkspace(params?: {
   }
 
   return rootDir;
+}
+
+function buildWorkspaceConfigYaml(configYaml?: string | null): string | undefined {
+  if (configYaml === null) {
+    return undefined;
+  }
+
+  const defaultAppConfig = ['app:', '  android:', '    packageName: org.wikipedia'].join('\n');
+  if (configYaml === undefined) {
+    return `${defaultAppConfig}\n`;
+  }
+  if (/^app:/m.test(configYaml)) {
+    return configYaml;
+  }
+  const trimmedConfig = configYaml.trimEnd();
+  return `${trimmedConfig}\n${defaultAppConfig}\n`;
 }
 
 function runCli(args: string[], cwd: string, envOverrides?: NodeJS.ProcessEnv) {
@@ -156,6 +173,7 @@ test('finalrun check works without --env when dev.yaml exists', async () => {
   try {
     const result = runCli(['check'], rootDir);
     assert.equal(result.status, 0);
+    assert.match(result.stdout, /Using Android package: org\.wikipedia/);
     assert.match(result.stdout, /using env dev\./);
     assert.equal(result.stderr, '');
   } finally {
@@ -870,6 +888,7 @@ test('finalrun test prints device setup failures raw and does not create a run',
       },
     );
     assert.equal(result.status, 1);
+    assert.match(result.stdout, /Using Android package: org\.wikipedia/);
     assert.match(result.stderr, /Run setup failed before execution:/);
     assert.match(result.stderr, /No runnable devices or startable targets were found\./);
     assertNoRunOutput(result);

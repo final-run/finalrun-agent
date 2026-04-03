@@ -1,6 +1,11 @@
 import { type LoadedRepoTestSuite, type LoadedRepoTestSpec, type RunTargetRecord } from '@finalrun/common';
 import { CliEnv } from './env.js';
 import {
+  resolveAppOverrideIdentifier,
+  resolvePrimaryAppConfig,
+  type ResolvedPrimaryAppConfig,
+} from './appConfig.js';
+import {
   loadEnvironmentConfig,
   loadTestSpec,
   loadTestSuite,
@@ -9,6 +14,7 @@ import {
 import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
 import {
   ensureWorkspaceDirectories,
+  loadWorkspaceConfig,
   resolveWorkspace,
   resolveConfiguredEnvironmentFile,
   resolveSuiteManifestPath,
@@ -37,6 +43,7 @@ export interface CheckRunnerResult {
   specs: LoadedRepoTestSpec[];
   target: RunTargetRecord;
   suite?: LoadedRepoTestSuite;
+  resolvedApp: ResolvedPrimaryAppConfig;
   appOverride?: AppOverrideValidationResult;
 }
 
@@ -45,6 +52,7 @@ export async function runCheck(
 ): Promise<CheckRunnerResult> {
   const workspace = await resolveWorkspace(options.cwd);
   await ensureWorkspaceDirectories(workspace);
+  const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
   const resolvedEnvironment = await resolveConfiguredEnvironmentFile(
     workspace,
     options.envName,
@@ -83,9 +91,22 @@ export async function runCheck(
     }),
   );
 
-  const appOverride = options.appPath
+  const validatedAppOverride = options.appPath
     ? await validateAppOverride(options.appPath, options.platform)
     : undefined;
+  const appOverride = validatedAppOverride
+    ? {
+        ...validatedAppOverride,
+        resolvedIdentifier: await resolveAppOverrideIdentifier(validatedAppOverride),
+      }
+    : undefined;
+  const resolvedApp = resolvePrimaryAppConfig({
+    workspaceApp: workspaceConfig.app,
+    environmentApp: environment.config.app,
+    envName: environment.envName,
+    requestedPlatform: options.platform,
+    appOverride,
+  });
 
   return {
     workspace,
@@ -93,6 +114,7 @@ export async function runCheck(
     specs,
     target: resolvedRunTarget.target,
     suite: resolvedRunTarget.suite,
+    resolvedApp,
     appOverride,
   };
 }

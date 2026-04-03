@@ -10,10 +10,11 @@ import type {
   RuntimeBindings,
   SecretReference,
 } from '@finalrun/common';
+import { readRepoAppConfig } from './appConfig.js';
 import { sanitizeSpecId } from './workspace.js';
 import { CliEnv } from './env.js';
 
-const ENV_TOP_LEVEL_KEYS = new Set(['secrets', 'variables']);
+const ENV_TOP_LEVEL_KEYS = new Set(['app', 'secrets', 'variables']);
 const SPEC_TOP_LEVEL_KEYS = new Set([
   'name',
   'description',
@@ -42,6 +43,7 @@ export async function loadEnvironmentConfig(
     return {
       envName,
       config: {
+        app: undefined,
         secrets: {},
         variables: {},
       },
@@ -68,6 +70,7 @@ export async function loadEnvironmentConfig(
     envName,
     envPath,
     config: {
+      app: readRepoAppConfig(parsed['app'], `${envPath} app`),
       secrets: Object.fromEntries(
         secrets.references.map((entry) => [entry.key, `\${${entry.envVar}}`]),
       ),
