@@ -1,4 +1,3 @@
-// Port of goal_executor/lib/src/HeadlessActionExecutor.dart
 // Executes individual device actions: ground → coordinates → execute on device.
 
 import { v4 as uuidv4 } from 'uuid';
@@ -118,7 +117,6 @@ class TimedActionPhaseFailure extends Error {
 /**
  * Executes individual actions: ground UI element → compute coordinates → device action.
  *
- * Dart equivalent: HeadlessActionExecutor in goal_executor/lib/src/HeadlessActionExecutor.dart
  */
 export class HeadlessActionExecutor {
   private _agent: Agent;

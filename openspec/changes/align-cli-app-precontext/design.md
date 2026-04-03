@@ -1,6 +1,6 @@
 ## Context
 
-The CLI already has most of the plumbing needed to support Dart-style app context, but the pieces are disconnected:
+The CLI already has most of the plumbing needed to support session-scoped app context, but the pieces are disconnected:
 
 - `runTests(...)` creates one shared `GoalSession` and reuses it across all selected specs.
 - `prepareGoalSession(...)` installs an explicit `--app` override once after driver connection.
@@ -8,11 +8,11 @@ The CLI already has most of the plumbing needed to support Dart-style app contex
 - `HeadlessGoalExecutor` does not pass either field today.
 - The only app data recorded in CLI runs is report metadata such as `"repo app"` or the override file name, which is not enough to guide planner behavior.
 
-The Dart stack solves this at the session layer, not inside the launch grounder. It auto-launches the configured app before the AI goal loop, stores the launch summary on session state, and passes that summary into planner `pre_context`. The launch action still exists for explicit restarts or cross-app flows, but the planner starts from a known app-under-test state.
+The runtime should solve this at the session layer, not inside the launch grounder. It should auto-launch the configured app before the AI goal loop, store the launch summary on session state, and pass that summary into planner `pre_context`. The launch action still exists for explicit restarts or cross-app flows, but the planner starts from a known app-under-test state.
 
 The TypeScript repo has two extra constraints:
 
-- There is no existing structured workspace app model analogous to Dart `App` / `AppUpload`.
+- There is no existing structured workspace app model or upload metadata source for repo-local runs.
 - CLI app overrides are currently file-path based, and install methods only return success/failure instead of a resolved package name or bundle identifier.
 
 ## Goals / Non-Goals
@@ -23,14 +23,14 @@ The TypeScript repo has two extra constraints:
 - Pre-launch the primary app once before the first AI goal when the run can resolve app identity safely.
 - Pass launch summary as planner `preContext` and optional app knowledge as planner `appKnowledge`.
 - Preserve explicit `launch_app` behavior for tests that intentionally request restart, clean state, or permission changes.
-- Align default relaunch semantics for a known device-installed primary app with the Dart flow by avoiding uninstall-and-reinstall unless explicitly requested.
+- Align default relaunch semantics for a known device-installed primary app with the bootstrap flow by avoiding uninstall-and-reinstall unless explicitly requested.
 - Record the resolved primary app identity in run artifacts for debugging and report clarity.
 
 **Non-Goals:**
 
 - Introduce a full multi-app orchestration system for YAML tests.
 - Change YAML `setup:` into a separately executed setup phase.
-- Add a UI/editor app registry like the Dart product.
+- Add a UI/editor app registry.
 - Make primary app context mandatory for all runs. Runs without a resolvable primary app should continue to work as they do now.
 
 ## Decisions
@@ -52,7 +52,7 @@ The context should contain at least:
 
 Why this approach:
 
-- It matches the Dart placement of state on session, which is where shared test-run execution context already lives.
+- It keeps state on the shared session, which is where test-run execution context already lives.
 - It avoids pushing CLI-specific lifecycle concerns into `HeadlessActionExecutor`, which should remain action-focused.
 - It fits the existing TS architecture because `runTests(...)` already reuses one `GoalSession` across specs.
 
@@ -69,7 +69,7 @@ The CLI will bootstrap-launch the primary app before the first spec's AI goal be
 
 Why this approach:
 
-- It reproduces the Dart execution order closely.
+- It keeps execution order explicit and predictable.
 - It gives the planner a truthful description of actions already performed before iteration 1.
 - It reduces redundant launch decisions for common "open the app" phrasing without removing the ability to relaunch explicitly later.
 
@@ -97,12 +97,12 @@ Alternatives considered:
 
 ### 4. Treat primary-app relaunches as device-app launches, not reinstall workflows
 
-When the planner later emits `launch_app` for the already-known primary app and does not explicitly request reinstall semantics, the runtime should default `shouldUninstallBeforeLaunch` to `false`, matching the Dart device-app flow.
+When the planner later emits `launch_app` for the already-known primary app and does not explicitly request reinstall semantics, the runtime should default `shouldUninstallBeforeLaunch` to `false`, matching the new device-app bootstrap flow.
 
 Why this approach:
 
 - The app is already installed during CLI bootstrap setup.
-- Reinstall-by-default increases run time, introduces extra failure modes, and diverges from Dart behavior.
+- Reinstall-by-default increases run time and introduces extra failure modes.
 - It better matches user intent for steps like "open the app again" or "return to the app."
 
 Alternatives considered:

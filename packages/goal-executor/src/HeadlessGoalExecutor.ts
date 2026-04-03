@@ -1,4 +1,3 @@
-// Port of goal_executor/lib/src/HeadlessGoalExecutor.dart
 // The main loop: screenshot → plan → act → repeat.
 
 import { v4 as uuidv4 } from 'uuid';
@@ -156,7 +155,6 @@ const MAX_CONSECUTIVE_TRANSIENT_CAPTURE_FAILURES = 2;
  *   4. Record result, check for done/failure
  *   5. Repeat
  *
- * Dart equivalent: HeadlessGoalExecutor in goal_executor/lib/src/HeadlessGoalExecutor.dart
  */
 export class HeadlessGoalExecutor {
   private _config: GoalExecutorConfig;
@@ -193,8 +191,6 @@ export class HeadlessGoalExecutor {
 
   /**
    * Execute the goal. Main entry point.
-   *
-   * Dart: Future<void> executeGoal(...)
    */
   async executeGoal(
     onProgress?: GoalProgressCallback,

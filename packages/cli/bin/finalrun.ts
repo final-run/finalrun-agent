@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Port of mobile_cli/bin/mobile_cli.dart
 // CLI entry point — parses arguments and runs the goal.
 
 import * as path from 'node:path';

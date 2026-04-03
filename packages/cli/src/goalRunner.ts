@@ -1,4 +1,3 @@
-// Port of mobile_cli/lib/goal_runner.dart
 // Orchestrates: detect device → set up → execute goal.
 
 import {
@@ -449,7 +448,6 @@ export async function executeGoalOnSession(
 /**
  * Top-level orchestrator for running a goal from the CLI.
  *
- * Dart equivalent: runGoal() in mobile_cli/lib/goal_runner.dart
  */
 export async function runGoal(
   config: GoalRunnerConfig,
