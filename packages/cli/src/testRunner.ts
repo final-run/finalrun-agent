@@ -17,8 +17,8 @@ import {
   type GoalSession,
 } from './goalRunner.js';
 import {
-  formatResolvedPrimaryAppSummary,
-  type ResolvedPrimaryAppConfig,
+  formatResolvedAppSummary,
+  type ResolvedAppConfig,
 } from './appConfig.js';
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileSpecToGoal } from './specCompiler.js';
@@ -173,7 +173,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
       const requestedPlatforms = resolveTestRequestedPlatforms(
         checked.resolvedApp.platform,
       );
-      Logger.i(formatResolvedPrimaryAppSummary(checked.resolvedApp));
+      Logger.i(formatResolvedAppSummary(checked.resolvedApp));
       const preflight =
         process.env[CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR] === '1'
           ? {
@@ -206,7 +206,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
       goalSession = await testRunnerDependencies.prepareGoalSession({
         platform: checked.resolvedApp.platform,
         appOverridePath: checked.appOverride?.appPath,
-        primaryApp: checked.resolvedApp,
+        app: checked.resolvedApp,
       });
     } catch (error) {
       if (error instanceof PreExecutionFailureError) {
@@ -488,7 +488,7 @@ function buildModelContext(
 }
 
 function buildAppContext(
-  resolvedApp: ResolvedPrimaryAppConfig,
+  resolvedApp: ResolvedAppConfig,
   appOverridePath?: string,
 ): {
   source: 'config';

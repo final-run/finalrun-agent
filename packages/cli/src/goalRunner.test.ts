@@ -405,7 +405,7 @@ test('prepareGoalSession installs the Android app override once during shared se
   }
 });
 
-test('prepareGoalSession prelaunches the configured primary app and stores the launch summary', async () => {
+test('prepareGoalSession prelaunches the configured app and stores the launch summary', async () => {
   const deviceActions: unknown[] = [];
   const dependencies = createDependencies({
     availableApps: [
@@ -417,7 +417,7 @@ test('prepareGoalSession prelaunches the configured primary app and stores the l
   const session = await prepareGoalSession(
     {
       platform: PLATFORM_ANDROID,
-      primaryApp: {
+      app: {
         platform: PLATFORM_ANDROID,
         identifier: 'org.wikipedia',
         identifierKind: 'packageName',
@@ -427,7 +427,7 @@ test('prepareGoalSession prelaunches the configured primary app and stores the l
   );
 
   try {
-    assert.equal(session.primaryApp?.identifier, 'org.wikipedia');
+    assert.equal(session.app?.identifier, 'org.wikipedia');
     assert.match(
       session.launchSummary ?? '',
       /already launched Android package "org\.wikipedia" before the goal started/,
@@ -443,7 +443,7 @@ test('prepareGoalSession prelaunches the configured primary app and stores the l
   }
 });
 
-test('prepareGoalSession fails when the configured primary app is not installed', async () => {
+test('prepareGoalSession fails when the configured app is not installed', async () => {
   const dependencies = createDependencies({
     availableApps: [],
   });
@@ -453,7 +453,7 @@ test('prepareGoalSession fails when the configured primary app is not installed'
       prepareGoalSession(
         {
           platform: PLATFORM_ANDROID,
-          primaryApp: {
+          app: {
             platform: PLATFORM_ANDROID,
             identifier: 'org.wikipedia',
             identifierKind: 'packageName',
@@ -703,18 +703,18 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
   }
 });
 
-test('executeGoalOnSession forwards the prelaunch summary and primary app identifier to the executor', async () => {
+test('executeGoalOnSession forwards the prelaunch summary and app identifier to the executor', async () => {
   let capturedConfig:
     | {
         preContext?: string;
-        primaryAppIdentifier?: string;
+        appIdentifier?: string;
       }
     | undefined;
   const dependencies = createDependencies({});
   dependencies.createExecutor = (params) => {
     capturedConfig = {
       preContext: params.preContext,
-      primaryAppIdentifier: params.primaryAppIdentifier,
+      appIdentifier: params.appIdentifier,
     };
     return {
       abort() {},
@@ -729,7 +729,7 @@ test('executeGoalOnSession forwards the prelaunch summary and primary app identi
     deviceInfo: {} as never,
     deviceNode: {} as never,
     device: {} as never,
-    primaryApp: {
+    app: {
       platform: 'android' as const,
       identifier: 'org.wikipedia',
       identifierKind: 'packageName' as const,
@@ -753,7 +753,7 @@ test('executeGoalOnSession forwards the prelaunch summary and primary app identi
 
   assert.deepEqual(capturedConfig, {
     preContext: 'The CLI already launched Android package "org.wikipedia".',
-    primaryAppIdentifier: 'org.wikipedia',
+    appIdentifier: 'org.wikipedia',
   });
 });
 

@@ -2,8 +2,8 @@ import { type LoadedRepoTestSuite, type LoadedRepoTestSpec, type RunTargetRecord
 import { CliEnv } from './env.js';
 import {
   resolveAppOverrideIdentifier,
-  resolvePrimaryAppConfig,
-  type ResolvedPrimaryAppConfig,
+  resolveAppConfig,
+  type ResolvedAppConfig,
 } from './appConfig.js';
 import {
   loadEnvironmentConfig,
@@ -43,7 +43,7 @@ export interface CheckRunnerResult {
   specs: LoadedRepoTestSpec[];
   target: RunTargetRecord;
   suite?: LoadedRepoTestSuite;
-  resolvedApp: ResolvedPrimaryAppConfig;
+  resolvedApp: ResolvedAppConfig;
   appOverride?: AppOverrideValidationResult;
 }
 
@@ -100,7 +100,7 @@ export async function runCheck(
         resolvedIdentifier: await resolveAppOverrideIdentifier(validatedAppOverride),
       }
     : undefined;
-  const resolvedApp = resolvePrimaryAppConfig({
+  const resolvedApp = resolveAppConfig({
     workspaceApp: workspaceConfig.app,
     environmentApp: environment.config.app,
     envName: environment.envName,

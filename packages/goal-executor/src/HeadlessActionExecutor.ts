@@ -123,21 +123,21 @@ export class HeadlessActionExecutor {
   private _aiAgent: AIAgent;
   private _visualGrounder: VisualGrounder;
   private _platform: string;
-  private _primaryAppIdentifier?: string;
+  private _appIdentifier?: string;
   private _runtimeBindings?: RuntimeBindings;
 
   constructor(params: {
     agent: Agent;
     aiAgent: AIAgent;
     platform: string;
-    primaryAppIdentifier?: string;
+    appIdentifier?: string;
     runtimeBindings?: RuntimeBindings;
   }) {
     this._agent = params.agent;
     this._aiAgent = params.aiAgent;
     this._visualGrounder = new VisualGrounder(params.aiAgent);
     this._platform = params.platform;
-    this._primaryAppIdentifier = params.primaryAppIdentifier;
+    this._appIdentifier = params.appIdentifier;
     this._runtimeBindings = params.runtimeBindings;
   }
 
@@ -563,7 +563,7 @@ export class HeadlessActionExecutor {
       allowAllPermissions: readOptionalBoolean(output, 'allowAllPermissions') ?? true,
       shouldUninstallBeforeLaunch:
         readOptionalBoolean(output, 'shouldUninstallBeforeLaunch') ??
-        (packageName === this._primaryAppIdentifier ? false : true),
+        (packageName === this._appIdentifier ? false : true),
       clearState: readOptionalBoolean(output, 'clearState') ?? false,
       stopAppBeforeLaunch: readOptionalBoolean(output, 'stopAppBeforeLaunch') ?? false,
       permissions: (output['permissions'] as Record<string, string>) ?? {},

@@ -17,7 +17,7 @@ const IOS_APP_KEYS = new Set(['name', 'bundleId']);
 
 type SupportedPlatform = typeof PLATFORM_ANDROID | typeof PLATFORM_IOS;
 
-export interface ResolvedPrimaryAppConfig {
+export interface ResolvedAppConfig {
   platform: SupportedPlatform;
   identifier: string;
   identifierKind: 'packageName' | 'bundleId';
@@ -59,13 +59,13 @@ export function readRepoAppConfig(
   };
 }
 
-export function resolvePrimaryAppConfig(params: {
+export function resolveAppConfig(params: {
   workspaceApp: RepoAppConfig | undefined;
   environmentApp?: RepoAppConfig;
   envName: string;
   requestedPlatform?: string;
   appOverride?: ValidatedAppOverrideLike;
-}): ResolvedPrimaryAppConfig {
+}): ResolvedAppConfig {
   const workspaceApp = params.workspaceApp;
   if (!workspaceApp?.android && !workspaceApp?.ios) {
     throw new Error(
@@ -127,7 +127,7 @@ export function resolvePrimaryAppConfig(params: {
   return resolved;
 }
 
-export function formatResolvedPrimaryAppSummary(app: ResolvedPrimaryAppConfig): string {
+export function formatResolvedAppSummary(app: ResolvedAppConfig): string {
   return app.platform === PLATFORM_ANDROID
     ? `Using Android package: ${app.identifier}`
     : `Using iOS bundle ID: ${app.identifier}`;
@@ -219,7 +219,7 @@ function resolveSelectedPlatform(params: {
 
 function validateResolvedOverrideMatch(
   appOverride: ValidatedAppOverrideLike | undefined,
-  resolvedApp: ResolvedPrimaryAppConfig,
+  resolvedApp: ResolvedAppConfig,
 ): void {
   if (!appOverride) {
     return;

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   resolveAppOverrideIdentifier,
-  resolvePrimaryAppConfig,
+  resolveAppConfig,
 } from './appConfig.js';
 
 async function withEnv<T>(
@@ -36,10 +36,10 @@ async function withEnv<T>(
   }
 }
 
-test('resolvePrimaryAppConfig rejects conflicting requested and inferred platforms', () => {
+test('resolveAppConfig rejects conflicting requested and inferred platforms', () => {
   assert.throws(
     () =>
-      resolvePrimaryAppConfig({
+      resolveAppConfig({
         workspaceApp: {
           android: { packageName: 'org.wikipedia' },
           ios: { bundleId: 'org.wikipedia' },

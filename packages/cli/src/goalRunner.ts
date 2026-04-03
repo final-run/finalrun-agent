@@ -20,7 +20,7 @@ import {
   type GoalRecordingResult,
 } from '@finalrun/goal-executor';
 import type { GoalResult } from '@finalrun/goal-executor';
-import type { ResolvedPrimaryAppConfig } from './appConfig.js';
+import type { ResolvedAppConfig } from './appConfig.js';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
   type DeviceSelectionIO,
@@ -62,7 +62,7 @@ export interface GoalRunnerConfig {
   debug?: boolean;
   platform?: string;
   appOverridePath?: string;
-  primaryApp?: ResolvedPrimaryAppConfig;
+  app?: ResolvedAppConfig;
   runtimeBindings?: RuntimeBindings;
   abortSignal?: AbortSignal;
   recording?: {
@@ -76,7 +76,7 @@ export interface GoalRunnerConfig {
 export interface GoalSessionConfig {
   platform?: string;
   appOverridePath?: string;
-  primaryApp?: ResolvedPrimaryAppConfig;
+  app?: ResolvedAppConfig;
 }
 
 export interface GoalRunnerDependencies {
@@ -95,7 +95,7 @@ export interface GoalSession {
   device: GoalRunnerDevice;
   deviceInfo: DeviceInfo;
   platform: string;
-  primaryApp?: ResolvedPrimaryAppConfig;
+  app?: ResolvedAppConfig;
   launchSummary?: string;
   cleanup(): Promise<void>;
 }
@@ -252,8 +252,8 @@ export async function prepareGoalSession(
     }
 
     let launchSummary: string | undefined;
-    if (config.primaryApp) {
-      launchSummary = await ensurePrimaryAppReady(device, config.primaryApp);
+    if (config.app) {
+      launchSummary = await ensureAppReady(device, config.app);
     }
 
     return {
@@ -261,7 +261,7 @@ export async function prepareGoalSession(
       device,
       deviceInfo,
       platform,
-      primaryApp: config.primaryApp,
+      app: config.app,
       launchSummary,
       cleanup,
     };
@@ -305,7 +305,7 @@ export async function executeGoalOnSession(
       agent: session.device,
       aiAgent,
       preContext: session.launchSummary,
-      primaryAppIdentifier: session.primaryApp?.identifier,
+      appIdentifier: session.app?.identifier,
       runtimeBindings: config.runtimeBindings,
     });
     if (config.abortSignal?.aborted) {
@@ -458,7 +458,7 @@ export async function runGoal(
     {
       platform: config.platform,
       appOverridePath: config.appOverridePath,
-      primaryApp: config.primaryApp,
+      app: config.app,
     },
     dependencies,
   );
@@ -474,41 +474,41 @@ export async function runGoal(
   }
 }
 
-async function ensurePrimaryAppReady(
+async function ensureAppReady(
   device: GoalRunnerDevice,
-  primaryApp: ResolvedPrimaryAppConfig,
+  app: ResolvedAppConfig,
 ): Promise<string> {
   const appListResponse = await device.executeAction(
     new DeviceActionRequest({
-      requestId: `prelaunch-app-list-${primaryApp.platform}`,
+      requestId: `prelaunch-app-list-${app.platform}`,
       action: new GetAppListAction(),
       timeout: 10,
     }),
   );
   if (!appListResponse.success) {
     throw new Error(
-      `Failed to inspect installed apps before launching ${formatPrimaryAppReference(primaryApp)}: ${appListResponse.message ?? 'unknown app list error'}`,
+      `Failed to inspect installed apps before launching ${formatAppReference(app)}: ${appListResponse.message ?? 'unknown app list error'}`,
     );
   }
 
   const installedApps =
     ((appListResponse.data?.['apps'] as Array<{ packageName: string; name: string }>) ?? []);
-  const isInstalled = installedApps.some((app) => app.packageName === primaryApp.identifier);
+  const isInstalled = installedApps.some((installedApp) => installedApp.packageName === app.identifier);
   if (!isInstalled) {
     throw new Error(
-      `${formatPrimaryAppReference(primaryApp)} is not installed on the selected device. Pass --app <path> to install it or install it manually before running FinalRun.`,
+      `${formatAppReference(app)} is not installed on the selected device. Pass --app <path> to install it or install it manually before running FinalRun.`,
     );
   }
 
-  Logger.i(`Prelaunching ${formatPrimaryAppReference(primaryApp)}...`);
+  Logger.i(`Prelaunching ${formatAppReference(app)}...`);
   const launchResponse = await device.executeAction(
     new DeviceActionRequest({
-      requestId: `prelaunch-launch-${primaryApp.platform}`,
+      requestId: `prelaunch-launch-${app.platform}`,
       action: new LaunchAppAction({
         appUpload: new AppUpload({
           id: '',
-          platform: primaryApp.platform,
-          packageName: primaryApp.identifier,
+          platform: app.platform,
+          packageName: app.identifier,
         }),
         allowAllPermissions: true,
         shouldUninstallBeforeLaunch: false,
@@ -520,22 +520,22 @@ async function ensurePrimaryAppReady(
   );
   if (!launchResponse.success) {
     throw new Error(
-      `Failed to launch ${formatPrimaryAppReference(primaryApp)} before execution: ${launchResponse.message ?? 'unknown launch error'}`,
+      `Failed to launch ${formatAppReference(app)} before execution: ${launchResponse.message ?? 'unknown launch error'}`,
     );
   }
 
   return [
-    `The CLI already launched ${formatPrimaryAppReference(primaryApp)} before the goal started.`,
+    `The CLI already launched ${formatAppReference(app)} before the goal started.`,
     launchResponse.message ? `Driver response: ${launchResponse.message}` : undefined,
   ]
     .filter((line): line is string => Boolean(line))
     .join(' ');
 }
 
-function formatPrimaryAppReference(primaryApp: ResolvedPrimaryAppConfig): string {
-  return primaryApp.platform === PLATFORM_ANDROID
-    ? `Android package "${primaryApp.identifier}"`
-    : `iOS bundle ID "${primaryApp.identifier}"`;
+function formatAppReference(app: ResolvedAppConfig): string {
+  return app.platform === PLATFORM_ANDROID
+    ? `Android package "${app.identifier}"`
+    : `iOS bundle ID "${app.identifier}"`;
 }
 
 function createRecordingFailureResult(params: {

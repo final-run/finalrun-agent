@@ -41,7 +41,7 @@ export interface GoalExecutorConfig {
   aiAgent: AIAgent;
   preContext?: string;
   appKnowledge?: string;
-  primaryAppIdentifier?: string;
+  appIdentifier?: string;
   runtimeBindings?: RuntimeBindings;
 }
 
@@ -168,7 +168,7 @@ export class HeadlessGoalExecutor {
       agent: config.agent,
       aiAgent: config.aiAgent,
       platform: config.platform,
-      primaryAppIdentifier: config.primaryAppIdentifier,
+      appIdentifier: config.appIdentifier,
       runtimeBindings: config.runtimeBindings,
     });
   }

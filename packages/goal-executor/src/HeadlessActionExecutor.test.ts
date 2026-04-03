@@ -289,7 +289,7 @@ test('HeadlessActionExecutor does not default primary app relaunches to reinstal
     agent,
     aiAgent,
     platform: 'android',
-    primaryAppIdentifier: 'org.wikimedia.wikipedia',
+    appIdentifier: 'org.wikimedia.wikipedia',
   });
 
   const result = await executor.executeAction({
@@ -329,7 +329,7 @@ test('HeadlessActionExecutor ignores malformed grounder boolean flags and preser
     agent,
     aiAgent,
     platform: 'android',
-    primaryAppIdentifier: 'org.wikimedia.wikipedia',
+    appIdentifier: 'org.wikimedia.wikipedia',
   });
 
   const result = await executor.executeAction({
@@ -370,7 +370,7 @@ test('HeadlessActionExecutor honors explicit grounder boolean flags for app laun
     agent,
     aiAgent,
     platform: 'android',
-    primaryAppIdentifier: 'org.wikimedia.wikipedia',
+    appIdentifier: 'org.wikimedia.wikipedia',
   });
 
   const result = await executor.executeAction({

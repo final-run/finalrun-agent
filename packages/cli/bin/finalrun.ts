@@ -4,7 +4,7 @@
 import * as path from 'node:path';
 import { Command } from 'commander';
 import { Logger, LogLevel } from '@finalrun/common';
-import { formatResolvedPrimaryAppSummary } from '../src/appConfig.js';
+import { formatResolvedAppSummary } from '../src/appConfig.js';
 import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
@@ -66,7 +66,7 @@ program
         result.environment.envName === 'none'
           ? 'using no env bindings.'
           : `using env ${result.environment.envName}.`;
-      console.log(formatResolvedPrimaryAppSummary(result.resolvedApp));
+      console.log(formatResolvedAppSummary(result.resolvedApp));
       console.log(
         `Validated ${result.specs.length} spec(s) in ${result.workspace.testsDir} ${envSummary}`,
       );
