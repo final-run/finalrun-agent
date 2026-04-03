@@ -562,12 +562,12 @@ export class HeadlessActionExecutor {
 
     const action = new LaunchAppAction({
       appUpload: new AppUpload({ id: '', platform: this._platform, packageName }),
-      allowAllPermissions: (output['allowAllPermissions'] as boolean) ?? true,
+      allowAllPermissions: readOptionalBoolean(output, 'allowAllPermissions') ?? true,
       shouldUninstallBeforeLaunch:
-        (output['shouldUninstallBeforeLaunch'] as boolean | undefined) ??
+        readOptionalBoolean(output, 'shouldUninstallBeforeLaunch') ??
         (packageName === this._primaryAppIdentifier ? false : true),
-      clearState: (output['clearState'] as boolean) ?? false,
-      stopAppBeforeLaunch: (output['stopAppBeforeLaunch'] as boolean) ?? false,
+      clearState: readOptionalBoolean(output, 'clearState') ?? false,
+      stopAppBeforeLaunch: readOptionalBoolean(output, 'stopAppBeforeLaunch') ?? false,
       permissions: (output['permissions'] as Record<string, string>) ?? {},
     });
 
@@ -1163,4 +1163,12 @@ export class HeadlessActionExecutor {
   private _delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+}
+
+function readOptionalBoolean(
+  record: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
 }

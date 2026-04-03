@@ -179,15 +179,26 @@ function resolveSelectedPlatform(params: {
     '--platform',
     { allowUndefined: true },
   );
+  const inferredPlatform = normalizePlatform(
+    params.inferredPlatform,
+    'App override platform',
+    { allowUndefined: true },
+  );
+
+  if (
+    requestedPlatform &&
+    inferredPlatform &&
+    requestedPlatform !== inferredPlatform
+  ) {
+    throw new Error(
+      formatOverridePlatformMismatch(inferredPlatform, requestedPlatform),
+    );
+  }
+
   if (requestedPlatform) {
     return requestedPlatform;
   }
 
-  const inferredPlatform = normalizePlatform(
-    params.inferredPlatform,
-    'app override platform',
-    { allowUndefined: true },
-  );
   if (inferredPlatform) {
     return inferredPlatform;
   }
@@ -210,12 +221,21 @@ function validateResolvedOverrideMatch(
   appOverride: ValidatedAppOverrideLike | undefined,
   resolvedApp: ResolvedPrimaryAppConfig,
 ): void {
-  if (!appOverride?.resolvedIdentifier) {
+  if (!appOverride) {
     return;
   }
 
-  const overridePlatform = normalizePlatform(appOverride.inferredPlatform, 'App override platform');
+  const overridePlatform = normalizePlatform(
+    appOverride.inferredPlatform,
+    'App override platform',
+  )!;
   if (overridePlatform !== resolvedApp.platform) {
+    throw new Error(
+      formatOverridePlatformMismatch(overridePlatform, resolvedApp.platform),
+    );
+  }
+
+  if (!appOverride.resolvedIdentifier) {
     return;
   }
 
@@ -346,21 +366,26 @@ async function findIOSInfoPlist(appPath: string): Promise<string | null> {
 
 async function resolveAndroidToolCandidates(toolName: 'aapt' | 'apkanalyzer'): Promise<string[]> {
   const candidates: string[] = [];
-  const androidSdkRoot = process.env['ANDROID_HOME'] ?? process.env['ANDROID_SDK_ROOT'];
+  const androidSdkRoots = [
+    process.env['ANDROID_HOME'],
+    process.env['ANDROID_SDK_ROOT'],
+  ].filter((value): value is string => Boolean(value));
 
-  if (toolName === 'aapt' && androidSdkRoot) {
-    const buildToolsDir = path.join(androidSdkRoot, 'build-tools');
-    const versions = await fs.readdir(buildToolsDir).catch(() => []);
-    versions
-      .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
-      .forEach((version) => {
-        candidates.push(path.join(buildToolsDir, version, toolName));
-      });
-  }
+  for (const androidSdkRoot of androidSdkRoots) {
+    if (toolName === 'aapt') {
+      const buildToolsDir = path.join(androidSdkRoot, 'build-tools');
+      const versions = await fs.readdir(buildToolsDir).catch(() => []);
+      versions
+        .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+        .forEach((version) => {
+          candidates.push(path.join(buildToolsDir, version, toolName));
+        });
+    }
 
-  if (toolName === 'apkanalyzer' && androidSdkRoot) {
-    candidates.push(path.join(androidSdkRoot, 'cmdline-tools', 'latest', 'bin', toolName));
-    candidates.push(path.join(androidSdkRoot, 'tools', 'bin', toolName));
+    if (toolName === 'apkanalyzer') {
+      candidates.push(path.join(androidSdkRoot, 'cmdline-tools', 'latest', 'bin', toolName));
+      candidates.push(path.join(androidSdkRoot, 'tools', 'bin', toolName));
+    }
   }
 
   const resolvedOnPath = await resolveOnPath(toolName);
@@ -404,6 +429,13 @@ async function dedupeExistingPaths(candidatePaths: string[]): Promise<string[]> 
 function formatExecError(commandPath: string, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return `${path.basename(commandPath)} failed: ${message}`;
+}
+
+function formatOverridePlatformMismatch(
+  overridePlatform: SupportedPlatform,
+  selectedPlatform: SupportedPlatform,
+): string {
+  return `App override platform is "${overridePlatform}", but the selected platform is "${selectedPlatform}".`;
 }
 
 async function pathExists(candidatePath: string): Promise<boolean> {
