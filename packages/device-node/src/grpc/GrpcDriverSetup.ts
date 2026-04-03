@@ -105,7 +105,13 @@ export class GrpcDriverSetup {
         runtime,
       });
     } catch (error) {
+      // Close the client only on error; on success path, client is wired into Device.runtime
+      // and must remain open for subsequent RPC calls (e.g., executeAction, getScreenshot)
       grpcClient.close();
+      Logger.e(
+        `GrpcDriverSetup: Error during device setup for ${deviceInfo.description}`,
+        error,
+      );
       throw error;
     }
   }

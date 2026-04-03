@@ -54,6 +54,7 @@ export class RecordingManager implements DeviceRecordingController {
   private readonly _recordingInfoMap = new Map<string, RecordingInfo>();
   private readonly _deviceToRecordingKeysMap = new Map<string, string[]>();
   private readonly _stoppedTestCases = new Set<string>();
+  private readonly _inFlightKeys = new Set<string>(); // Guards against concurrent starts for same key
   private readonly _providers: Map<string, RecordingProvider>;
   private readonly _cwdProvider: () => string;
 
@@ -80,95 +81,118 @@ export class RecordingManager implements DeviceRecordingController {
     );
 
     this._stoppedTestCases.delete(mapKey);
-    if (this._recordingProcessMap.has(mapKey)) {
+    
+    // In-flight guard: atomic check-and-reserve to prevent concurrent starts for same key
+    if (this._recordingProcessMap.has(mapKey) || this._inFlightKeys.has(mapKey)) {
+      Logger.w(
+        `RecordingManager: Recording already in progress or queued for test case: ${params.recordingRequest.testCaseId}`,
+      );
       return new DeviceNodeResponse({
         success: false,
         message: 'Recording already in progress for this test case',
       });
     }
-
-    const provider = this._providers.get(params.platform);
-    if (!provider) {
-      return new DeviceNodeResponse({
-        success: false,
-        message: `Screen recording is not configured for platform: ${params.platform}`,
-      });
-    }
-
-    const explicitOutputPath = params.recordingRequest.outputFilePath
-      ? path.resolve(params.recordingRequest.outputFilePath)
-      : undefined;
-    const recordingDir = explicitOutputPath
-      ? path.dirname(explicitOutputPath)
-      : path.resolve(this._cwdProvider(), provider.recordingFolder);
-    await fsp.mkdir(recordingDir, { recursive: true });
-
-    const sanitizedTestRunId = this._sanitizeForFilename(params.recordingRequest.testRunId);
-    const sanitizedTestCaseId = this._sanitizeForFilename(
-      params.recordingRequest.testCaseId,
-    );
-    const fallbackFileName =
-      `${sanitizedTestRunId}_${sanitizedTestCaseId}.${provider.fileExtension}`;
-    const filePath = explicitOutputPath ?? path.join(recordingDir, fallbackFileName);
-    const fileName = path.basename(filePath);
-
-    const recordingInfo = new RecordingInfo({
-      deviceId: params.deviceId,
-      fileName,
-      filePath,
-      testRunId: params.recordingRequest.testRunId,
-      testCaseId: params.recordingRequest.testCaseId,
-      platform: params.platform,
-      apiKey: params.recordingRequest.apiKey,
-    });
-    this._recordingInfoMap.set(mapKey, recordingInfo);
-    this._deviceToRecordingKeysMap.set(params.deviceId, [
-      ...(this._deviceToRecordingKeysMap.get(params.deviceId) ?? []),
-      mapKey,
-    ]);
-
+    
+    // Mark key as in-flight before any async operations
+    this._inFlightKeys.add(mapKey);
+    
     try {
-      const providerResult = await provider.startRecordingProcess({
-        deviceId: params.deviceId,
-        filePath,
-        recordingRequest: params.recordingRequest,
-        sdkVersion: params.sdkVersion,
-      });
-
-      if (!providerResult.response.success) {
+      // Clean up stale state if it exists
+      if (this._recordingInfoMap.has(mapKey)) {
+        Logger.w(
+          `RecordingManager: Cleaning up stale recording info for test case: ${params.recordingRequest.testCaseId}`,
+        );
         this._recordingInfoMap.delete(mapKey);
+        // Also clean device mapping to maintain consistency
         this._removeDeviceRecordingKey(params.deviceId, mapKey);
-        return providerResult.response;
       }
 
-      this._recordingProcessMap.set(mapKey, providerResult.process);
+      const provider = this._providers.get(params.platform);
+      if (!provider) {
+        return new DeviceNodeResponse({
+          success: false,
+          message: `Screen recording is not configured for platform: ${params.platform}`,
+        });
+      }
 
-      return new DeviceNodeResponse({
-        success: true,
-        message:
-          providerResult.response.message ??
-          `Recording started successfully for test case: ${params.recordingRequest.testCaseId}`,
-        data: {
-          fileName,
-          filePath,
-          platform: params.platform,
-          startedAt: recordingInfo.startTime.toISOString(),
-          ...(providerResult.platformMetadata
-            ? { platformMetadata: providerResult.platformMetadata }
-            : {}),
-        },
-      });
-    } catch (error) {
-      this._recordingInfoMap.delete(mapKey);
-      this._removeDeviceRecordingKey(params.deviceId, mapKey);
-      Logger.e(
-        `Failed to start recording for test case: ${params.recordingRequest.testCaseId}`,
-        error,
+      const explicitOutputPath = params.recordingRequest.outputFilePath
+        ? path.resolve(params.recordingRequest.outputFilePath)
+        : undefined;
+      const recordingDir = explicitOutputPath
+        ? path.dirname(explicitOutputPath)
+        : path.resolve(this._cwdProvider(), provider.recordingFolder);
+      await fsp.mkdir(recordingDir, { recursive: true });
+
+      const sanitizedTestRunId = this._sanitizeForFilename(params.recordingRequest.testRunId);
+      const sanitizedTestCaseId = this._sanitizeForFilename(
+        params.recordingRequest.testCaseId,
       );
-      return new DeviceNodeResponse({
-        success: false,
-        message: `Failed to start recording: ${this._formatError(error)}`,
+      const fallbackFileName =
+        `${sanitizedTestRunId}_${sanitizedTestCaseId}.${provider.fileExtension}`;
+      const filePath = explicitOutputPath ?? path.join(recordingDir, fallbackFileName);
+      const fileName = path.basename(filePath);
+
+      const recordingInfo = new RecordingInfo({
+        deviceId: params.deviceId,
+        fileName,
+        filePath,
+        testRunId: params.recordingRequest.testRunId,
+        testCaseId: params.recordingRequest.testCaseId,
+        platform: params.platform,
+        apiKey: params.recordingRequest.apiKey,
       });
+      this._recordingInfoMap.set(mapKey, recordingInfo);
+      this._deviceToRecordingKeysMap.set(params.deviceId, [
+        ...(this._deviceToRecordingKeysMap.get(params.deviceId) ?? []),
+        mapKey,
+      ]);
+
+      try {
+        const providerResult = await provider.startRecordingProcess({
+          deviceId: params.deviceId,
+          filePath,
+          recordingRequest: params.recordingRequest,
+          sdkVersion: params.sdkVersion,
+        });
+
+        if (!providerResult.response.success) {
+          this._recordingInfoMap.delete(mapKey);
+          this._removeDeviceRecordingKey(params.deviceId, mapKey);
+          return providerResult.response;
+        }
+
+        this._recordingProcessMap.set(mapKey, providerResult.process);
+
+        return new DeviceNodeResponse({
+          success: true,
+          message:
+            providerResult.response.message ??
+            `Recording started successfully for test case: ${params.recordingRequest.testCaseId}`,
+          data: {
+            fileName,
+            filePath,
+            platform: params.platform,
+            startedAt: recordingInfo.startTime.toISOString(),
+            ...(providerResult.platformMetadata
+              ? { platformMetadata: providerResult.platformMetadata }
+              : {}),
+          },
+        });
+      } catch (error) {
+        this._recordingInfoMap.delete(mapKey);
+        this._removeDeviceRecordingKey(params.deviceId, mapKey);
+        Logger.e(
+          `Failed to start recording for test case: ${params.recordingRequest.testCaseId}`,
+          error,
+        );
+        return new DeviceNodeResponse({
+          success: false,
+          message: `Failed to start recording: ${this._formatError(error)}`,
+        });
+      }
+    } finally {
+      // Always remove from in-flight when method completes
+      this._inFlightKeys.delete(mapKey);
     }
   }
 

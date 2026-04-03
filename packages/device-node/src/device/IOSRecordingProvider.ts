@@ -46,13 +46,14 @@ export class IOSRecordingProvider implements RecordingProvider {
     recordingRequest: RecordingRequest;
     sdkVersion?: string;
   }): Promise<RecordingProviderResult> {
+    let process: ChildProcess | undefined;
     try {
       const args = ['simctl', 'io', params.deviceId, 'recordVideo', params.filePath];
       Logger.i(
         `IOSRecordingProvider: Starting recording for device ${params.deviceId} with command: xcrun ${args.join(' ')}`,
       );
 
-      const process = this._spawnFn('xcrun', args, {
+      process = this._spawnFn('xcrun', args, {
         stdio: ['ignore', 'pipe', 'pipe'],
       }) as ChildProcess;
 
@@ -78,6 +79,12 @@ export class IOSRecordingProvider implements RecordingProvider {
         },
       };
     } catch (error) {
+      if (process) {
+        const killed = process.kill('SIGKILL');
+        Logger.w(
+          `IOSRecordingProvider: Process cleanup on error - SIGKILL sent: ${killed}, pid: ${process.pid}`,
+        );
+      }
       Logger.e(
         `IOSRecordingProvider: Failed to start recording for device ${params.deviceId}:`,
         error,

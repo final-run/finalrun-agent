@@ -120,13 +120,22 @@ export class DeviceNode {
    * Clean up — close all device connections.
    */
   async cleanup(): Promise<void> {
-    for (const device of this._devicePool.getAll()) {
+    const devices = this._devicePool.getAll();
+    Logger.d(`DeviceNode: Cleaning up ${devices.length} device(s)`);
+    
+    for (const device of devices) {
       try {
         await device.closeConnection();
-      } catch {
-        // ignore cleanup errors
+        Logger.d(`DeviceNode: Successfully closed connection for device ${device.deviceInfo.id}`);
+      } catch (error) {
+        Logger.e(
+          `DeviceNode: Error closing connection for device ${device.deviceInfo.id}`,
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
+    
+    Logger.d('DeviceNode: Cleanup completed');
   }
 
   async installAndroidApp(

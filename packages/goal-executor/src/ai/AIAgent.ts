@@ -368,12 +368,22 @@ export class AIAgent {
         providerOptions,
       });
     } catch (error) {
-      throw (
-        classifyFatalProviderError(error, {
-          provider: this._provider,
-          modelName: this._modelName,
-        }) ?? error
+      const classifiedError = classifyFatalProviderError(error, {
+        provider: this._provider,
+        modelName: this._modelName,
+      });
+      const finalError = classifiedError ?? error;
+      const errorDetails = error instanceof Error ? {
+        message: error.message,
+        name: error.name,
+        ...(error instanceof Error && 'statusCode' in error && { statusCode: (error as any).statusCode }),
+        ...(error instanceof Error && 'response' in error && { hasResponse: true }),
+      } : { value: String(error) };
+      Logger.e(
+        `AIAgent: ${phase} LLM call failed for ${this._provider}/${this._modelName}`,
+        errorDetails,
       );
+      throw finalError;
     }
 
     if (result.reasoningText) {

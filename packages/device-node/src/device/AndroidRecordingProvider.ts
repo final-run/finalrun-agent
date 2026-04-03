@@ -63,6 +63,7 @@ export class AndroidRecordingProvider implements RecordingProvider {
     recordingRequest: RecordingRequest;
     sdkVersion?: string;
   }): Promise<RecordingProviderResult> {
+    let process: ChildProcess | undefined;
     try {
       const scrcpyAvailable = await this._commandExists('scrcpy');
       if (!scrcpyAvailable) {
@@ -87,7 +88,7 @@ export class AndroidRecordingProvider implements RecordingProvider {
 
       const stdoutChunks: string[] = [];
       const stderrChunks: string[] = [];
-      const process = this._spawnFn('scrcpy', args, {
+      process = this._spawnFn('scrcpy', args, {
         stdio: ['ignore', 'pipe', 'pipe'],
       }) as ChildProcess;
 
@@ -127,6 +128,12 @@ export class AndroidRecordingProvider implements RecordingProvider {
         },
       };
     } catch (error) {
+      if (process) {
+        const killed = process.kill('SIGKILL');
+        Logger.w(
+          `AndroidRecordingProvider: Process cleanup on error - SIGKILL sent: ${killed}, pid: ${process.pid}`,
+        );
+      }
       Logger.e(
         `AndroidRecordingProvider: Failed to start recording for device ${params.deviceId}:`,
         error,
