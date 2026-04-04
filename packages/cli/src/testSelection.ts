@@ -161,12 +161,19 @@ function globToRegExp(pattern: string): RegExp {
     if (segment === '**') {
       const isLast = i === segments.length - 1;
       if (isLast) {
+        if (parts.length > 0) {
+          parts.push('/');
+        }
         parts.push('.*');
       } else {
-        // Match zero or more directory levels (including none)
-        parts.push('(?:.*/)?');
-        // Skip the joining '/' since the group already accounts for it
-        continue;
+        // Match zero or more directory levels (including none).
+        // When preceded by a literal segment (e.g. auth/**/), include
+        // the leading slash so "auth" doesn't prefix-match "authz".
+        if (parts.length > 0) {
+          parts.push('/(?:.*/)?');
+        } else {
+          parts.push('(?:.*/)?');
+        }
       }
     } else {
       const escaped = segment
