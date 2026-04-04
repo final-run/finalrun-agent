@@ -1,5 +1,5 @@
 ---
-name: use-finalrun-cli
+name: finalrun-use-cli
 description: Use the published FinalRun CLI to install, configure, validate, run, troubleshoot, and inspect reports for repo-local mobile test workspaces. Trigger this skill for requests involving finalrun, check, test, suite, doctor, runs, start-server.
 ---
 
@@ -37,7 +37,7 @@ finalrun doctor
 4. Treat validation failures as blockers. Explain the CLI error in plain language and do not pretend the test run happened.
 5. Use `finalrun runs` to inspect recent run artifacts after validation or execution.
 6. Ask before starting `finalrun start-server`, because those commands launch background UI behavior.
-7. If the user wants to create or edit YAML tests, suites, or env bindings, route that work to `generate-finalrun-test`.
+7. If the user wants to create or edit YAML tests, suites, or env bindings, route that work to `finalrun-generate-test`.
 
 ## Missing Workspace
 
@@ -46,7 +46,7 @@ If `.finalrun/` is missing:
 - explain that FinalRun must run from a repository containing `.finalrun/`
 - clarify that only `.finalrun/tests` is always required; `suites/` is only required for suite-based workflows
 - show the expected structure
-- offer a scaffold plan or route the user to `generate-finalrun-test`
+- offer a scaffold plan or route the user to `finalrun-generate-test`
 - do not claim that the CLI can bootstrap the workspace automatically
 
 Expected structure:
@@ -257,7 +257,7 @@ Diagnose from the actual CLI output first. Do not guess.
 - Host readiness issues
   - use `finalrun doctor` as the default local environment diagnostic
 
-## Coordination with `generate-finalrun-test`
+## Coordination with `finalrun-generate-test`
 
 This skill is for CLI usage, validation, execution, reporting, and troubleshooting.
 
@@ -268,6 +268,6 @@ If the user asks to:
 - add or change `.finalrun/env/*.yaml` bindings
 - plan a new test flow
 
-route that work to `generate-finalrun-test`.
+route that work to `finalrun-generate-test`.
 
 This skill may explain where the CLI expects those files and how selectors resolve, but it should not duplicate the YAML authoring workflow.
