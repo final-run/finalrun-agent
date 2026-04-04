@@ -3,11 +3,16 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from './checkRunner.js';
 import {
   ensureWorkspaceDirectories,
+  resolveWorkspaceArtifactsDir,
+  resolveWorkspaceArtifactsRootDir,
   resolveWorkspace,
+  resolveWorkspaceFromPath,
+  resolveWorkspaceForCommand,
   validateAppOverride,
 } from './workspace.js';
 
@@ -1044,6 +1049,245 @@ test('ensureWorkspaceDirectories creates a hashed external artifacts directory a
       assert.equal(metadata.workspaceHash.length, 16);
     } finally {
       await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspace refreshes lastUsedAt for direct callers', async () => {
+  await withTempHome(async () => {
+    const rootDir = createTempWorkspace();
+    const existingLastUsedAt = '2020-01-01T00:00:00.000Z';
+
+    try {
+      const artifactsDir = await resolveWorkspaceArtifactsDir(rootDir);
+      const metadataPath = path.join(artifactsDir, '..', 'workspace.json');
+      await fsp.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fsp.writeFile(
+        metadataPath,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            workspaceRoot: rootDir,
+            canonicalWorkspaceRoot: await fsp.realpath(rootDir),
+            workspaceHash: 'seeded-workspace-hash',
+            artifactsDir,
+            lastUsedAt: existingLastUsedAt,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      const workspace = await resolveWorkspace(rootDir);
+      const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
+        lastUsedAt?: string;
+      };
+
+      assert.equal(workspace.rootDir, rootDir);
+      assert.ok(Date.parse(metadata.lastUsedAt ?? '') > Date.parse(existingLastUsedAt));
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a derived display name, and refreshes lastUsedAt', async () => {
+  await withTempHome(async () => {
+    const rootDir = createTempWorkspace();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-outside-workspace-'));
+    const existingLastUsedAt = '2020-01-01T00:00:00.000Z';
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ name: 'sample/mobile-app' }, null, 2),
+      'utf-8',
+    );
+    const nestedWorkspacePath = path.join(rootDir, 'packages', 'mobile');
+    fs.mkdirSync(nestedWorkspacePath, { recursive: true });
+
+    try {
+      const seededWorkspace = await resolveWorkspace(rootDir);
+      const metadataPath = path.join(seededWorkspace.artifactsDir, '..', 'workspace.json');
+      await fsp.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fsp.writeFile(
+        metadataPath,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            workspaceRoot: rootDir,
+            canonicalWorkspaceRoot: await fsp.realpath(rootDir),
+            workspaceHash: 'seeded-workspace-hash',
+            artifactsDir: seededWorkspace.artifactsDir,
+            lastUsedAt: existingLastUsedAt,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      const workspace = await resolveWorkspaceForCommand({
+        cwd: outsideDir,
+        workspacePath: nestedWorkspacePath,
+        io: {
+          input: new PassThrough(),
+          output: new PassThrough(),
+          isTTY: false,
+        },
+      });
+
+      assert.equal(workspace.rootDir, rootDir);
+      const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
+        displayName?: string;
+        lastUsedAt?: string;
+      };
+      assert.equal(metadata.displayName, 'sample/mobile-app');
+      assert.match(metadata.lastUsedAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+      assert.ok(Date.parse(metadata.lastUsedAt ?? '') > Date.parse(existingLastUsedAt));
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+      await fsp.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceForCommand shows the TTY picker, ignores stale and malformed registry entries, and persists runtime-derived labels', async () => {
+  await withTempHome(async () => {
+    const alphaRoot = createTempWorkspace();
+    const bravoRoot = createTempWorkspace();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-picker-outside-'));
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let outputText = '';
+    output.on('data', (chunk: Buffer | string) => {
+      outputText += String(chunk);
+    });
+
+    fs.writeFileSync(
+      path.join(alphaRoot, 'package.json'),
+      JSON.stringify({ name: 'alpha/mobile-app' }, null, 2),
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(bravoRoot, 'package.json'),
+      JSON.stringify({ name: 'bravo/mobile-app' }, null, 2),
+      'utf-8',
+    );
+
+    try {
+      await ensureWorkspaceDirectories(await resolveWorkspaceFromPath(alphaRoot));
+      await ensureWorkspaceDirectories(await resolveWorkspaceFromPath(bravoRoot));
+
+      const staleMetadataDir = path.join(resolveWorkspaceArtifactsRootDir(), 'stale-workspace');
+      await fsp.mkdir(staleMetadataDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(staleMetadataDir, 'workspace.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          workspaceRoot: path.join(outsideDir, 'missing-workspace'),
+          canonicalWorkspaceRoot: path.join(outsideDir, 'missing-workspace'),
+          workspaceHash: 'stale-workspace',
+          artifactsDir: path.join(staleMetadataDir, 'artifacts'),
+        }),
+        'utf-8',
+      );
+
+      const malformedMetadataDir = path.join(resolveWorkspaceArtifactsRootDir(), 'malformed-workspace');
+      await fsp.mkdir(malformedMetadataDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(malformedMetadataDir, 'workspace.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          workspaceRoot: 42,
+          canonicalWorkspaceRoot: bravoRoot,
+          workspaceHash: 'malformed-workspace',
+          artifactsDir: path.join(malformedMetadataDir, 'artifacts'),
+        }),
+        'utf-8',
+      );
+
+      input.write('0\n');
+      setTimeout(() => {
+        input.write('2\n');
+        input.end();
+      }, 25);
+
+      const selectedWorkspace = await resolveWorkspaceForCommand({
+        cwd: outsideDir,
+        io: {
+          input,
+          output,
+          isTTY: true,
+        },
+      });
+
+      assert.equal(selectedWorkspace.rootDir, bravoRoot);
+      assert.match(outputText, /Select a FinalRun workspace/);
+      assert.match(outputText, /1\. alpha\/mobile-app/);
+      assert.match(outputText, new RegExp(alphaRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.match(outputText, /2\. bravo\/mobile-app/);
+      assert.match(outputText, /Invalid selection/);
+      assert.doesNotMatch(outputText, /stale-workspace/);
+
+      const alphaMetadata = JSON.parse(
+        await fsp.readFile(path.join(await resolveWorkspaceArtifactsDir(alphaRoot), '..', 'workspace.json'), 'utf-8'),
+      ) as { displayName?: string };
+      const bravoMetadata = JSON.parse(
+        await fsp.readFile(path.join(await resolveWorkspaceArtifactsDir(bravoRoot), '..', 'workspace.json'), 'utf-8'),
+      ) as { displayName?: string };
+      assert.equal(alphaMetadata.displayName, 'alpha/mobile-app');
+      assert.equal(bravoMetadata.displayName, 'bravo/mobile-app');
+    } finally {
+      await fsp.rm(alphaRoot, { recursive: true, force: true });
+      await fsp.rm(bravoRoot, { recursive: true, force: true });
+      await fsp.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceForCommand fails with guidance outside a workspace when no TTY or explicit workspace is available', async () => {
+  await withTempHome(async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-missing-workspace-'));
+
+    try {
+      await assert.rejects(
+        () =>
+          resolveWorkspaceForCommand({
+            cwd: outsideDir,
+            io: {
+              input: new PassThrough(),
+              output: new PassThrough(),
+              isTTY: false,
+            },
+          }),
+        /Pass --workspace <path> to target a FinalRun workspace explicitly/,
+      );
+    } finally {
+      await fsp.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceFromPath reports a clear error for invalid explicit workspace paths', async () => {
+  await withTempHome(async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-invalid-workspace-'));
+
+    try {
+      await assert.rejects(
+        () =>
+          resolveWorkspaceForCommand({
+            cwd: outsideDir,
+            workspacePath: path.join(outsideDir, 'missing'),
+            io: {
+              input: new PassThrough(),
+              output: new PassThrough(),
+              isTTY: false,
+            },
+          }),
+        /Path is not inside a FinalRun workspace/,
+      );
+    } finally {
+      await fsp.rm(outsideDir, { recursive: true, force: true });
     }
   });
 });

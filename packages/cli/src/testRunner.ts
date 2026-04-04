@@ -35,7 +35,6 @@ import {
 } from './hostPreflight.js';
 import {
   createRunId,
-  ensureWorkspaceDirectories,
   resolveWorkspace,
   type FinalRunWorkspace,
 } from './workspace.js';
@@ -88,7 +87,6 @@ export const testRunnerDependencies = {
   runCheck,
   runHostPreflight,
   resolveWorkspace,
-  ensureWorkspaceDirectories,
   addSigintListener(listener: () => void): () => void {
     process.on('SIGINT', listener);
     return () => {
@@ -106,7 +104,6 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
     resetSinks: true,
   });
   const workspace = await testRunnerDependencies.resolveWorkspace(options.cwd);
-  await testRunnerDependencies.ensureWorkspaceDirectories(workspace);
 
   const startedAt = new Date();
   const specResults: TestResult[] = [];

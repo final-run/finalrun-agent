@@ -149,6 +149,15 @@ Run a suite manifest:
 finalrun suite smoke.yaml --env dev --platform ios --model google/gemini-3-flash-preview
 ```
 
+Inspect or serve reports from anywhere:
+
+```sh
+finalrun runs --workspace /path/to/mobile-app
+finalrun start-server --workspace /path/to/mobile-app
+finalrun server-status --workspace /path/to/mobile-app
+finalrun stop-server --workspace /path/to/mobile-app
+```
+
 ## Environment variables and `.env` files
 
 > [!IMPORTANT]
@@ -242,10 +251,26 @@ Explicit `.finalrun/tests/...` and `.finalrun/suites/...` paths still work for c
 `finalrun runs`
 
 - Lists local reports from the workspace-scoped artifact store at `~/.finalrun/workspaces/<workspace-hash>/artifacts`.
+- Supports `--workspace <path>` so you can inspect a workspace from anywhere.
 
 `finalrun start-server`
 
-- Starts or reuses the local report UI for the current workspace.
+- Starts or reuses the local report UI for a workspace.
+- Supports `--workspace <path>`, `--port <n>`, and `--dev`.
+
+`finalrun server-status`
+
+- Shows the current local report server status for a workspace.
+- Supports `--workspace <path>`.
+
+`finalrun stop-server`
+
+- Stops the current local report server for a workspace.
+- Supports `--workspace <path>`.
+
+`finalrun report serve`
+
+- Removed as a breaking CLI change. Use `finalrun start-server` instead.
 
 See command help for full options:
 

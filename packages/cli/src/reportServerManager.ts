@@ -8,6 +8,7 @@ import { resolveCliLaunchArgs } from './runtimePaths.js';
 
 const DEFAULT_REPORT_SERVER_PORT = 4173;
 const HEALTH_ROUTE = '/health';
+const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2000;
 
 interface ReportHealthPayload {
   status?: string;
@@ -28,7 +29,22 @@ export interface ReportServerSession {
   reused: boolean;
 }
 
+export interface WorkspaceReportServerStatus {
+  running: boolean;
+  healthy: boolean;
+  staleStateCleared: boolean;
+  livePid?: number;
+  state?: ReportServerStateRecord;
+}
+
+export interface StopWorkspaceReportServerResult {
+  stopped: boolean;
+  staleStateCleared: boolean;
+  state?: ReportServerStateRecord;
+}
+
 export const reportServerManagerDependencies = {
+  healthProbeTimeoutMs: DEFAULT_HEALTH_PROBE_TIMEOUT_MS,
   spawnProcess(
     command: string,
     args: string[],
@@ -41,26 +57,15 @@ export const reportServerManagerDependencies = {
   ): ChildProcess {
     return spawn(command, args, options);
   },
-  runCommand(
-    command: string,
-    args: string[],
-    options: {
-      cwd: string;
-      env?: NodeJS.ProcessEnv;
-    },
-  ) {
-    return spawnSync(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: 'pipe',
-      encoding: 'utf-8',
-    });
-  },
-  async fetchJson(url: string): Promise<{ status: number; body: unknown }> {
+  async fetchJson(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<{ status: number; body: unknown }> {
     const response = await fetch(url, {
       headers: {
         accept: 'application/json',
       },
+      signal,
     });
     let body: unknown = undefined;
     try {
@@ -99,6 +104,20 @@ export const reportServerManagerDependencies = {
   },
   async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  },
+  killProcess(pid: number, signal: NodeJS.Signals): void {
+    process.kill(pid, signal);
+  },
+  isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      if (isNodeErrorWithCode(error) && error.code === 'ESRCH') {
+        return false;
+      }
+      return true;
+    }
   },
 };
 
@@ -154,13 +173,113 @@ export async function resolveHealthyWorkspaceReportServer(
     return undefined;
   }
 
-  const healthy = await isHealthyWorkspaceReportServer(state, workspace);
-  if (healthy) {
-    return state;
+  const health = await probeWorkspaceReportServerHealth(state, workspace);
+  if (health.healthy) {
+    return {
+      ...state,
+      pid: health.livePid ?? state.pid,
+    };
   }
 
   await clearWorkspaceReportServerState(workspace);
   return undefined;
+}
+
+export async function getWorkspaceReportServerStatus(
+  workspace: FinalRunWorkspace,
+): Promise<WorkspaceReportServerStatus> {
+  const state = await readWorkspaceReportServerState(workspace);
+  if (!state) {
+    return {
+      running: false,
+      healthy: false,
+      staleStateCleared: false,
+    };
+  }
+
+  const health = await probeWorkspaceReportServerHealth(state, workspace);
+  if (!health.healthy) {
+    await clearWorkspaceReportServerState(workspace);
+    return {
+      running: false,
+      healthy: false,
+      staleStateCleared: true,
+    };
+  }
+
+  return {
+    running: true,
+    healthy: true,
+    staleStateCleared: false,
+    livePid: health.livePid,
+    state: {
+      ...state,
+      pid: health.livePid ?? state.pid,
+    },
+  };
+}
+
+export async function stopWorkspaceReportServer(
+  workspace: FinalRunWorkspace,
+): Promise<StopWorkspaceReportServerResult> {
+  const status = await getWorkspaceReportServerStatus(workspace);
+  if (!status.running || !status.state) {
+    return {
+      stopped: false,
+      staleStateCleared: status.staleStateCleared,
+    };
+  }
+
+  let livePid = status.livePid;
+  if (livePid === undefined) {
+    const health = await probeWorkspaceReportServerHealth(status.state, workspace);
+    if (!health.healthy) {
+      await clearWorkspaceReportServerState(workspace);
+      return {
+        stopped: false,
+        staleStateCleared: true,
+      };
+    }
+    livePid = health.livePid;
+  }
+
+  if (livePid === undefined) {
+    throw new Error(
+      `Could not safely stop the FinalRun report server for ${workspace.rootDir} because the live server did not report a pid.`,
+    );
+  }
+
+  const pid = livePid;
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw new Error(
+      `Healthy FinalRun report server did not report a valid pid for ${workspace.rootDir}.`,
+    );
+  }
+
+  const stopState: ReportServerStateRecord = {
+    ...status.state,
+    pid,
+  };
+
+  try {
+    reportServerManagerDependencies.killProcess(pid, 'SIGTERM');
+  } catch (error) {
+    if (!isNodeErrorWithCode(error) || error.code !== 'ESRCH') {
+      throw error;
+    }
+  }
+
+  await waitForWorkspaceReportServerShutdown({
+    workspace,
+    state: stopState,
+  });
+  await clearWorkspaceReportServerState(workspace);
+
+  return {
+    stopped: true,
+    staleStateCleared: false,
+    state: stopState,
+  };
 }
 
 export async function openReportUrl(url: string): Promise<void> {
@@ -212,20 +331,7 @@ async function isHealthyWorkspaceReportServer(
   state: ReportServerState,
   workspace: FinalRunWorkspace,
 ): Promise<boolean> {
-  try {
-    const health = await reportServerManagerDependencies.fetchJson(
-      `${state.url}${HEALTH_ROUTE}`,
-    );
-    if (health.status !== 200) {
-      return false;
-    }
-    const body = health.body as ReportHealthPayload;
-    return body.status === 'ok' &&
-      body.workspaceRoot === workspace.rootDir &&
-      body.artifactsDir === workspace.artifactsDir;
-  } catch {
-    return false;
-  }
+  return (await probeWorkspaceReportServerHealth(state, workspace)).healthy;
 }
 
 async function waitForHealthyWorkspaceReportServer(params: {
@@ -251,6 +357,77 @@ async function waitForHealthyWorkspaceReportServer(params: {
     await reportServerManagerDependencies.sleep(250);
   }
   throw new Error('Timed out waiting for the FinalRun report server to become healthy.');
+}
+
+async function waitForWorkspaceReportServerShutdown(params: {
+  workspace: FinalRunWorkspace;
+  state: ReportServerStateRecord;
+}): Promise<void> {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    const health = await probeWorkspaceReportServerHealth(params.state, params.workspace);
+    if (!health.healthy) {
+      return;
+    }
+    if (!reportServerManagerDependencies.isProcessAlive(params.state.pid)) {
+      return;
+    }
+    await reportServerManagerDependencies.sleep(250);
+  }
+
+  throw new Error('Timed out waiting for the FinalRun report server to stop.');
+}
+
+async function probeWorkspaceReportServerHealth(
+  state: ReportServerStateRecord,
+  workspace: FinalRunWorkspace,
+): Promise<{ healthy: boolean; livePid?: number }> {
+  try {
+    const health = await fetchWorkspaceReportServerHealth(`${state.url}${HEALTH_ROUTE}`);
+    if (health.status !== 200) {
+      return { healthy: false };
+    }
+    const body = isReportHealthPayload(health.body) ? health.body : undefined;
+    if (!body) {
+      return { healthy: false };
+    }
+    const livePid =
+      typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0
+        ? body.pid
+        : undefined;
+    return {
+      healthy: body.status === 'ok' &&
+        body.workspaceRoot === workspace.rootDir &&
+        body.artifactsDir === workspace.artifactsDir,
+      livePid,
+    };
+  } catch {
+    return { healthy: false };
+  }
+}
+
+async function fetchWorkspaceReportServerHealth(
+  url: string,
+): Promise<{ status: number; body: unknown }> {
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1, reportServerManagerDependencies.healthProbeTimeoutMs);
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      reportServerManagerDependencies.fetchJson(url, controller.signal),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          reject(new Error('Health probe timed out.'));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 function startReportWebProcess(params: {
@@ -306,6 +483,14 @@ async function isPortAvailable(port: number): Promise<boolean> {
       server.close(() => resolve(true));
     });
   });
+}
+
+function isReportHealthPayload(value: unknown): value is ReportHealthPayload {
+  return typeof value === 'object' && value !== null;
+}
+
+function isNodeErrorWithCode(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
 
 async function getEphemeralPort(): Promise<number> {
