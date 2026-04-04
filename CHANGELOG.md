@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Added top-level `finalrun start-server`, `finalrun stop-server`, and `finalrun server-status` workspace-aware server commands, plus `--workspace <path>` support for `runs`
+- Added interactive workspace selection for `start-server`, `stop-server`, `server-status`, and `runs` when the current shell is outside a FinalRun workspace
+
+### Removed
+
+- Removed `finalrun report serve` as a breaking CLI change; use `finalrun start-server` instead
+
 ## [0.1.2] - 2026-04-01
 
 ### Changed
