@@ -28,7 +28,7 @@ const LOCAL_ICON_SRC = svgDataUri(
   '<svg width="65" height="48" viewBox="0 0 65 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="63" height="42" rx="8" stroke="#707EAE" stroke-width="2"/><line x1="16" y1="47" x2="52" y2="47" stroke="#707EAE" stroke-width="2" stroke-linecap="round"/></svg>',
 );
 
-type TestOutcomeStatus = 'success' | 'failure' | 'error' | 'not_executed';
+type TestOutcomeStatus = 'success' | 'failure' | 'error' | 'aborted' | 'not_executed';
 
 interface ReportTestListItem {
   input: ReportManifestSelectedTestRecord;
@@ -40,6 +40,7 @@ interface ReportTestListItem {
 interface OutcomeSummary {
   total: number;
   success: number;
+  aborted: number;
   failure: number;
   error: number;
   notExecuted: number;
@@ -455,6 +456,7 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
     }
 
     .segment.success { background: var(--success); }
+    .segment.aborted { background: var(--aborted); }
     .segment.failure { background: var(--failure); }
     .segment.error { background: var(--warning); }
     .segment.not-executed { background: var(--icon); }
@@ -745,6 +747,11 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
       border-color: rgba(255, 146, 12, 0.24);
     }
 
+    .analysis-card.aborted {
+      background: rgba(71, 85, 105, 0.08);
+      border-color: rgba(71, 85, 105, 0.22);
+    }
+
     .analysis-card.not_executed {
       background: rgba(112, 126, 174, 0.08);
       border-color: rgba(112, 126, 174, 0.2);
@@ -760,6 +767,10 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
 
     .analysis-card.error .detail-section-title {
       color: var(--warning);
+    }
+
+    .analysis-card.aborted .detail-section-title {
+      color: var(--aborted);
     }
 
     .analysis-card.not_executed .detail-section-title {
@@ -1588,6 +1599,7 @@ function renderContextSummaryItem(label: string, value: string): string {
 function renderSummarySegments(summary: OutcomeSummary): string {
   const segments = [
     { label: 'Success', className: 'success', count: summary.success },
+    { label: 'Aborted', className: 'aborted', count: summary.aborted },
     { label: 'Failure', className: 'failure', count: summary.failure },
     { label: 'Error', className: 'error', count: summary.error },
     { label: 'Not Executed', className: 'not-executed', count: summary.notExecuted },
@@ -1610,11 +1622,13 @@ function renderSummarySegments(summary: OutcomeSummary): string {
           <span class="segment-legend-item">
             <span class="segment-legend-dot ${segment.className}" style="background:${segment.className === 'success'
               ? 'var(--success)'
-              : segment.className === 'failure'
-                ? 'var(--failure)'
-                : segment.className === 'error'
-                  ? 'var(--warning)'
-                  : 'var(--icon)'}"></span>
+              : segment.className === 'aborted'
+                ? 'var(--aborted)'
+                : segment.className === 'failure'
+                  ? 'var(--failure)'
+                  : segment.className === 'error'
+                    ? 'var(--warning)'
+                    : 'var(--icon)'}"></span>
             <span>${segment.label} - ${percent}%</span>
           </span>
         `;
@@ -1688,11 +1702,13 @@ function renderTestDetailSection(
   const initialStep = test?.steps[0];
   const statusText = item.status === 'error'
     ? 'Error'
-    : item.status === 'failure'
-      ? 'Failed'
-      : item.status === 'not_executed'
-        ? 'Not executed'
-        : 'Passed';
+    : item.status === 'aborted'
+      ? 'Aborted'
+      : item.status === 'failure'
+        ? 'Failed'
+        : item.status === 'not_executed'
+          ? 'Not executed'
+          : 'Passed';
   const analysisText = test
     ? test.analysis || test.message || 'No overall analysis recorded.'
     : 'This test was selected for the run, but it never started. The batch ended before this test could execute.';
@@ -2019,6 +2035,8 @@ function summarizeTestItems(items: ReportTestListItem[]): OutcomeSummary {
       summary.total += 1;
       if (item.status === 'success') {
         summary.success += 1;
+      } else if (item.status === 'aborted') {
+        summary.aborted += 1;
       } else if (item.status === 'failure') {
         summary.failure += 1;
       } else if (item.status === 'error') {
@@ -2031,6 +2049,7 @@ function summarizeTestItems(items: ReportTestListItem[]): OutcomeSummary {
     {
       total: 0,
       success: 0,
+      aborted: 0,
       failure: 0,
       error: 0,
       notExecuted: 0,
@@ -2039,6 +2058,9 @@ function summarizeTestItems(items: ReportTestListItem[]): OutcomeSummary {
 }
 
 function classifyTestStatus(test: ReportManifestTestRecord): TestOutcomeStatus {
+  if (test.status === 'aborted') {
+    return 'aborted';
+  }
   if (test.success) {
     return 'success';
   }
@@ -2069,11 +2091,13 @@ function deriveReportTitle(manifest: ReportRunManifest): string {
 function renderStatusPill(status: TestOutcomeStatus | 'success' | 'failure'): string {
   const label = status === 'success'
     ? 'Passed'
-    : status === 'failure'
-      ? 'Failed'
-      : status === 'error'
-        ? 'Error'
-        : 'Not Executed';
+    : status === 'aborted'
+      ? 'Aborted'
+      : status === 'failure'
+        ? 'Failed'
+        : status === 'error'
+          ? 'Error'
+          : 'Not Executed';
   return `<span class="status-pill ${escapeHtml(status)}">${escapeHtml(label)}</span>`;
 }
 
@@ -2212,6 +2236,7 @@ function renderSharedCss(): string {
       --accent: #4318FF;
       --accent-soft: rgba(67, 24, 255, 0.1);
       --success: #05CD99;
+      --aborted: #475569;
       --warning: #FF920C;
       --failure: #EE5D50;
       --border: #E0E5F2;
@@ -2278,6 +2303,11 @@ function renderSharedCss(): string {
     .status-pill.error {
       background: rgba(255, 146, 12, 0.14);
       color: var(--warning);
+    }
+
+    .status-pill.aborted {
+      background: rgba(71, 85, 105, 0.14);
+      color: var(--aborted);
     }
 
     .status-pill.not_executed {

@@ -293,6 +293,7 @@ export class ReportWriter {
       selectedTests.push({
         testId: test.testId!,
         name: test.name,
+        description: test.description,
         relativePath: test.relativePath,
         workspaceSourcePath,
         snapshotYamlPath,

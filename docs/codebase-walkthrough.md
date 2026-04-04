@@ -26,7 +26,7 @@ A complete guide to understanding how FinalRun works, from CLI invocation to tes
 
 FinalRun is a **monorepo with 5 packages** that together form an AI-powered mobile app testing tool:
 
-```
+```text
 finalrun-ts/
 ├── packages/
 │   ├── common/          Shared TypeScript types (the "contract" between packages)
@@ -38,7 +38,7 @@ finalrun-ts/
 
 **High-level flow:**
 
-```
+```text
 User writes YAML test     CLI parses & validates     Device is prepared
   (.finalrun/tests/)   ──────────────────────────>  (connect, install, launch)
                                                            │
@@ -53,7 +53,7 @@ Report displayed        Artifacts saved to disk      AI executes test on device
 |---------|----------------------|
 | `common` | Types shared by all packages. Changing a type here forces all consumers to stay in sync. |
 | `cli` | User-facing. Handles I/O, config, orchestration. Should not know about gRPC or LLM internals. |
-| `goal-executor` | The AI loop is complex enough to deserve isolation. Could theoretically be swapped for a different execution strategy. |
+| `goal-executor` | The AI loop is complex enough to deserve isolation. It could theoretically be swapped for a different execution strategy. |
 | `device-node` | Platform-specific (Android/iOS) device code. Isolates gRPC, ADB, and driver concerns from business logic. |
 | `report-web` | Optional Next.js frontend. The CLI has a built-in server too, so this is an enhancement, not a dependency. |
 
@@ -63,7 +63,7 @@ Report displayed        Artifacts saved to disk      AI executes test on device
 
 Before any code runs, the user sets up a workspace:
 
-```
+```text
 my-app-repo/
 ├── .finalrun/
 │   ├── config.yaml          # Workspace config (app identity, defaults)
@@ -173,7 +173,7 @@ app:
 
 The CLI uses `commander` for argument parsing. Here are the key commands:
 
-```
+```text
 finalrun test [selectors...]     Run tests directly
 finalrun suite <path>            Run a suite
 finalrun check [selectors...]    Validate without executing
@@ -190,7 +190,7 @@ finalrun test auth/login.yaml --env staging --platform android --model openai/gp
 
 **What happens in `runTestCommand()` (bin/finalrun.ts:271-350):**
 
-```
+```text
 1. normalizeTestSelectors()     Split comma-separated selectors, trim whitespace
 2. resolveWorkspace()           Walk up directory tree to find .finalrun/
 3. loadWorkspaceConfig()        Read .finalrun/config.yaml
@@ -218,7 +218,7 @@ finalrun test auth/login.yaml --env staging --platform android --model openai/gp
 
 Before touching any device, FinalRun validates everything:
 
-```
+```text
 runCheck()
   │
   ├── resolveRunTarget()
@@ -266,7 +266,7 @@ secrets:
 
 **File:** `packages/cli/src/sessionRunner.ts`
 
-```
+```text
 prepareTestSession()
   │
   ├── DeviceNode.detectInventory()
@@ -321,7 +321,7 @@ During UiAutomation readiness polling, the driver may return "Already connected"
 
 This is the main orchestrator. Tests run **sequentially** (no parallelism):
 
-```
+```text
 runTests()
   │
   ├── runCheck()                    ← Phase 1 (validation)
@@ -383,7 +383,7 @@ This is where the AI magic happens. The goal executor implements a loop:
 
 **File:** `packages/goal-executor/src/TestExecutor.ts`
 
-```
+```text
 executeGoal(goal, onProgress?)
   │
   FOR iteration = 1 to maxIterations:
@@ -445,7 +445,7 @@ executeGoal(goal, onProgress?)
 
 **Why two separate LLM calls (plan + ground)?**
 
-```
+```text
 Plan:   "What should I do?"    → "Tap the Login button"     (high-level reasoning)
 Ground: "Where exactly is it?" → coordinates (312, 847)      (precise location)
 ```
@@ -457,7 +457,7 @@ Separating these concerns means:
 
 ### 7.3 Grounding Strategies
 
-```
+```text
 Standard Grounder (hierarchy-based)
   │ Input: action description + screenshot + UI hierarchy
   │ Output: element index → converted to (x, y) coordinates
@@ -508,7 +508,7 @@ Standard Grounder (hierarchy-based)
 
 ### 8.1 Architecture
 
-```
+```text
 DeviceNode (singleton)
   │
   ├── DeviceDiscoveryService     Detect connected devices (ADB / simctl)
@@ -530,7 +530,7 @@ DeviceNode (singleton)
 
 ### 8.2 How a Tap Gets to the Device
 
-```
+```text
 goal-executor calls device.executeAction(TapAction(312, 847))
     │
     v
@@ -559,7 +559,7 @@ App processes the tap as if a real user touched the screen
 
 **File:** `packages/device-node/src/device/ScreenshotCapture.ts`
 
-```
+```text
 capture()
   │
   ├── Phase 1: STABILITY WAIT (optional)
@@ -590,7 +590,7 @@ capture()
 
 ### 8.4 Device Session Lifecycle
 
-```
+```text
 1. DETECTION:  DeviceNode.detectInventory()     → list of devices
 2. SELECTION:  User picks a device (or auto-select if only one)
 3. SETUP:      DeviceNode.setUpDevice()          → install driver, connect gRPC
@@ -609,7 +609,7 @@ capture()
 
 After each test completes, `reportWriter.writeTestRecord()` persists everything:
 
-```
+```text
 artifacts/{runId}/
 ├── runner.log                      # Timestamped execution log
 ├── run.json                        # Complete run manifest (schema v2)
@@ -682,7 +682,7 @@ FinalRun has two ways to display reports:
 
 Both serve the same routes with the same data:
 
-```
+```text
 GET /                           → Run index page (list of all runs)
 GET /runs/{runId}               → Individual run detail page
 GET /artifacts/{path}           → Raw artifact files (screenshots, videos, logs)
@@ -691,7 +691,7 @@ GET /health                     → Server health check
 
 ### 10.2 How the Server Starts
 
-```
+```text
 After test completes:
   │
   ├── startOrReuseWorkspaceReportServer()
@@ -718,7 +718,7 @@ After test completes:
 
 Raw `RunManifest` data from disk gets enriched before rendering:
 
-```
+```text
 Raw Data (run.json)                    View Model (for HTML)
 ─────────────────                      ─────────────────────
 runId: "2026-04-..."          →        displayName: "Smoke Suite"
@@ -730,7 +730,7 @@ paths.log: "runner.log"       →        paths.log: "/artifacts/{runId}/runner.l
 ```
 
 **Display name derivation logic:**
-```
+```text
 Suite run?           → Use suite name ("Smoke Suite")
 1 test selected?     → Use test name ("User Login Flow")
 N tests selected?    → First test name + count ("User Login Flow +2 more")
@@ -741,7 +741,7 @@ No tests (failure)?  → Use runId as fallback
 
 **Why byte ranges?** Video recordings can be large (50MB+). Browsers need byte-range support to seek within videos without downloading the entire file.
 
-```
+```text
 Browser: GET /artifacts/runs/clip.mp4
          Range: bytes=1000000-2000000
 
@@ -755,7 +755,7 @@ Server:  HTTP/1.1 206 Partial Content
 
 ## 11. Complete Data Flow Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         USER INPUT                                  │
 │  .finalrun/config.yaml    .finalrun/tests/*.yaml    .finalrun/env/  │

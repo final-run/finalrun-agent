@@ -153,21 +153,34 @@ function isPathWithinDirectory(directoryPath: string, candidatePath: string): bo
 }
 
 function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .split('/')
-    .map((segment) => {
-      if (segment === '**') {
-        return '.*';
-      }
+  const segments = pattern.split('/');
+  const parts: string[] = [];
 
-      return segment
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment === '**') {
+      const isLast = i === segments.length - 1;
+      if (isLast) {
+        parts.push('.*');
+      } else {
+        // Match zero or more directory levels (including none)
+        parts.push('(?:.*/)?');
+        // Skip the joining '/' since the group already accounts for it
+        continue;
+      }
+    } else {
+      const escaped = segment
         .replace(/[.+^${}()|[\]\\]/g, '\\$&')
         .replace(/\*/g, '[^/]*')
         .replace(/\?/g, '[^/]');
-    })
-    .join('/');
+      if (parts.length > 0 && !parts[parts.length - 1].endsWith(')?')) {
+        parts.push('/');
+      }
+      parts.push(escaped);
+    }
+  }
 
-  return new RegExp(`^${escaped}$`);
+  return new RegExp(`^${parts.join('')}$`);
 }
 
 async function collectYamlFiles(dirPath: string): Promise<string[]> {
