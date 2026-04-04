@@ -312,8 +312,12 @@ export async function buildReportRunManifestViewModel(
       suite: manifest.input.suite
         ? {
             ...manifest.input.suite,
-            snapshotYamlPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath!),
-            snapshotJsonPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath!),
+            snapshotYamlPath: manifest.input.suite.snapshotYamlPath
+              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath)
+              : undefined,
+            snapshotJsonPath: manifest.input.suite.snapshotJsonPath
+              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath)
+              : undefined,
           }
         : undefined,
       tests: await Promise.all(
@@ -342,9 +346,15 @@ async function toSelectedTestViewModel(
 ): Promise<ReportManifestSelectedTestRecord> {
   return {
     ...test,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, test.snapshotYamlPath!),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, test.snapshotJsonPath!),
-    snapshotYamlText: await readSnapshotYamlText(test.snapshotYamlPath!),
+    snapshotYamlPath: test.snapshotYamlPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotYamlPath)
+      : undefined,
+    snapshotJsonPath: test.snapshotJsonPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotJsonPath)
+      : undefined,
+    snapshotYamlText: test.snapshotYamlPath
+      ? await readSnapshotYamlText(test.snapshotYamlPath)
+      : undefined,
   };
 }
 
@@ -355,13 +365,21 @@ async function toTestViewModel(
 ): Promise<ReportManifestTestRecord> {
   return {
     ...test,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, test.snapshotYamlPath!),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, test.snapshotJsonPath!),
-    snapshotYamlText: await readSnapshotYamlText(test.snapshotYamlPath!),
+    snapshotYamlPath: test.snapshotYamlPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotYamlPath)
+      : undefined,
+    snapshotJsonPath: test.snapshotJsonPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotJsonPath)
+      : undefined,
+    snapshotYamlText: test.snapshotYamlPath
+      ? await readSnapshotYamlText(test.snapshotYamlPath)
+      : undefined,
     previewScreenshotPath: test.previewScreenshotPath
       ? buildRunScopedArtifactPath(runId, test.previewScreenshotPath)
       : undefined,
-    resultJsonPath: buildRunScopedArtifactPath(runId, test.resultJsonPath!),
+    resultJsonPath: test.resultJsonPath
+      ? buildRunScopedArtifactPath(runId, test.resultJsonPath)
+      : undefined,
     recordingFile: test.recordingFile
       ? buildRunScopedArtifactPath(runId, test.recordingFile)
       : undefined,
