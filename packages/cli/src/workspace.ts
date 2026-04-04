@@ -65,7 +65,7 @@ export async function resolveWorkspace(
 ): Promise<FinalRunWorkspace> {
   const workspaceRoot = await findWorkspaceRoot(cwd);
   if (workspaceRoot) {
-    return buildWorkspace(workspaceRoot);
+    return finalizeResolvedWorkspace(await buildWorkspace(workspaceRoot));
   }
   throw new Error(
     'Could not find a .finalrun workspace. Run the CLI from a repository containing .finalrun/.',
@@ -134,6 +134,12 @@ export async function resolveWorkspaceForCommand(params?: {
     );
   }
 
+  return finalizeResolvedWorkspace(workspace);
+}
+
+async function finalizeResolvedWorkspace(
+  workspace: FinalRunWorkspace,
+): Promise<FinalRunWorkspace> {
   await ensureWorkspaceDirectories(workspace);
   await refreshWorkspaceUsageMetadata(workspace);
   return workspace;

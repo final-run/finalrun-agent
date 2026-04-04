@@ -13,7 +13,6 @@ import {
 } from './specLoader.js';
 import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
 import {
-  ensureWorkspaceDirectories,
   loadWorkspaceConfig,
   resolveWorkspace,
   resolveConfiguredEnvironmentFile,
@@ -51,7 +50,6 @@ export async function runCheck(
   options: CheckRunnerOptions,
 ): Promise<CheckRunnerResult> {
   const workspace = await resolveWorkspace(options.cwd);
-  await ensureWorkspaceDirectories(workspace);
   const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
   const resolvedEnvironment = await resolveConfiguredEnvironmentFile(
     workspace,

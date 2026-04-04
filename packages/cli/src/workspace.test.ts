@@ -8,8 +8,10 @@ import test from 'node:test';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from './checkRunner.js';
 import {
   ensureWorkspaceDirectories,
+  resolveWorkspaceArtifactsDir,
   resolveWorkspaceArtifactsRootDir,
   resolveWorkspace,
+  resolveWorkspaceFromPath,
   resolveWorkspaceForCommand,
   validateAppOverride,
 } from './workspace.js';
@@ -1051,6 +1053,45 @@ test('ensureWorkspaceDirectories creates a hashed external artifacts directory a
   });
 });
 
+test('resolveWorkspace refreshes lastUsedAt for direct callers', async () => {
+  await withTempHome(async () => {
+    const rootDir = createTempWorkspace();
+    const existingLastUsedAt = '2020-01-01T00:00:00.000Z';
+
+    try {
+      const artifactsDir = await resolveWorkspaceArtifactsDir(rootDir);
+      const metadataPath = path.join(artifactsDir, '..', 'workspace.json');
+      await fsp.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fsp.writeFile(
+        metadataPath,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            workspaceRoot: rootDir,
+            canonicalWorkspaceRoot: await fsp.realpath(rootDir),
+            workspaceHash: 'seeded-workspace-hash',
+            artifactsDir,
+            lastUsedAt: existingLastUsedAt,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      const workspace = await resolveWorkspace(rootDir);
+      const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
+        lastUsedAt?: string;
+      };
+
+      assert.equal(workspace.rootDir, rootDir);
+      assert.ok(Date.parse(metadata.lastUsedAt ?? '') > Date.parse(existingLastUsedAt));
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a derived display name, and refreshes lastUsedAt', async () => {
   await withTempHome(async () => {
     const rootDir = createTempWorkspace();
@@ -1134,8 +1175,8 @@ test('resolveWorkspaceForCommand shows the TTY picker, ignores stale and malform
     );
 
     try {
-      await ensureWorkspaceDirectories(await resolveWorkspace(alphaRoot));
-      await ensureWorkspaceDirectories(await resolveWorkspace(bravoRoot));
+      await ensureWorkspaceDirectories(await resolveWorkspaceFromPath(alphaRoot));
+      await ensureWorkspaceDirectories(await resolveWorkspaceFromPath(bravoRoot));
 
       const staleMetadataDir = path.join(resolveWorkspaceArtifactsRootDir(), 'stale-workspace');
       await fsp.mkdir(staleMetadataDir, { recursive: true });
@@ -1189,10 +1230,10 @@ test('resolveWorkspaceForCommand shows the TTY picker, ignores stale and malform
       assert.doesNotMatch(outputText, /stale-workspace/);
 
       const alphaMetadata = JSON.parse(
-        await fsp.readFile(path.join((await resolveWorkspace(alphaRoot)).artifactsDir, '..', 'workspace.json'), 'utf-8'),
+        await fsp.readFile(path.join(await resolveWorkspaceArtifactsDir(alphaRoot), '..', 'workspace.json'), 'utf-8'),
       ) as { displayName?: string };
       const bravoMetadata = JSON.parse(
-        await fsp.readFile(path.join((await resolveWorkspace(bravoRoot)).artifactsDir, '..', 'workspace.json'), 'utf-8'),
+        await fsp.readFile(path.join(await resolveWorkspaceArtifactsDir(bravoRoot), '..', 'workspace.json'), 'utf-8'),
       ) as { displayName?: string };
       assert.equal(alphaMetadata.displayName, 'alpha/mobile-app');
       assert.equal(bravoMetadata.displayName, 'bravo/mobile-app');

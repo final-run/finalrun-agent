@@ -23,7 +23,6 @@ import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
 import { initializeCliRuntimeEnvironment, resolveCliPackageVersion } from '../src/runtimePaths.js';
 import {
-  ensureWorkspaceDirectories,
   loadWorkspaceConfig,
   resolveConfiguredEnvironmentFile,
   resolveWorkspace,
@@ -297,7 +296,6 @@ async function runTestCommand(params: {
       throw new Error(TEST_SELECTION_REQUIRED_ERROR);
     }
     const workspace = await resolveWorkspace();
-    await ensureWorkspaceDirectories(workspace);
     const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
     const model = parseModel(params.options.model ?? workspaceConfig.model);
 
