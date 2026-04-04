@@ -16,6 +16,11 @@ interface NumberedEntry {
   index: number;
 }
 
+interface FormatResult {
+  text: string;
+  numberedEntries: NumberedEntry[];
+}
+
 interface EntrySection {
   title: string;
   entries: DeviceInventoryEntry[];
@@ -27,20 +32,27 @@ export async function promptForDeviceSelection(params: {
   selectableEntries?: DeviceInventoryEntry[];
   io: DeviceSelectionIO;
 }): Promise<DeviceInventoryEntry> {
-  if (!params.io.isTTY) {
-    throw new Error('Interactive device selection requires a TTY.');
-  }
-
   const rendered = formatDeviceSelectionList(
     params.entries,
     params.selectableEntries ?? params.entries,
   );
+
   params.io.output.write(`\n${params.heading}\n`);
   params.io.output.write(`${rendered.text}\n`);
 
+  if (params.io.isTTY) {
+    return await interactiveSelection(rendered, params.io);
+  }
+  return await pipedSelection(rendered, params.io);
+}
+
+async function interactiveSelection(
+  rendered: FormatResult,
+  io: DeviceSelectionIO,
+): Promise<DeviceInventoryEntry> {
   const readline = createInterface({
-    input: params.io.input,
-    output: params.io.output,
+    input: io.input,
+    output: io.output,
   });
 
   try {
@@ -51,11 +63,82 @@ export async function promptForDeviceSelection(params: {
       if (matched) {
         return matched.entry;
       }
-      params.io.output.write('Invalid selection. Enter one of the listed numbers.\n');
+      io.output.write('Invalid selection. Enter one of the listed numbers.\n');
     }
   } finally {
     readline.close();
   }
+}
+
+async function pipedSelection(
+  rendered: FormatResult,
+  io: DeviceSelectionIO,
+): Promise<DeviceInventoryEntry> {
+  const line = await readFirstLine(io.input);
+  if (line === null) {
+    const validNums = rendered.numberedEntries.map((e) => e.index).join(', ');
+    throw new Error(
+      `Multiple devices available (${validNums}). ` +
+        'Pipe a device number to select one, for example: echo "1" | finalrun test ...',
+    );
+  }
+  const selection = Number.parseInt(line.trim(), 10);
+  const matched = rendered.numberedEntries.find((candidate) => candidate.index === selection);
+  if (matched) {
+    return matched.entry;
+  }
+  const validNums = rendered.numberedEntries.map((e) => e.index).join(', ');
+  throw new Error(
+    `Invalid device number "${line.trim()}". Valid numbers: ${validNums}`,
+  );
+}
+
+function readFirstLine(stream: NodeJS.ReadableStream): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    let buffer = '';
+    let settled = false;
+
+    const cleanup = (): void => {
+      stream.removeListener('data', onData);
+      stream.removeListener('end', onEnd);
+      stream.removeListener('error', onError);
+    };
+
+    const onData = (chunk: Buffer | string): void => {
+      if (settled) {
+        return;
+      }
+      buffer += String(chunk);
+      const newlineIndex = buffer.indexOf('\n');
+      if (newlineIndex !== -1) {
+        settled = true;
+        cleanup();
+        resolve(buffer.substring(0, newlineIndex));
+      }
+    };
+
+    const onEnd = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(buffer.trim().length > 0 ? buffer.trim() : null);
+    };
+
+    const onError = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(null);
+    };
+
+    stream.on('data', onData);
+    stream.on('end', onEnd);
+    stream.on('error', onError);
+  });
 }
 
 export function formatDeviceSelectionList(entries: DeviceInventoryEntry[]): {
