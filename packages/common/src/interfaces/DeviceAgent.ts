@@ -1,6 +1,6 @@
 // Port of common/interface/Agent.dart
 // Dart: abstract class Agent -> TypeScript: interface DeviceAgent
-// Scoped to CLI usage only -- excludes recording/streaming methods
+// Full device interface including action execution, recording, and lifecycle methods
 
 import { DeviceActionRequest } from '../models/DeviceActionRequest.js';
 import { DeviceInfo } from '../models/DeviceInfo.js';
