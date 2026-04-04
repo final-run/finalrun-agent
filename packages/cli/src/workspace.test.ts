@@ -22,7 +22,7 @@ function createTempWorkspace(params?: {
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
   configYaml?: string | null;
-  specs?: Record<string, string>;
+  testFiles?: Record<string, string>;
   suites?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-workspace-'));
@@ -58,10 +58,10 @@ function createTempWorkspace(params?: {
     }
   }
 
-  const specs = params?.specs ?? {
+  const testFiles = params?.testFiles ?? {
     'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
   };
-  for (const [relativePath, contents] of Object.entries(specs)) {
+  for (const [relativePath, contents] of Object.entries(testFiles)) {
     const targetPath = path.join(testsDir, relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, contents, 'utf-8');
@@ -121,7 +121,7 @@ test('runCheck resolves the nearest .finalrun workspace and runtime bindings fro
       'variables:',
       '  language: Spanish',
     ].join('\n'),
-    specs: {
+    testFiles: {
       'auth/login.yaml': [
         'name: login',
         'steps:',
@@ -141,8 +141,8 @@ test('runCheck resolves the nearest .finalrun workspace and runtime bindings fro
     });
 
     assert.equal(result.workspace.rootDir, rootDir);
-    assert.equal(result.specs.length, 1);
-    assert.equal(result.specs[0]?.relativePath, 'auth/login.yaml');
+    assert.equal(result.tests.length, 1);
+    assert.equal(result.tests[0]?.relativePath, 'auth/login.yaml');
     assert.equal(result.environment.bindings.variables.language, 'Spanish');
     assert.equal(result.environment.bindings.secrets.email, 'person@example.com');
     assert.equal(result.environment.secretReferences[0]?.envVar, secretEnvVar);
@@ -162,7 +162,7 @@ test('runCheck defaults to dev when envName is omitted and dev.yaml exists', asy
       'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
       'staging.yaml': ['variables:', '  language: German'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -187,7 +187,7 @@ test('runCheck uses .finalrun/config.yaml env when --env is omitted', async () =
       'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
       'staging.yaml': ['variables:', '  language: German'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -212,7 +212,7 @@ test('runCheck prefers explicit envName over .finalrun/config.yaml env', async (
       'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
       'staging.yaml': ['variables:', '  language: German'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -233,7 +233,7 @@ test('runCheck prefers explicit envName over .finalrun/config.yaml env', async (
 test('runCheck succeeds with empty bindings when envName is omitted and .finalrun/env is absent', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
     },
   });
@@ -250,7 +250,7 @@ test('runCheck succeeds with empty bindings when envName is omitted and .finalru
 test('runCheck succeeds with empty bindings when envName is omitted and .finalrun/env exists but has no env files', async () => {
   const rootDir = createTempWorkspace({
     envFiles: {},
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
     },
   });
@@ -269,7 +269,7 @@ test('runCheck falls back to the sole env file when envName is omitted and dev.y
     envFiles: {
       'qa.yaml': ['variables:', '  locale: en-GB'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'locale.yaml': [
         'name: locale',
         'steps:',
@@ -305,10 +305,10 @@ test('runCheck fails with an actionable ambiguity error when envName is omitted 
   }
 });
 
-test('runCheck fails with actionable guidance when a spec references env bindings but .finalrun/env is absent', async () => {
+test('runCheck fails with actionable guidance when a test references env bindings but .finalrun/env is absent', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -507,9 +507,9 @@ test('runCheck treats env app config as a full replacement', async () => {
   }
 });
 
-test('runCheck rejects specs with preconditions keys', async () => {
+test('runCheck rejects tests with preconditions keys', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': [
         'name: login',
         'preconditions:',
@@ -538,7 +538,7 @@ test('runCheck ignores invalid model formats in .finalrun/config.yaml', async ()
   try {
     const result = await runCheck({ cwd: rootDir });
     assert.equal(result.environment.envName, 'dev');
-    assert.equal(result.specs.length, 1);
+    assert.equal(result.tests.length, 1);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -552,7 +552,7 @@ test('runCheck ignores unsupported model providers in .finalrun/config.yaml', as
   try {
     const result = await runCheck({ cwd: rootDir });
     assert.equal(result.environment.envName, 'dev');
-    assert.equal(result.specs.length, 1);
+    assert.equal(result.tests.length, 1);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -640,7 +640,7 @@ test('runCheck accepts empty-string secret environment values when the variable 
 
   const rootDir = createTempWorkspace({
     envYaml: ['secrets:', `  otp: \${${secretEnvVar}}`].join('\n'),
-    specs: {
+    testFiles: {
       'otp.yaml': ['name: otp', 'steps:', '  - Enter ${secrets.otp}.'].join('\n'),
     },
   });
@@ -665,7 +665,7 @@ test('runCheck resolves secrets from workspace-root .env.<env> without process.e
 
   const rootDir = createTempWorkspace({
     envYaml: ['secrets:', `  token: \${${secretEnvVar}}`].join('\n'),
-    specs: {
+    testFiles: {
       'auth.yaml': [
         'name: auth',
         'steps:',
@@ -700,7 +700,7 @@ test('runCheck loads workspace-root .env.<env> when cwd is nested under the work
 
   const rootDir = createTempWorkspace({
     envYaml: ['secrets:', `  token: \${${secretEnvVar}}`].join('\n'),
-    specs: {
+    testFiles: {
       'auth.yaml': ['name: auth', 'steps:', '  - Open login.'].join('\n'),
     },
   });
@@ -739,7 +739,7 @@ test('runCheck rejects selectors that escape .finalrun/tests', async () => {
           cwd: rootDir,
           selectors: ['../outside.yaml'],
         }),
-      /Spec selector must stay inside/,
+      /Test selector must stay inside/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -748,7 +748,7 @@ test('runCheck rejects selectors that escape .finalrun/tests', async () => {
 
 test('runCheck expands multiple selectors with comma splitting and de-duplicates first-seen matches', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
       'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
       'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
@@ -765,7 +765,7 @@ test('runCheck expands multiple selectors with comma splitting and de-duplicates
     });
 
     assert.deepEqual(
-      result.specs.map((spec) => spec.relativePath),
+      result.tests.map((t) => t.relativePath),
       [
         'smoke.yaml',
         'auth/login.yaml',
@@ -781,7 +781,7 @@ test('runCheck expands multiple selectors with comma splitting and de-duplicates
 
 test('runCheck treats raw directory selectors as recursive and * as shallow while ** is recursive', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
       'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit profile.'].join('\n'),
       'auth/profile/view.yaml': ['name: view', 'steps:', '  - View profile.'].join('\n'),
@@ -807,7 +807,7 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
     });
 
     assert.deepEqual(
-      recursiveDirectory.specs.map((spec) => spec.relativePath),
+      recursiveDirectory.tests.map((t) => t.relativePath),
       [
         'auth/login.yaml',
         'auth/profile/edit.yaml',
@@ -816,11 +816,11 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
       ],
     );
     assert.deepEqual(
-      shallowGlob.specs.map((spec) => spec.relativePath),
+      shallowGlob.tests.map((t) => t.relativePath),
       ['auth/login.yaml', 'auth/settings.yaml'],
     );
     assert.deepEqual(
-      recursiveGlob.specs.map((spec) => spec.relativePath),
+      recursiveGlob.tests.map((t) => t.relativePath),
       [
         'auth/login.yaml',
         'auth/profile/edit.yaml',
@@ -833,9 +833,9 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
   }
 });
 
-test('runCheck resolves suite manifests into an ordered shared spec list', async () => {
+test('runCheck resolves suite manifests into an ordered shared test list', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
       'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
       'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
@@ -867,7 +867,7 @@ test('runCheck resolves suite manifests into an ordered shared spec list', async
     assert.equal(result.suite?.name, 'login suite');
     assert.equal(result.suite?.description, 'Covers login entry points.');
     assert.deepEqual(
-      result.specs.map((spec) => spec.relativePath),
+      result.tests.map((t) => t.relativePath),
       ['smoke.yaml', 'auth/login.yaml', 'auth/settings.yaml'],
     );
   } finally {
@@ -965,9 +965,9 @@ test('runCheck requires at least one selector when requireSelection is enabled',
   }
 });
 
-test('runCheck rejects specs with empty steps arrays', async () => {
+test('runCheck rejects tests with empty steps arrays', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'broken.yaml': ['name: broken', 'steps: []'].join('\n'),
     },
   });

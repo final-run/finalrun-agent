@@ -289,8 +289,8 @@ test('Device delegates startRecording through the recording controller with the 
 
   const response = await device.startRecording(
     new RecordingRequest({
-      testRunId: 'run',
-      testCaseId: 'case',
+      runId: 'run',
+      testId: 'case',
       apiKey: 'key',
     }),
   );
@@ -302,8 +302,8 @@ test('Device delegates startRecording through the recording controller with the 
       platform: 'ios',
       sdkVersion: '17',
       recordingRequest: new RecordingRequest({
-        testRunId: 'run',
-        testCaseId: 'case',
+        runId: 'run',
+        testId: 'case',
         apiKey: 'key',
       }),
     },

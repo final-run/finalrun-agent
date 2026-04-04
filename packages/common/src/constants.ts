@@ -44,12 +44,12 @@ export const STATUS_COMPLETED = 'completed';
 // ============================================================================
 // AI feature names — used by FinalRunAgent to select prompts/models
 // ============================================================================
-export const FEATURE_PLANNER = 'benchmark-planner';
-export const FEATURE_GROUNDER = 'benchmark-grounder';
-export const FEATURE_SCROLL_INDEX_GROUNDER = 'benchmark-scroll-index-grounder';
-export const FEATURE_INPUT_FOCUS_GROUNDER = 'benchmark-input-focus-grounder';
-export const FEATURE_LAUNCH_APP_GROUNDER = 'benchmark-launch-app-grounder';
-export const FEATURE_SET_LOCATION_GROUNDER = 'benchmark-set-location-grounder';
+export const FEATURE_PLANNER = 'planner';
+export const FEATURE_GROUNDER = 'grounder';
+export const FEATURE_SCROLL_INDEX_GROUNDER = 'scroll-index-grounder';
+export const FEATURE_INPUT_FOCUS_GROUNDER = 'input-focus-grounder';
+export const FEATURE_LAUNCH_APP_GROUNDER = 'launch-app-grounder';
+export const FEATURE_SET_LOCATION_GROUNDER = 'set-location-grounder';
 
 // ============================================================================
 // Defaults

@@ -3,11 +3,11 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { createServer } from 'node:http';
 import type {
-  RunIndexEntryRecord,
-  RunIndexRecord,
-  RunManifestRecord,
-  RunManifestSelectedSpecRecord,
-  RunManifestSpecRecord,
+  RunIndexEntry,
+  RunIndex,
+  RunManifest,
+  TestDefinition,
+  TestResult,
 } from '@finalrun/common';
 import { loadRunIndex } from './runIndex.js';
 import {
@@ -17,9 +17,9 @@ import {
 } from './reportIndexTemplate.js';
 import {
   renderHtmlReport,
-  type ReportManifestSelectedSpecRecord,
-  type ReportManifestSpecRecord,
-  type ReportRunManifestRecord,
+  type ReportManifestSelectedTestRecord,
+  type ReportManifestTestRecord,
+  type ReportRunManifest,
 } from './reportTemplate.js';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -130,10 +130,14 @@ export async function serveReportWorkspace(params: {
 async function loadRunManifest(
   artifactsDir: string,
   runId: string,
-): Promise<RunManifestRecord | undefined> {
+): Promise<RunManifest | undefined> {
   try {
     const raw = await fsp.readFile(path.join(artifactsDir, runId, 'run.json'), 'utf-8');
-    return JSON.parse(raw) as RunManifestRecord;
+    const parsed = JSON.parse(raw) as RunManifest;
+    if (parsed.schemaVersion !== 2) {
+      return undefined;
+    }
+    return parsed;
   } catch {
     return undefined;
   }
@@ -265,7 +269,7 @@ function buildArtifactRoute(relativePath: string): string {
 }
 
 export async function buildReportIndexViewModel(
-  index: RunIndexRecord,
+  index: RunIndex,
   artifactsDir: string,
 ): Promise<ReportIndexViewModel> {
   const runs = await Promise.all(
@@ -285,9 +289,9 @@ export async function buildReportIndexViewModel(
 }
 
 export async function buildReportRunManifestViewModel(
-  manifest: RunManifestRecord,
+  manifest: RunManifest,
   artifactsDir: string,
-): Promise<ReportRunManifestRecord> {
+): Promise<ReportRunManifest> {
   const runId = manifest.run.runId;
   const snapshotCache = new Map<string, Promise<string | undefined>>();
   const readSnapshotYamlText = async (snapshotYamlPath: string): Promise<string | undefined> => {
@@ -299,23 +303,29 @@ export async function buildReportRunManifestViewModel(
     return await cached;
   };
 
+  const { tests: _tests, input: _input, ...rest } = manifest;
+  const { tests: _inputTests, ...inputRest } = manifest.input;
   return {
-    ...manifest,
+    ...rest,
     input: {
-      ...manifest.input,
+      ...inputRest,
       suite: manifest.input.suite
         ? {
             ...manifest.input.suite,
-            snapshotYamlPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath),
-            snapshotJsonPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath),
+            snapshotYamlPath: manifest.input.suite.snapshotYamlPath
+              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath)
+              : undefined,
+            snapshotJsonPath: manifest.input.suite.snapshotJsonPath
+              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath)
+              : undefined,
           }
         : undefined,
-      specs: await Promise.all(
-        manifest.input.specs.map(async (spec) => await toSelectedSpecViewModel(runId, spec, readSnapshotYamlText)),
+      tests: await Promise.all(
+        manifest.input.tests.map(async (test) => await toSelectedTestViewModel(runId, test, readSnapshotYamlText)),
       ),
     },
-    specs: await Promise.all(
-      manifest.specs.map(async (spec) => await toSpecViewModel(runId, spec, readSnapshotYamlText)),
+    tests: await Promise.all(
+      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText)),
     ),
     paths: {
       ...manifest.paths,
@@ -329,37 +339,51 @@ export async function buildReportRunManifestViewModel(
   };
 }
 
-async function toSelectedSpecViewModel(
+async function toSelectedTestViewModel(
   runId: string,
-  spec: RunManifestSelectedSpecRecord,
+  test: TestDefinition,
   readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
-): Promise<ReportManifestSelectedSpecRecord> {
+): Promise<ReportManifestSelectedTestRecord> {
   return {
-    ...spec,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath),
-    snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+    ...test,
+    snapshotYamlPath: test.snapshotYamlPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotYamlPath)
+      : undefined,
+    snapshotJsonPath: test.snapshotJsonPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotJsonPath)
+      : undefined,
+    snapshotYamlText: test.snapshotYamlPath
+      ? await readSnapshotYamlText(test.snapshotYamlPath)
+      : undefined,
   };
 }
 
-async function toSpecViewModel(
+async function toTestViewModel(
   runId: string,
-  spec: RunManifestSpecRecord,
+  test: TestResult,
   readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
-): Promise<ReportManifestSpecRecord> {
+): Promise<ReportManifestTestRecord> {
   return {
-    ...spec,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath),
-    snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
-    previewScreenshotPath: spec.previewScreenshotPath
-      ? buildRunScopedArtifactPath(runId, spec.previewScreenshotPath)
+    ...test,
+    snapshotYamlPath: test.snapshotYamlPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotYamlPath)
       : undefined,
-    resultJsonPath: buildRunScopedArtifactPath(runId, spec.resultJsonPath),
-    recordingFile: spec.recordingFile
-      ? buildRunScopedArtifactPath(runId, spec.recordingFile)
+    snapshotJsonPath: test.snapshotJsonPath
+      ? buildRunScopedArtifactPath(runId, test.snapshotJsonPath)
       : undefined,
-    steps: spec.steps.map((step) => ({
+    snapshotYamlText: test.snapshotYamlPath
+      ? await readSnapshotYamlText(test.snapshotYamlPath)
+      : undefined,
+    previewScreenshotPath: test.previewScreenshotPath
+      ? buildRunScopedArtifactPath(runId, test.previewScreenshotPath)
+      : undefined,
+    resultJsonPath: test.resultJsonPath
+      ? buildRunScopedArtifactPath(runId, test.resultJsonPath)
+      : undefined,
+    recordingFile: test.recordingFile
+      ? buildRunScopedArtifactPath(runId, test.recordingFile)
+      : undefined,
+    steps: test.steps.map((step) => ({
       ...step,
       screenshotFile: step.screenshotFile
         ? buildRunScopedArtifactPath(runId, step.screenshotFile)
@@ -368,14 +392,14 @@ async function toSpecViewModel(
         ? buildRunScopedArtifactPath(runId, step.stepJsonFile)
         : undefined,
     })),
-    firstFailure: spec.firstFailure
+    firstFailure: test.firstFailure
       ? {
-          ...spec.firstFailure,
-          screenshotPath: spec.firstFailure.screenshotPath
-            ? buildRunScopedArtifactPath(runId, spec.firstFailure.screenshotPath)
+          ...test.firstFailure,
+          screenshotPath: test.firstFailure.screenshotPath
+            ? buildRunScopedArtifactPath(runId, test.firstFailure.screenshotPath)
             : undefined,
-          stepJsonPath: spec.firstFailure.stepJsonPath
-            ? buildRunScopedArtifactPath(runId, spec.firstFailure.stepJsonPath)
+          stepJsonPath: test.firstFailure.stepJsonPath
+            ? buildRunScopedArtifactPath(runId, test.firstFailure.stepJsonPath)
             : undefined,
         }
       : undefined,
@@ -422,18 +446,18 @@ function normalizeRunArtifactPath(runId: string, artifactPath: string): string |
 }
 
 async function enrichRunIndexEntry(
-  run: RunIndexEntryRecord,
+  run: RunIndexEntry,
   artifactsDir: string,
 ): Promise<ReportIndexRunRecord> {
   const manifest = await loadRunManifest(artifactsDir, run.runId);
-  const selectedSpecs = manifest?.input.specs ?? [];
+  const selectedTests = manifest?.input.tests ?? [];
 
   return {
     ...run,
     displayName: deriveRunDisplayName(run, manifest),
     displayKind: deriveRunDisplayKind(run, manifest),
     triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
-    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.specCount,
+    selectedTestCount: selectedTests.length > 0 ? selectedTests.length : run.testCount,
     paths: {
       ...run.paths,
       log: buildArtifactRoute(run.paths.log),
@@ -443,40 +467,40 @@ async function enrichRunIndexEntry(
 }
 
 function deriveRunDisplayName(
-  run: RunIndexEntryRecord,
-  manifest: RunManifestRecord | undefined,
+  run: RunIndexEntry,
+  manifest: RunManifest | undefined,
 ): string {
   if (run.target?.type === 'suite' && run.target.suiteName) {
     return run.target.suiteName;
   }
 
-  const selectedSpecs = manifest?.input.specs ?? [];
-  if (selectedSpecs.length === 1) {
-    return selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || run.runId;
+  const selectedTests = manifest?.input.tests ?? [];
+  if (selectedTests.length === 1) {
+    return selectedTests[0]?.name || selectedTests[0]?.relativePath || run.runId;
   }
-  if (selectedSpecs.length > 1) {
+  if (selectedTests.length > 1) {
     const firstLabel =
-      selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || 'Selected specs';
-    return `${firstLabel} +${selectedSpecs.length - 1} more`;
+      selectedTests[0]?.name || selectedTests[0]?.relativePath || 'Selected tests';
+    return `${firstLabel} +${selectedTests.length - 1} more`;
   }
 
   return run.runId;
 }
 
 function deriveRunDisplayKind(
-  run: RunIndexEntryRecord,
-  manifest: RunManifestRecord | undefined,
+  run: RunIndexEntry,
+  manifest: RunManifest | undefined,
 ): ReportIndexRunRecord['displayKind'] {
   if (run.target?.type === 'suite') {
     return 'suite';
   }
 
-  const selectedCount = manifest?.input.specs.length ?? run.specCount;
+  const selectedCount = manifest?.input.tests?.length ?? run.testCount;
   if (selectedCount === 1) {
-    return 'single_spec';
+    return 'single_test';
   }
   if (selectedCount > 1) {
-    return 'multi_spec';
+    return 'multi_test';
   }
 
   return 'fallback';

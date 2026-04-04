@@ -59,8 +59,8 @@ test('RecordingManager creates sanitized iOS output paths and stops using the sa
     platform: PLATFORM_IOS,
     sdkVersion: '17',
     recordingRequest: new RecordingRequest({
-      testRunId: 'run 1',
-      testCaseId: 'case/name',
+      runId: 'run 1',
+      testId: 'case/name',
       apiKey: 'key',
     }),
   });
@@ -119,8 +119,8 @@ test('RecordingManager creates sanitized Android output paths and stops using th
     platform: PLATFORM_ANDROID,
     sdkVersion: '34',
     recordingRequest: new RecordingRequest({
-      testRunId: 'run 1',
-      testCaseId: 'case/name',
+      runId: 'run 1',
+      testId: 'case/name',
       apiKey: 'key',
     }),
   });
@@ -185,8 +185,8 @@ test('RecordingManager uses an explicit output path instead of the legacy platfo
     platform: PLATFORM_ANDROID,
     sdkVersion: '34',
     recordingRequest: new RecordingRequest({
-      testRunId: 'run 1',
-      testCaseId: 'case/name',
+      runId: 'run 1',
+      testId: 'case/name',
       apiKey: 'key',
       outputFilePath: explicitOutputPath,
     }),
@@ -234,8 +234,8 @@ test('RecordingManager preserves failed-stop output files when the process has a
     platform: PLATFORM_ANDROID,
     sdkVersion: '34',
     recordingRequest: new RecordingRequest({
-      testRunId: 'run-1',
-      testCaseId: 'case-1',
+      runId: 'run-1',
+      testId: 'case-1',
       apiKey: 'key',
       outputFilePath: outputPath,
     }),
@@ -267,8 +267,8 @@ test('RecordingManager reports unsupported platforms when no provider is configu
     deviceId: 'emulator-5554',
     platform: PLATFORM_ANDROID,
     recordingRequest: new RecordingRequest({
-      testRunId: 'run',
-      testCaseId: 'case',
+      runId: 'run',
+      testId: 'case',
       apiKey: 'key',
     }),
   });

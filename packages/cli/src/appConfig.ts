@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import {
   PLATFORM_ANDROID,
   PLATFORM_IOS,
-  type RepoAppConfig,
+  type AppConfig,
 } from '@finalrun/common';
 
 const execFileAsync = promisify(execFile);
@@ -27,10 +27,10 @@ export interface ValidatedAppOverrideLike {
   resolvedIdentifier?: string;
 }
 
-export function readRepoAppConfig(
+export function readAppConfig(
   value: unknown,
   label: string,
-): RepoAppConfig | undefined {
+): AppConfig | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -57,8 +57,8 @@ export function readRepoAppConfig(
 }
 
 export function resolveAppConfig(params: {
-  workspaceApp: RepoAppConfig | undefined;
-  environmentApp?: RepoAppConfig;
+  workspaceApp: AppConfig | undefined;
+  environmentApp?: AppConfig;
   envName: string;
   requestedPlatform?: string;
   appOverride?: ValidatedAppOverrideLike;
@@ -130,7 +130,7 @@ export async function resolveAppOverrideIdentifier(
 function resolveSelectedPlatform(params: {
   requestedPlatform?: string;
   inferredPlatform?: string;
-  app: RepoAppConfig;
+  app: AppConfig;
 }): SupportedPlatform {
   const requestedPlatform = normalizePlatform(
     params.requestedPlatform,

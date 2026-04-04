@@ -1,4 +1,4 @@
-// Orchestrates: detect device → set up → execute goal.
+// Orchestrates: detect device -> set up -> execute test.
 
 import {
   AppUpload,
@@ -15,11 +15,11 @@ import {
 } from '@finalrun/common';
 import { DeviceNode } from '@finalrun/device-node';
 import {
-  HeadlessGoalExecutor,
+  TestExecutor,
   AIAgent,
-  type GoalRecordingResult,
+  type TestRecordingResult,
 } from '@finalrun/goal-executor';
-import type { GoalResult } from '@finalrun/goal-executor';
+import type { TestExecutionResult } from '@finalrun/goal-executor';
 import type { ResolvedAppConfig } from './appConfig.js';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
@@ -49,11 +49,11 @@ type GoalRunnerRenderer = Pick<
 >;
 
 type GoalRunnerExecutor = Pick<
-  HeadlessGoalExecutor,
+  TestExecutor,
   'abort' | 'executeGoal'
 >;
 
-export interface GoalRunnerConfig {
+export interface TestSessionConfig {
   goal: string;
   apiKey: string;
   provider: string;   // 'openai' | 'google' | 'anthropic'
@@ -66,8 +66,8 @@ export interface GoalRunnerConfig {
   runtimeBindings?: RuntimeBindings;
   abortSignal?: AbortSignal;
   recording?: {
-    testRunId: string;
-    testCaseId: string;
+    runId: string;
+    testId: string;
     outputFilePath?: string;
     keepPartialOnFailure?: boolean;
   };
@@ -79,18 +79,18 @@ export interface GoalSessionConfig {
   app?: ResolvedAppConfig;
 }
 
-export interface GoalRunnerDependencies {
+export interface TestSessionDeps {
   createFilePathUtil(): CliFilePathUtil;
   getDeviceNode(): GoalRunnerDeviceNode;
   createSelectionIO(): DeviceSelectionIO;
   createAiAgent(params: ConstructorParameters<typeof AIAgent>[0]): AIAgent;
   createExecutor(
-    params: ConstructorParameters<typeof HeadlessGoalExecutor>[0],
+    params: ConstructorParameters<typeof TestExecutor>[0],
   ): GoalRunnerExecutor;
   createRenderer(): GoalRunnerRenderer;
 }
 
-export interface GoalSession {
+export interface TestSession {
   deviceNode: GoalRunnerDeviceNode;
   device: GoalRunnerDevice;
   deviceInfo: DeviceInfo;
@@ -114,7 +114,7 @@ export function isDevicePreparationError(error: unknown): error is DevicePrepara
   return error instanceof DevicePreparationError;
 }
 
-export const goalRunnerDependencies: GoalRunnerDependencies = {
+export const testSessionDeps: TestSessionDeps = {
   createFilePathUtil: () => new CliFilePathUtil(undefined, undefined, { downloadAssets: true }),
   getDeviceNode: () => DeviceNode.getInstance(),
   createSelectionIO: () => ({
@@ -123,14 +123,14 @@ export const goalRunnerDependencies: GoalRunnerDependencies = {
     isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
   }),
   createAiAgent: (params) => new AIAgent(params),
-  createExecutor: (params) => new HeadlessGoalExecutor(params),
+  createExecutor: (params) => new TestExecutor(params),
   createRenderer: () => new TerminalRenderer(),
 };
 
-export async function prepareGoalSession(
+export async function prepareTestSession(
   config: GoalSessionConfig,
-  dependencies: GoalRunnerDependencies = goalRunnerDependencies,
-): Promise<GoalSession> {
+  dependencies: TestSessionDeps = testSessionDeps,
+): Promise<TestSession> {
   const filePathUtil = dependencies.createFilePathUtil();
   Logger.i('Detecting local devices...');
   const adbPath = await filePathUtil.getADBPath();
@@ -275,17 +275,17 @@ export async function prepareGoalSession(
   }
 }
 
-export async function executeGoalOnSession(
-  session: GoalSession,
-  config: GoalRunnerConfig,
-  dependencies: GoalRunnerDependencies = goalRunnerDependencies,
-): Promise<GoalResult> {
+export async function executeTestOnSession(
+  session: TestSession,
+  config: TestSessionConfig,
+  dependencies: TestSessionDeps = testSessionDeps,
+): Promise<TestExecutionResult> {
   const renderer = dependencies.createRenderer();
   let abortListener: (() => void) | undefined;
   let activeRecording:
     | {
-        testRunId: string;
-        testCaseId: string;
+        runId: string;
+        testId: string;
         startedAt: string;
         keepPartialOnFailure: boolean;
       }
@@ -309,7 +309,7 @@ export async function executeGoalOnSession(
       runtimeBindings: config.runtimeBindings,
     });
     if (config.abortSignal?.aborted) {
-      const abortedResult = createAbortedGoalResult(session.platform);
+      const abortedResult = createAbortedTestResult(session.platform);
       renderer.printSummary(abortedResult);
       return abortedResult;
     }
@@ -326,8 +326,8 @@ export async function executeGoalOnSession(
     if (config.recording) {
       const recordingResponse = await session.device.startRecording(
         new RecordingRequest({
-          testRunId: config.recording.testRunId,
-          testCaseId: config.recording.testCaseId,
+          runId: config.recording.runId,
+          testId: config.recording.testId,
           apiKey: config.apiKey,
           outputFilePath: config.recording.outputFilePath,
         }),
@@ -335,8 +335,8 @@ export async function executeGoalOnSession(
 
       if (recordingResponse.success) {
         activeRecording = {
-          testRunId: config.recording.testRunId,
-          testCaseId: config.recording.testCaseId,
+          runId: config.recording.runId,
+          testId: config.recording.testId,
           startedAt:
             typeof recordingResponse.data?.['startedAt'] === 'string'
               ? (recordingResponse.data['startedAt'] as string)
@@ -344,11 +344,11 @@ export async function executeGoalOnSession(
           keepPartialOnFailure: config.recording.keepPartialOnFailure ?? false,
         };
         Logger.i(
-          `Recording started for spec ${config.recording.testCaseId} at ${activeRecording.startedAt}`,
+          `Recording started for test ${config.recording.testId} at ${activeRecording.startedAt}`,
         );
       } else {
         const message =
-          `Unable to start recording for spec ${config.recording.testCaseId}: ` +
+          `Unable to start recording for test ${config.recording.testId}: ` +
           `${recordingResponse.message ?? 'unknown recording error'}`;
         if (recordingRequired) {
           Logger.e(message);
@@ -366,11 +366,11 @@ export async function executeGoalOnSession(
     // Execute!
     let result = await executor.executeGoal((event) => renderer.onProgress(event));
 
-    let recording: GoalRecordingResult | undefined;
+    let recording: TestRecordingResult | undefined;
     if (activeRecording) {
       const stopResponse = await session.device.stopRecording(
-        activeRecording.testRunId,
-        activeRecording.testCaseId,
+        activeRecording.runId,
+        activeRecording.testId,
       );
       if (stopResponse.success) {
         const filePath = stopResponse.data?.['filePath'];
@@ -389,21 +389,21 @@ export async function executeGoalOnSession(
         } else if (recordingRequired) {
           const message =
             `Recording is required for Android runs. ` +
-            `Recording stopped for spec ${activeRecording.testCaseId} but no file path was returned.`;
+            `Recording stopped for test ${activeRecording.testId} but no file path was returned.`;
           Logger.e(message);
           result = markGoalResultFailed(result, message);
         } else {
           Logger.w(
-            `Recording stopped for spec ${activeRecording.testCaseId} but no file path was returned.`,
+            `Recording stopped for test ${activeRecording.testId} but no file path was returned.`,
           );
         }
       } else {
         const message =
-          `Unable to stop recording for spec ${activeRecording.testCaseId}: ` +
+          `Unable to stop recording for test ${activeRecording.testId}: ` +
           `${stopResponse.message ?? 'unknown recording error'}`;
         try {
           await session.device.abortRecording(
-            activeRecording.testRunId,
+            activeRecording.runId,
             activeRecording.keepPartialOnFailure,
           );
         } catch (error) {
@@ -434,7 +434,7 @@ export async function executeGoalOnSession(
     if (activeRecording) {
       try {
         await session.device.abortRecording(
-          activeRecording.testRunId,
+          activeRecording.runId,
           activeRecording.keepPartialOnFailure,
         );
       } catch (error) {
@@ -450,11 +450,11 @@ export async function executeGoalOnSession(
  *
  */
 export async function runGoal(
-  config: GoalRunnerConfig,
-  dependencies: GoalRunnerDependencies = goalRunnerDependencies,
-): Promise<GoalResult> {
+  config: TestSessionConfig,
+  dependencies: TestSessionDeps = testSessionDeps,
+): Promise<TestExecutionResult> {
   printRunBanner(config);
-  const session = await prepareGoalSession(
+  const session = await prepareTestSession(
     {
       platform: config.platform,
       appOverridePath: config.appOverridePath,
@@ -464,7 +464,7 @@ export async function runGoal(
   );
 
   try {
-    return await executeGoalOnSession(session, config, dependencies);
+    return await executeTestOnSession(session, config, dependencies);
   } finally {
     try {
       await session.cleanup();
@@ -541,7 +541,7 @@ function formatAppReference(app: ResolvedAppConfig): string {
 function createRecordingFailureResult(params: {
   platform: string;
   message: string;
-}): GoalResult {
+}): TestExecutionResult {
   const timestamp = new Date().toISOString();
   return {
     success: false,
@@ -555,7 +555,7 @@ function createRecordingFailureResult(params: {
   };
 }
 
-function createAbortedGoalResult(platform: string): GoalResult {
+function createAbortedTestResult(platform: string): TestExecutionResult {
   const timestamp = new Date().toISOString();
   return {
     success: false,
@@ -569,7 +569,7 @@ function createAbortedGoalResult(platform: string): GoalResult {
   };
 }
 
-function markGoalResultFailed(result: GoalResult, message: string): GoalResult {
+function markGoalResultFailed(result: TestExecutionResult, message: string): TestExecutionResult {
   return {
     ...result,
     success: false,
@@ -578,7 +578,7 @@ function markGoalResultFailed(result: GoalResult, message: string): GoalResult {
   };
 }
 
-function printRunBanner(config: GoalRunnerConfig): void {
+function printRunBanner(config: TestSessionConfig): void {
   console.log('\n\x1b[1mFinalRun CLI\x1b[0m');
   console.log('─'.repeat(50));
   console.log(`Goal: ${config.goal}`);

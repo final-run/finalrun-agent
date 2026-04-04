@@ -1,4 +1,4 @@
-import type { RunIndexEntryRecord } from '@finalrun/common';
+import type { RunIndexEntry } from '@finalrun/common';
 
 type RunOutcomeStatus = 'success' | 'failure' | 'aborted';
 
@@ -18,11 +18,11 @@ const LOCAL_ICON_SRC = svgDataUri(
   '<svg width="65" height="48" viewBox="0 0 65 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="63" height="42" rx="8" stroke="#707EAE" stroke-width="2"/><line x1="16" y1="47" x2="52" y2="47" stroke="#707EAE" stroke-width="2" stroke-linecap="round"/></svg>',
 );
 
-export interface ReportIndexRunRecord extends RunIndexEntryRecord {
+export interface ReportIndexRunRecord extends RunIndexEntry {
   displayName: string;
-  displayKind: 'suite' | 'single_spec' | 'multi_spec' | 'fallback';
+  displayKind: 'suite' | 'single_test' | 'multi_test' | 'fallback';
   triggeredFrom: 'Suite' | 'Direct';
-  selectedSpecCount: number;
+  selectedTestCount: number;
 }
 
 export interface ReportIndexViewModel {
@@ -302,7 +302,7 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
 function renderRunIndexRow(run: ReportIndexRunRecord): string {
   const resultLabel = run.passedCount + run.failedCount === 0
     ? 'NA'
-    : `${run.passedCount} / ${run.selectedSpecCount}`;
+    : `${run.passedCount} / ${run.selectedTestCount}`;
   const href = buildRunRoute(run.runId);
 
   return `
@@ -340,7 +340,7 @@ function renderTintedPngIcon(src: string): string {
 }
 
 function resolveRunStatus(
-  run: Pick<RunIndexEntryRecord, 'status' | 'success'>,
+  run: Pick<RunIndexEntry, 'status' | 'success'>,
 ): RunOutcomeStatus {
   return run.status === 'aborted' ? 'aborted' : run.success ? 'success' : 'failure';
 }

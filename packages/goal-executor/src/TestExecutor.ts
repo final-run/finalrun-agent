@@ -2,7 +2,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import {
-  Agent,
+  DeviceAgent,
   DeviceActionRequest,
   Hierarchy,
   Logger,
@@ -10,8 +10,8 @@ import {
   DEFAULT_MAX_ITERATIONS,
   PLANNER_ACTION_COMPLETED,
   PLANNER_ACTION_FAILED,
-  type ActionPayloadRecord,
-  type PlannerThoughtRecord,
+  type ActionPayload,
+  type PlannerThought,
   type RuntimeBindings,
 } from '@finalrun/common';
 import { AIAgent, PlannerResponse } from './ai/AIAgent.js';
@@ -19,7 +19,7 @@ import {
   type TerminalFailureSignal,
   terminalFailureFromError,
 } from './ai/providerFailure.js';
-import { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
+import { ActionExecutor } from './ActionExecutor.js';
 import {
   StepTraceBuilder,
   formatStepTraceSummary,
@@ -33,11 +33,11 @@ import {
 // Types
 // ============================================================================
 
-export interface GoalExecutorConfig {
+export interface TestExecutorConfig {
   goal: string;
   platform: string;
   maxIterations?: number;
-  agent: Agent;
+  agent: DeviceAgent;
   aiAgent: AIAgent;
   preContext?: string;
   appKnowledge?: string;
@@ -45,14 +45,14 @@ export interface GoalExecutorConfig {
   runtimeBindings?: RuntimeBindings;
 }
 
-export interface StepResult {
+export interface AgentActionResult {
   iteration: number;
   action: string;
   reason: string;
   naturalLanguageAction?: string;
   analysis?: string;
-  thought?: PlannerThoughtRecord;
-  actionPayload?: ActionPayloadRecord;
+  thought?: PlannerThought;
+  actionPayload?: ActionPayload;
   success: boolean;
   errorMessage?: string;
   screenshot?: string;
@@ -64,25 +64,25 @@ export interface StepResult {
   trace?: StepTrace;
 }
 
-export interface GoalRecordingResult {
+export interface TestRecordingResult {
   filePath: string;
   startedAt: string;
   completedAt?: string;
 }
 
-export type GoalExecutionStatus = 'success' | 'failure' | 'aborted';
+export type ExecutionStatus = 'success' | 'failure' | 'aborted';
 
-export interface GoalResult {
+export interface TestExecutionResult {
   success: boolean;
-  status: GoalExecutionStatus;
+  status: ExecutionStatus;
   message: string;
   terminalFailure?: TerminalFailureSignal;
   analysis?: string;
   platform: string;
   startedAt: string;
   completedAt: string;
-  recording?: GoalRecordingResult;
-  steps: StepResult[];
+  recording?: TestRecordingResult;
+  steps: AgentActionResult[];
   totalIterations: number;
 }
 
@@ -90,13 +90,13 @@ export interface GoalResult {
  * Progress callback — called on each iteration.
  * Used by the CLI's terminal renderer to show live progress.
  */
-export type GoalProgressCallback = (event: GoalProgressEvent) => void;
+export type ExecutionProgressCallback = (event: ExecutionProgressEvent) => void;
 
-export interface GoalProgressEvent {
+export interface ExecutionProgressEvent {
   type: 'planning' | 'executing' | 'step_complete' | 'goal_complete' | 'error';
   iteration: number;
   totalIterations: number;
-  status?: GoalExecutionStatus;
+  status?: ExecutionStatus;
   action?: string;
   reason?: string;
   success?: boolean;
@@ -144,27 +144,27 @@ type DeviceStateCaptureResult =
 const MAX_CONSECUTIVE_TRANSIENT_CAPTURE_FAILURES = 2;
 
 // ============================================================================
-// HeadlessGoalExecutor
+// TestExecutor
 // ============================================================================
 
 /**
  * Orchestrates the full goal execution loop:
  *   1. Capture device state (screenshot + hierarchy)
  *   2. Call AI planner → get next action
- *   3. Execute action via HeadlessActionExecutor
+ *   3. Execute action via ActionExecutor
  *   4. Record result, check for done/failure
  *   5. Repeat
  *
  */
-export class HeadlessGoalExecutor {
-  private _config: GoalExecutorConfig;
-  private _actionExecutor: HeadlessActionExecutor;
+export class TestExecutor {
+  private _config: TestExecutorConfig;
+  private _actionExecutor: ActionExecutor;
   private _aborted = false;
-  private _steps: StepResult[] = [];
+  private _steps: AgentActionResult[] = [];
 
-  constructor(config: GoalExecutorConfig) {
+  constructor(config: TestExecutorConfig) {
     this._config = config;
-    this._actionExecutor = new HeadlessActionExecutor({
+    this._actionExecutor = new ActionExecutor({
       agent: config.agent,
       aiAgent: config.aiAgent,
       platform: config.platform,
@@ -193,8 +193,8 @@ export class HeadlessGoalExecutor {
    * Execute the goal. Main entry point.
    */
   async executeGoal(
-    onProgress?: GoalProgressCallback,
-  ): Promise<GoalResult> {
+    onProgress?: ExecutionProgressCallback,
+  ): Promise<TestExecutionResult> {
     const maxIterations = this._config.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     const startedAt = new Date().toISOString();
     let history = '';
@@ -246,7 +246,7 @@ export class HeadlessGoalExecutor {
         consecutiveTransientCaptureFailures += 1;
         stepTrace.markFailure(captureResult.message);
         const trace = this._emitTraceSummary(stepTrace);
-        const captureStep: StepResult = {
+        const captureStep: AgentActionResult = {
           iteration,
           action: 'captureDeviceState',
           reason: captureResult.message,
@@ -315,7 +315,7 @@ export class HeadlessGoalExecutor {
       let plannerResponse: PlannerResponse;
       try {
         plannerResponse = await this._config.aiAgent.plan({
-          testCase: this._config.goal,
+          testObjective: this._config.goal,
           platform: this._config.platform,
           preActionScreenshot: deviceState.screenshot,
           hierarchy: deviceState.hierarchy,
@@ -575,7 +575,7 @@ export class HeadlessGoalExecutor {
         );
       }
 
-      const stepResult: StepResult = {
+      const stepResult: AgentActionResult = {
         iteration,
         action,
         reason,
@@ -894,8 +894,8 @@ export class HeadlessGoalExecutor {
 
   private _buildActionPayload(
     plannerResponse: PlannerResponse,
-  ): ActionPayloadRecord | undefined {
-    const payload: ActionPayloadRecord = {
+  ): ActionPayload | undefined {
+    const payload: ActionPayload = {
       text: plannerResponse.text,
       url: plannerResponse.url,
       direction: plannerResponse.direction,

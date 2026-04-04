@@ -2,20 +2,19 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import type {
-  LoadedRepoTestSpec,
-  LoadedRepoTestSuite,
-  RepoEnvironmentConfig,
-  RepoTestSpec,
-  RepoVariableValue,
+  TestDefinition,
+  SuiteDefinition,
+  EnvironmentConfig,
+  VariableValue,
   RuntimeBindings,
   SecretReference,
 } from '@finalrun/common';
-import { readRepoAppConfig } from './appConfig.js';
-import { sanitizeSpecId } from './workspace.js';
+import { readAppConfig } from './appConfig.js';
+import { sanitizeId } from './workspace.js';
 import { CliEnv } from './env.js';
 
 const ENV_TOP_LEVEL_KEYS = new Set(['app', 'secrets', 'variables']);
-const SPEC_TOP_LEVEL_KEYS = new Set([
+const TEST_TOP_LEVEL_KEYS = new Set([
   'name',
   'description',
   'setup',
@@ -24,12 +23,12 @@ const SPEC_TOP_LEVEL_KEYS = new Set([
 ]);
 const SUITE_TOP_LEVEL_KEYS = new Set(['name', 'description', 'tests']);
 const SECRET_PLACEHOLDER = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
-const SPEC_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
+const TEST_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
 
 export interface LoadedEnvironmentConfig {
   envName: string;
   envPath?: string;
-  config: RepoEnvironmentConfig;
+  config: EnvironmentConfig;
   bindings: RuntimeBindings;
   secretReferences: SecretReference[];
 }
@@ -70,7 +69,7 @@ export async function loadEnvironmentConfig(
     envName,
     envPath,
     config: {
-      app: readRepoAppConfig(parsed['app'], `${envPath} app`),
+      app: readAppConfig(parsed['app'], `${envPath} app`),
       secrets: Object.fromEntries(
         secrets.references.map((entry) => [entry.key, `\${${entry.envVar}}`]),
       ),
@@ -84,14 +83,14 @@ export async function loadEnvironmentConfig(
   };
 }
 
-export async function loadTestSpec(
+export async function loadTest(
   filePath: string,
   testsDir: string,
-): Promise<LoadedRepoTestSpec> {
+): Promise<TestDefinition> {
   const raw = await fs.readFile(filePath, 'utf-8');
   const parsed = parseYamlDocument(raw, filePath);
-  assertPlainObject(parsed, `Test spec ${filePath}`);
-  assertAllowedKeys(parsed, SPEC_TOP_LEVEL_KEYS, `Test spec ${filePath}`);
+  assertPlainObject(parsed, `Test file ${filePath}`);
+  assertAllowedKeys(parsed, TEST_TOP_LEVEL_KEYS, `Test file ${filePath}`);
 
   const name = readRequiredString(parsed['name'], `${filePath} name`);
   const description = readOptionalString(parsed['description'], `${filePath} description`);
@@ -100,7 +99,7 @@ export async function loadTestSpec(
   const assertions = readStringArray(parsed['assertions'], `${filePath} assertions`);
 
   if (steps.length === 0) {
-    throw new Error(`Test spec ${filePath} must define a non-empty steps array.`);
+    throw new Error(`Test file ${filePath} must define a non-empty steps array.`);
   }
 
   const relativePath = path.relative(testsDir, filePath).split(path.sep).join('/');
@@ -112,14 +111,14 @@ export async function loadTestSpec(
     assertions,
     sourcePath: filePath,
     relativePath,
-    specId: sanitizeSpecId(relativePath),
+    testId: sanitizeId(relativePath),
   };
 }
 
 export async function loadTestSuite(
   filePath: string,
   suitesDir: string,
-): Promise<LoadedRepoTestSuite> {
+): Promise<SuiteDefinition> {
   const raw = await fs.readFile(filePath, 'utf-8');
   const parsed = parseYamlDocument(raw, filePath);
   assertPlainObject(parsed, `Test suite ${filePath}`);
@@ -139,26 +138,26 @@ export async function loadTestSuite(
     tests,
     sourcePath: filePath,
     relativePath,
-    suiteId: sanitizeSpecId(relativePath),
+    suiteId: sanitizeId(relativePath),
   };
 }
 
-export function validateSpecBindings(
-  spec: RepoTestSpec,
-  envConfig: RepoEnvironmentConfig,
+export function validateTestBindings(
+  test: TestDefinition,
+  envConfig: EnvironmentConfig,
   options?: { environmentResolved?: boolean },
 ): void {
   const unresolvedReferences = new Set<string>();
   const values = [
-    spec.name,
-    spec.description,
-    ...spec.setup,
-    ...spec.steps,
-    ...spec.assertions,
+    test.name,
+    test.description,
+    ...test.setup,
+    ...test.steps,
+    ...test.assertions,
   ].filter((value): value is string => typeof value === 'string');
 
   for (const value of values) {
-    for (const match of value.matchAll(SPEC_REFERENCE_PATTERN)) {
+    for (const match of value.matchAll(TEST_REFERENCE_PATTERN)) {
       const namespace = match[1];
       const key = match[2];
       if (namespace === 'variables' && envConfig.variables[key] === undefined) {
@@ -173,11 +172,11 @@ export function validateSpecBindings(
   if (unresolvedReferences.size > 0) {
     if (options?.environmentResolved === false) {
       throw new Error(
-        `Spec references environment bindings, but no environment configuration was resolved. Add .finalrun/env/<name>.yaml or pass --env <name>: ${Array.from(unresolvedReferences).join(', ')}`,
+        `Test references environment bindings, but no environment configuration was resolved. Add .finalrun/env/<name>.yaml or pass --env <name>: ${Array.from(unresolvedReferences).join(', ')}`,
       );
     }
     throw new Error(
-      `Spec references unknown environment bindings: ${Array.from(unresolvedReferences).join(', ')}`,
+      `Test references unknown environment bindings: ${Array.from(unresolvedReferences).join(', ')}`,
     );
   }
 }
@@ -233,13 +232,13 @@ function readSecrets(
 function readVariables(
   value: unknown,
   filePath: string,
-): Record<string, RepoVariableValue> {
+): Record<string, VariableValue> {
   if (value === undefined || value === null) {
     return {};
   }
 
   assertPlainObject(value, `${filePath} variables`);
-  const variables: Record<string, RepoVariableValue> = {};
+  const variables: Record<string, VariableValue> = {};
   for (const [key, rawValue] of Object.entries(value)) {
     if (
       typeof rawValue !== 'string' &&

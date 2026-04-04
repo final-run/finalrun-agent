@@ -78,7 +78,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
             suiteName: 'Smoke Suite',
             suitePath: 'smoke.yaml',
           },
-          specCount: 2,
+          testCount: 2,
           passedCount: 1,
           failedCount: 1,
           stepCount: 4,
@@ -101,7 +101,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           target: {
             type: 'direct',
           },
-          specCount: 3,
+          testCount: 3,
           passedCount: 3,
           failedCount: 0,
           stepCount: 6,
@@ -124,7 +124,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           target: {
             type: 'direct',
           },
-          specCount: 0,
+          testCount: 0,
           passedCount: 0,
           failedCount: 0,
           stepCount: 0,
@@ -144,18 +144,18 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
         suiteName: 'Smoke Suite',
         suitePath: 'smoke.yaml',
       },
-      selectedSpecs: [
-        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
-        { specId: 'checkout', specName: 'Guest checkout', relativePath: 'checkout/guest_checkout.yaml' },
+      selectedTests: [
+        { testId: 'login', name: 'Valid login', relativePath: 'login/valid_login.yaml' },
+        { testId: 'checkout', name: 'Guest checkout', relativePath: 'checkout/guest_checkout.yaml' },
       ],
       suite: {
         suiteId: 'smoke',
-        suiteName: 'Smoke Suite',
+        name: 'Smoke Suite',
         workspaceSourcePath: '.finalrun/suites/smoke.yaml',
         snapshotYamlPath: 'input/suite.snapshot.yaml',
         snapshotJsonPath: 'input/suite.json',
         tests: ['login/valid_login.yaml', 'checkout/guest_checkout.yaml'],
-        resolvedSpecIds: ['login', 'checkout'],
+        resolvedTestIds: ['login', 'checkout'],
       },
     });
 
@@ -164,10 +164,10 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
       target: {
         type: 'direct',
       },
-      selectedSpecs: [
-        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
-        { specId: 'signup', specName: 'Valid signup', relativePath: 'auth/valid_signup.yaml' },
-        { specId: 'logout', specName: 'Logout', relativePath: 'auth/logout.yaml' },
+      selectedTests: [
+        { testId: 'login', name: 'Valid login', relativePath: 'login/valid_login.yaml' },
+        { testId: 'signup', name: 'Valid signup', relativePath: 'auth/valid_signup.yaml' },
+        { testId: 'logout', name: 'Logout', relativePath: 'auth/logout.yaml' },
       ],
     });
 
@@ -183,7 +183,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
         displayName: run.displayName,
         displayKind: run.displayKind,
         triggeredFrom: run.triggeredFrom,
-        selectedSpecCount: run.selectedSpecCount,
+        selectedTestCount: run.selectedTestCount,
       })),
       [
         {
@@ -191,21 +191,21 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           displayName: 'Smoke Suite',
           displayKind: 'suite',
           triggeredFrom: 'Suite',
-          selectedSpecCount: 2,
+          selectedTestCount: 2,
         },
         {
           runId: 'direct-run',
           displayName: 'Valid login +2 more',
-          displayKind: 'multi_spec',
+          displayKind: 'multi_test',
           triggeredFrom: 'Direct',
-          selectedSpecCount: 3,
+          selectedTestCount: 3,
         },
         {
           runId: 'early-failure-run',
           displayName: 'early-failure-run',
           displayKind: 'fallback',
           triggeredFrom: 'Direct',
-          selectedSpecCount: 0,
+          selectedTestCount: 0,
         },
       ],
     );
@@ -214,7 +214,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
   }
 });
 
-test('loadReportRunManifestViewModel inlines snapshot YAML text for spec detail rendering', async () => {
+test('loadReportRunManifestViewModel inlines snapshot YAML text for test detail rendering', async () => {
   const context = createWorkspaceContext();
 
   try {
@@ -223,22 +223,22 @@ test('loadReportRunManifestViewModel inlines snapshot YAML text for spec detail 
       target: {
         type: 'direct',
       },
-      selectedSpecs: [
-        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
+      selectedTests: [
+        { testId: 'login', name: 'Valid login', relativePath: 'login/valid_login.yaml' },
       ],
     });
-    await fsp.mkdir(path.join(context.artifactsDir, 'yaml-run', 'input', 'specs'), { recursive: true });
+    await fsp.mkdir(path.join(context.artifactsDir, 'yaml-run', 'input', 'tests'), { recursive: true });
     await fsp.writeFile(
-      path.join(context.artifactsDir, 'yaml-run', 'input', 'specs', 'login.yaml'),
+      path.join(context.artifactsDir, 'yaml-run', 'input', 'tests', 'login.yaml'),
       ['name: valid login', 'steps:', '  - Tap login'].join('\n'),
       'utf-8',
     );
 
     const manifest = await loadReportRunManifestViewModel('yaml-run', context);
 
-    assert.equal(manifest.input.specs[0]?.snapshotYamlPath, 'input/specs/login.yaml');
-    assert.equal(manifest.input.specs[0]?.snapshotYamlText, ['name: valid login', 'steps:', '  - Tap login'].join('\n'));
-    assert.equal(manifest.specs.length, 0);
+    assert.equal(manifest.input.tests[0]?.snapshotYamlPath, 'input/tests/login.yaml');
+    assert.equal(manifest.input.tests[0]?.snapshotYamlText, ['name: valid login', 'steps:', '  - Tap login'].join('\n'));
+    assert.equal(manifest.tests.length, 0);
   } finally {
     await cleanupWorkspaceContext(context);
   }
@@ -260,24 +260,24 @@ async function writeRunManifest(
       suiteName?: string;
       suitePath?: string;
     };
-    selectedSpecs: Array<{
-      specId: string;
-      specName: string;
+    selectedTests: Array<{
+      testId: string;
+      name: string;
       relativePath: string;
     }>;
     suite?: {
       suiteId: string;
-      suiteName: string;
+      name: string;
       workspaceSourcePath: string;
       snapshotYamlPath: string;
       snapshotJsonPath: string;
       tests: string[];
-      resolvedSpecIds: string[];
+      resolvedTestIds: string[];
     };
   },
 ): Promise<void> {
   await writeJson(path.join(context.artifactsDir, params.runId, 'run.json'), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     run: {
       runId: params.runId,
       success: params.target.type === 'direct',
@@ -297,13 +297,13 @@ async function writeRunManifest(
         label: 'repo app',
       },
       selectors: params.target.type === 'direct'
-        ? params.selectedSpecs.map((spec) => spec.relativePath)
+        ? params.selectedTests.map((t) => t.relativePath)
         : [],
       target: params.target,
       counts: {
-        specs: {
-          total: params.selectedSpecs.length,
-          passed: params.target.type === 'direct' ? params.selectedSpecs.length : 0,
+        tests: {
+          total: params.selectedTests.length,
+          passed: params.target.type === 'direct' ? params.selectedTests.length : 0,
           failed: params.target.type === 'direct' ? 0 : 1,
         },
         steps: {
@@ -320,28 +320,31 @@ async function writeRunManifest(
         secretReferences: [],
       },
       suite: params.suite,
-      specs: params.selectedSpecs.map((spec) => ({
-        ...spec,
-        workspaceSourcePath: `.finalrun/tests/${spec.relativePath}`,
-        snapshotYamlPath: `input/specs/${spec.specId}.yaml`,
-        snapshotJsonPath: `input/specs/${spec.specId}.json`,
+      tests: params.selectedTests.map((t) => ({
+        ...t,
+        workspaceSourcePath: `.finalrun/tests/${t.relativePath}`,
+        snapshotYamlPath: `input/tests/${t.testId}.yaml`,
+        snapshotJsonPath: `input/tests/${t.testId}.json`,
         bindingReferences: {
           variables: [],
           secrets: [],
         },
+        setup: [],
+        steps: [],
+        assertions: [],
       })),
       cli: {
         command: params.target.type === 'suite'
           ? `finalrun test --suite ${params.target.suitePath || 'suite.yaml'}`
-          : `finalrun test ${params.selectedSpecs.map((spec) => spec.relativePath).join(' ')}`,
+          : `finalrun test ${params.selectedTests.map((t) => t.relativePath).join(' ')}`,
         selectors: params.target.type === 'direct'
-          ? params.selectedSpecs.map((spec) => spec.relativePath)
+          ? params.selectedTests.map((t) => t.relativePath)
           : [],
         suitePath: params.target.type === 'suite' ? params.target.suitePath : undefined,
         debug: false,
       },
     },
-    specs: [],
+    tests: [],
     paths: {
       runJson: 'run.json',
       summaryJson: 'summary.json',

@@ -6,9 +6,9 @@ import {
   GetScreenshotAction,
   PointPercent,
   RotateAction,
-  StepAction,
+  DeviceAction,
   TapPercentAction,
-} from './TestStep.js';
+} from './DeviceAction.js';
 import {
   PointPercent as BarrelPointPercent,
   RotateAction as BarrelRotateAction,
@@ -24,20 +24,20 @@ test('PointPercent serializes and deserializes percent coordinates', () => {
   });
 });
 
-test('parity action models expose the expected StepAction types', () => {
+test('parity action models expose the expected DeviceAction types', () => {
   const tap = new TapPercentAction({
     point: new PointPercent({ xPercent: 0.1, yPercent: 0.2 }),
   });
 
-  assert.equal(tap.type, StepAction.TAP_PERCENT);
+  assert.equal(tap.type, DeviceAction.TAP_PERCENT);
   assert.deepEqual(tap.toJson(), {
-    type: StepAction.TAP_PERCENT,
+    type: DeviceAction.TAP_PERCENT,
     point: { xPercent: 0.1, yPercent: 0.2 },
   });
-  assert.equal(new EraseTextAction().type, StepAction.ERASE_TEXT);
-  assert.equal(new RotateAction().type, StepAction.ROTATE);
-  assert.equal(new GetScreenshotAction().type, StepAction.GET_SCREENSHOT);
-  assert.equal(new GetHierarchyAction().type, StepAction.GET_HIERARCHY);
+  assert.equal(new EraseTextAction().type, DeviceAction.ERASE_TEXT);
+  assert.equal(new RotateAction().type, DeviceAction.ROTATE);
+  assert.equal(new GetScreenshotAction().type, DeviceAction.GET_SCREENSHOT);
+  assert.equal(new GetHierarchyAction().type, DeviceAction.GET_HIERARCHY);
 });
 
 test('common barrel exports the new parity models', () => {
@@ -46,6 +46,6 @@ test('common barrel exports the new parity models', () => {
   });
   const rotate = new BarrelRotateAction();
 
-  assert.equal(tap.type, StepAction.TAP_PERCENT);
-  assert.equal(rotate.type, StepAction.ROTATE);
+  assert.equal(tap.type, DeviceAction.TAP_PERCENT);
+  assert.equal(rotate.type, DeviceAction.ROTATE);
 });

@@ -57,7 +57,7 @@ import { classifyFatalProviderError } from './providerFailure.js';
 // ============================================================================
 
 export interface PlannerRequest {
-  testCase: string;
+  testObjective: string;
   platform: string;
   preActionScreenshot?: string; // base64
   postActionScreenshot?: string; // base64
@@ -156,7 +156,7 @@ export class AIAgent {
       userParts.push({ type: 'image', image: request.preActionScreenshot });
     }
 
-    let textPrompt = `Test case: ${request.testCase}\n`;
+    let textPrompt = `Test objective: ${request.testObjective}\n`;
     textPrompt += `Platform: ${request.platform}\n`;
 
     if (request.history) {

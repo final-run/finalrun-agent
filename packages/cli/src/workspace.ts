@@ -5,10 +5,10 @@ import * as path from 'node:path';
 import {
   PLATFORM_ANDROID,
   PLATFORM_IOS,
-  type RepoAppConfig,
+  type AppConfig,
 } from '@finalrun/common';
 import YAML from 'yaml';
-import { readRepoAppConfig } from './appConfig.js';
+import { readAppConfig } from './appConfig.js';
 import { resolveFinalRunRootDir } from './runtimePaths.js';
 import { promptForWorkspaceSelection, type WorkspaceSelectionIO } from './workspacePicker.js';
 
@@ -30,7 +30,7 @@ export interface AppOverrideValidationResult {
 export interface WorkspaceConfig {
   env?: string;
   model?: string;
-  app?: RepoAppConfig;
+  app?: AppConfig;
 }
 
 export interface ResolvedEnvironmentFile {
@@ -243,7 +243,7 @@ export function assertPathWithinRoot(
   }
 }
 
-export function sanitizeSpecId(relativePath: string): string {
+export function sanitizeId(relativePath: string): string {
   return relativePath
     .replace(/\.[^.]+$/, '')
     .replace(/[\\/]+/g, '__')
@@ -420,7 +420,7 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
     model: readOptionalTrimmedString(parsed['model'], `${configPath} model`, {
       allowEmpty: true,
     }),
-    app: readRepoAppConfig(parsed['app'], `${configPath} app`),
+    app: readAppConfig(parsed['app'], `${configPath} app`),
   };
 }
 
@@ -749,10 +749,10 @@ function formatMissingEnvironmentError(
   envDirExists: boolean,
 ): string {
   if (!envDirExists) {
-    return `Environment "${requestedEnvName}" was requested, but ${envDir} does not exist. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free specs.`;
+    return `Environment "${requestedEnvName}" was requested, but ${envDir} does not exist. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free tests.`;
   }
   if (availableEnvNames.length === 0) {
-    return `Environment "${requestedEnvName}" was not found in ${envDir}, and no environment files are available there. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free specs.`;
+    return `Environment "${requestedEnvName}" was not found in ${envDir}, and no environment files are available there. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free tests.`;
   }
 
   return `Environment "${requestedEnvName}" was not found in ${envDir}. Available environments: ${availableEnvNames.join(', ')}`;

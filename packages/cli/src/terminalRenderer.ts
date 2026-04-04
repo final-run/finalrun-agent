@@ -1,7 +1,7 @@
 // Port of mobile_cli/lib/terminal_goal_renderer.dart
 // Renders goal execution progress in the terminal with live updates.
 
-import type { GoalProgressEvent, GoalResult } from '@finalrun/goal-executor';
+import type { ExecutionProgressEvent, TestExecutionResult } from '@finalrun/goal-executor';
 
 /**
  * Renders goal execution progress in the terminal.
@@ -18,7 +18,7 @@ export class TerminalRenderer {
   /**
    * Handle a progress event from the goal executor.
    */
-  onProgress(event: GoalProgressEvent): void {
+  onProgress(event: ExecutionProgressEvent): void {
     switch (event.type) {
       case 'planning':
         this._showSpinner(
@@ -67,7 +67,7 @@ export class TerminalRenderer {
   /**
    * Print a summary of the goal execution result.
    */
-  printSummary(result: GoalResult): void {
+  printSummary(result: TestExecutionResult): void {
     console.log('\n' + '─'.repeat(50));
     console.log(
       result.status === 'aborted'

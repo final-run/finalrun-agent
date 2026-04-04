@@ -17,8 +17,8 @@ function createTempWorkspace(params?: {
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
   configYaml?: string | null;
-  specLines?: string[];
-  specs?: Record<string, string>;
+  testLines?: string[];
+  testFiles?: Record<string, string>;
   suites?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-bin-'));
@@ -39,12 +39,12 @@ function createTempWorkspace(params?: {
     fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), configYaml, 'utf-8');
   }
 
-  const specs = params?.specs ?? {
+  const testFiles = params?.testFiles ?? {
     'login.yaml': (
-      params?.specLines ?? ['name: login', 'steps:', '  - Open the login screen.']
+      params?.testLines ?? ['name: login', 'steps:', '  - Open the login screen.']
     ).join('\n'),
   };
-  for (const [relativePath, contents] of Object.entries(specs)) {
+  for (const [relativePath, contents] of Object.entries(testFiles)) {
     const targetPath = path.join(testsDir, relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, contents, 'utf-8');
@@ -390,7 +390,7 @@ test('finalrun check reports an env ambiguity error instead of a parser error wh
   }
 });
 
-test('finalrun check works without --env when .finalrun/env is absent and the spec is env-free', async () => {
+test('finalrun check works without --env when .finalrun/env is absent and the test is env-free', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
   });
@@ -405,10 +405,10 @@ test('finalrun check works without --env when .finalrun/env is absent and the sp
   }
 });
 
-test('finalrun check fails with actionable binding guidance when .finalrun/env is absent and the spec references env bindings', async () => {
+test('finalrun check fails with actionable binding guidance when .finalrun/env is absent and the test references env bindings', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
+    testLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
   });
 
   try {
@@ -421,9 +421,9 @@ test('finalrun check fails with actionable binding guidance when .finalrun/env i
   }
 });
 
-test('finalrun check rejects specs with preconditions keys', async () => {
+test('finalrun check rejects tests with preconditions keys', async () => {
   const rootDir = createTempWorkspace({
-    specLines: [
+    testLines: [
       'name: login',
       'preconditions:',
       '  - App is installed.',
@@ -443,7 +443,7 @@ test('finalrun check rejects specs with preconditions keys', async () => {
 
 test('finalrun check accepts repeated selectors and comma-delimited selectors', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
       'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit the profile.'].join('\n'),
     },
@@ -452,12 +452,12 @@ test('finalrun check accepts repeated selectors and comma-delimited selectors', 
   try {
     const repeatedResult = runCli(['check', 'login.yaml', 'auth/profile/edit.yaml'], rootDir);
     assert.equal(repeatedResult.status, 0);
-    assert.match(repeatedResult.stdout, /Validated 2 spec\(s\)/);
+    assert.match(repeatedResult.stdout, /Validated 2 test\(s\)/);
     assert.equal(repeatedResult.stderr, '');
 
     const commaResult = runCli(['check', 'login.yaml,auth/profile/edit.yaml'], rootDir);
     assert.equal(commaResult.status, 0);
-    assert.match(commaResult.stdout, /Validated 2 spec\(s\)/);
+    assert.match(commaResult.stdout, /Validated 2 test\(s\)/);
     assert.equal(commaResult.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -466,7 +466,7 @@ test('finalrun check accepts repeated selectors and comma-delimited selectors', 
 
 test('finalrun check validates suite manifests with --suite', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
       'dashboard/home.yaml': ['name: home', 'steps:', '  - Open dashboard.'].join('\n'),
     },
@@ -483,17 +483,17 @@ test('finalrun check validates suite manifests with --suite', async () => {
   try {
     const result = runCli(['check', '--suite', 'login_suite.yaml'], rootDir);
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /Validated 2 spec\(s\)/);
+    assert.match(result.stdout, /Validated 2 test\(s\)/);
     assert.equal(result.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('finalrun test resolves nested spec paths without requiring the .finalrun/tests prefix', async () => {
+test('finalrun test resolves nested test paths without requiring the .finalrun/tests prefix', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: google/gemini-3-flash-preview\n',
-    specs: {
+    testFiles: {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
   });
@@ -505,7 +505,7 @@ test('finalrun test resolves nested spec paths without requiring the .finalrun/t
       result.stderr,
       /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
     );
-    assert.doesNotMatch(result.stderr, /Spec selector not found/);
+    assert.doesNotMatch(result.stderr, /Test selector not found/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -514,7 +514,7 @@ test('finalrun test resolves nested spec paths without requiring the .finalrun/t
 test('finalrun suite resolves suite manifests without requiring the .finalrun/suites prefix', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: google/gemini-3-flash-preview\n',
-    specs: {
+    testFiles: {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
     suites: {
@@ -538,7 +538,7 @@ test('finalrun suite resolves suite manifests without requiring the .finalrun/su
 test('finalrun suite matches the legacy test --suite invocation', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: google/gemini-3-flash-preview\n',
-    specs: {
+    testFiles: {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
     suites: {
@@ -800,7 +800,7 @@ test('finalrun test prints blocked Android preflight failures raw and does not c
   }
 });
 
-test('finalrun test prints missing spec selector failures raw and does not create a run', async () => {
+test('finalrun test prints missing test selector failures raw and does not create a run', async () => {
   const rootDir = createTempWorkspace();
 
   try {
@@ -808,7 +808,7 @@ test('finalrun test prints missing spec selector failures raw and does not creat
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Spec selector not found:/);
+    assert.match(result.stderr, /Test selector not found:/);
     assertNoRunOutput(result);
     await assertNoRunArtifacts(rootDir);
   } finally {
@@ -836,7 +836,7 @@ test('finalrun suite prints missing manifest failures raw and does not create a 
 
 test('finalrun test prints invalid YAML failures raw and does not create a run', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': 'name: login\nsteps: [\n',
     },
   });
@@ -857,7 +857,7 @@ test('finalrun test prints invalid YAML failures raw and does not create a run',
 test('finalrun test prints unresolved env binding failures raw and does not create a run', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
+    testLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
   });
 
   try {
@@ -1008,7 +1008,7 @@ test('finalrun runs --json prints the saved runs index', async () => {
             platform: 'android',
             modelLabel: 'openai/gpt-4o',
             appLabel: 'repo app',
-            specCount: 1,
+            testCount: 1,
             passedCount: 0,
             failedCount: 1,
             stepCount: 1,
@@ -1058,7 +1058,7 @@ test('finalrun runs prints a console summary and suggests starting the local rep
             platform: 'android',
             modelLabel: 'openai/gpt-4o',
             appLabel: 'repo app',
-            specCount: 2,
+            testCount: 2,
             passedCount: 2,
             failedCount: 0,
             stepCount: 4,
@@ -1140,7 +1140,7 @@ test('finalrun runs --workspace works from outside any workspace', async () => {
             platform: 'android',
             modelLabel: 'openai/gpt-4o',
             appLabel: 'repo app',
-            specCount: 1,
+            testCount: 1,
             passedCount: 1,
             failedCount: 0,
             stepCount: 1,
@@ -1206,7 +1206,7 @@ test('finalrun runs --workspace overrides the current workspace', async () => {
             platform: 'ios',
             modelLabel: 'openai/gpt-4o',
             appLabel: 'repo app',
-            specCount: 2,
+            testCount: 2,
             passedCount: 2,
             failedCount: 0,
             stepCount: 2,

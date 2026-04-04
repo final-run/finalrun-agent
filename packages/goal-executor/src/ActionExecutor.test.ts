@@ -19,17 +19,17 @@ import {
   PLANNER_ACTION_LAUNCH_APP,
   PLANNER_ACTION_WAIT,
 } from '@finalrun/common';
-import type { Agent } from '@finalrun/common';
+import type { DeviceAgent } from '@finalrun/common';
 import type { AIAgent, GrounderResponse } from './ai/AIAgent.js';
 import { FatalProviderError } from './ai/providerFailure.js';
-import { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
+import { ActionExecutor } from './ActionExecutor.js';
 
 function createAgent(
   executedActions: unknown[],
   options?: {
     availableApps?: Array<{ packageName: string; name: string }>;
   },
-): Agent {
+): DeviceAgent {
   return {
     async setUp() {
       return new DeviceNodeResponse({ success: true });
@@ -82,7 +82,7 @@ function createAgent(
     uninstallDriver() {
       return undefined;
     },
-  } as unknown as Agent;
+  } as unknown as DeviceAgent;
 }
 
 function createAiAgent(
@@ -117,7 +117,7 @@ function assertTraceNames(
   );
 }
 
-test('HeadlessActionExecutor repeats tap actions using the planner repeat fields', async () => {
+test('ActionExecutor repeats tap actions using the planner repeat fields', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async (request) => {
@@ -134,7 +134,7 @@ test('HeadlessActionExecutor repeats tap actions using the planner repeat fields
     };
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -156,7 +156,7 @@ test('HeadlessActionExecutor repeats tap actions using the planner repeat fields
   assert.equal(result.trace?.spans[0]?.status, 'success');
 });
 
-test('HeadlessActionExecutor uses structured input text fields instead of extracting from reason', async () => {
+test('ActionExecutor uses structured input text fields instead of extracting from reason', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async (request) => {
@@ -173,7 +173,7 @@ test('HeadlessActionExecutor uses structured input text fields instead of extrac
     };
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -196,14 +196,14 @@ test('HeadlessActionExecutor uses structured input text fields instead of extrac
   assertTraceNames(result.trace, ['action.prep', 'action.ground', 'action.device']);
 });
 
-test('HeadlessActionExecutor uses structured deeplink URLs from the planner action payload', async () => {
+test('ActionExecutor uses structured deeplink URLs from the planner action payload', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => {
     throw new Error('Grounder should not be called for deeplink actions');
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -227,7 +227,7 @@ test('HeadlessActionExecutor uses structured deeplink URLs from the planner acti
   assertTraceNames(result.trace, ['action.prep', 'action.device']);
 });
 
-test('HeadlessActionExecutor traces launchApp with prep, ground, and device spans', async () => {
+test('ActionExecutor traces launchApp with prep, ground, and device spans', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions, {
     availableApps: [
@@ -250,7 +250,7 @@ test('HeadlessActionExecutor traces launchApp with prep, ground, and device span
     };
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -273,7 +273,7 @@ test('HeadlessActionExecutor traces launchApp with prep, ground, and device span
   assertTraceNames(result.trace, ['action.prep', 'action.ground', 'action.device']);
 });
 
-test('HeadlessActionExecutor does not default primary app relaunches to reinstall', async () => {
+test('ActionExecutor does not default primary app relaunches to reinstall', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions, {
     availableApps: [
@@ -285,7 +285,7 @@ test('HeadlessActionExecutor does not default primary app relaunches to reinstal
     raw: '{}',
   }));
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -307,7 +307,7 @@ test('HeadlessActionExecutor does not default primary app relaunches to reinstal
   );
 });
 
-test('HeadlessActionExecutor ignores malformed grounder boolean flags and preserves defaults', async () => {
+test('ActionExecutor ignores malformed grounder boolean flags and preserves defaults', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions, {
     availableApps: [
@@ -325,7 +325,7 @@ test('HeadlessActionExecutor ignores malformed grounder boolean flags and preser
     raw: '{}',
   }));
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -348,7 +348,7 @@ test('HeadlessActionExecutor ignores malformed grounder boolean flags and preser
   assert.equal(action.stopAppBeforeLaunch, false);
 });
 
-test('HeadlessActionExecutor honors explicit grounder boolean flags for app launches', async () => {
+test('ActionExecutor honors explicit grounder boolean flags for app launches', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions, {
     availableApps: [
@@ -366,7 +366,7 @@ test('HeadlessActionExecutor honors explicit grounder boolean flags for app laun
     raw: '{}',
   }));
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -389,14 +389,14 @@ test('HeadlessActionExecutor honors explicit grounder boolean flags for app laun
   assert.equal(action.stopAppBeforeLaunch, true);
 });
 
-test('HeadlessActionExecutor traces wait actions without calling the device', async () => {
+test('ActionExecutor traces wait actions without calling the device', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => {
     throw new Error('Grounder should not be called for wait actions');
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -415,14 +415,14 @@ test('HeadlessActionExecutor traces wait actions without calling the device', as
   assertTraceNames(result.trace, ['action.wait']);
 });
 
-test('HeadlessActionExecutor executes rotate without calling the grounder', async () => {
+test('ActionExecutor executes rotate without calling the grounder', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => {
     throw new Error('Grounder should not be called for rotate actions');
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -441,7 +441,7 @@ test('HeadlessActionExecutor executes rotate without calling the grounder', asyn
   assertTraceNames(result.trace, ['action.device']);
 });
 
-test('HeadlessActionExecutor records visual fallback explicitly in the trace', async () => {
+test('ActionExecutor records visual fallback explicitly in the trace', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   let groundCalls = 0;
@@ -472,7 +472,7 @@ test('HeadlessActionExecutor records visual fallback explicitly in the trace', a
     };
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -496,7 +496,7 @@ test('HeadlessActionExecutor records visual fallback explicitly in the trace', a
   );
 });
 
-test('HeadlessActionExecutor preserves a ground failure when no visual fallback is available', async () => {
+test('ActionExecutor preserves a ground failure when no visual fallback is available', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => ({
@@ -510,7 +510,7 @@ test('HeadlessActionExecutor preserves a ground failure when no visual fallback 
     },
   }));
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -530,7 +530,7 @@ test('HeadlessActionExecutor preserves a ground failure when no visual fallback 
   assert.equal(result.trace?.spans[0]?.status, 'failure');
 });
 
-test('HeadlessActionExecutor surfaces terminal provider failures from grounder calls', async () => {
+test('ActionExecutor surfaces terminal provider failures from grounder calls', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => {
@@ -542,7 +542,7 @@ test('HeadlessActionExecutor surfaces terminal provider failures from grounder c
     });
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -572,7 +572,7 @@ test('HeadlessActionExecutor surfaces terminal provider failures from grounder c
   assert.equal(result.trace?.spans[0]?.status, 'failure');
 });
 
-test('HeadlessActionExecutor resolves secret placeholders for text input only at the device boundary', async () => {
+test('ActionExecutor resolves secret placeholders for text input only at the device boundary', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => ({
@@ -586,7 +586,7 @@ test('HeadlessActionExecutor resolves secret placeholders for text input only at
     },
   }));
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -613,14 +613,14 @@ test('HeadlessActionExecutor resolves secret placeholders for text input only at
   assert.equal(result.trace?.spans[0]?.detail?.includes('textLength='), true);
 });
 
-test('HeadlessActionExecutor keeps secret placeholders tokenized in deeplink traces while executing the resolved URL', async () => {
+test('ActionExecutor keeps secret placeholders tokenized in deeplink traces while executing the resolved URL', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async () => {
     throw new Error('Grounder should not be called for deeplink actions');
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',
@@ -652,7 +652,7 @@ test('HeadlessActionExecutor keeps secret placeholders tokenized in deeplink tra
   );
 });
 
-test('HeadlessActionExecutor surfaces terminal provider failures from visual grounding fallback', async () => {
+test('ActionExecutor surfaces terminal provider failures from visual grounding fallback', async () => {
   const executedActions: unknown[] = [];
   const agent = createAgent(executedActions);
   const aiAgent = createAiAgent(async (request) => {
@@ -677,7 +677,7 @@ test('HeadlessActionExecutor surfaces terminal provider failures from visual gro
     };
   });
 
-  const executor = new HeadlessActionExecutor({
+  const executor = new ActionExecutor({
     agent,
     aiAgent,
     platform: 'android',

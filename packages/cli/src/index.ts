@@ -2,8 +2,8 @@
 
 export { CliEnv } from './env.js';
 export { parseModel } from './env.js';
-export { runGoal } from './goalRunner.js';
-export type { GoalRunnerConfig } from './goalRunner.js';
+export { runGoal } from './sessionRunner.js';
+export type { TestSessionConfig } from './sessionRunner.js';
 export { CliFilePathUtil } from './filePathUtil.js';
 export { TerminalRenderer } from './terminalRenderer.js';
 export { runCheck } from './checkRunner.js';

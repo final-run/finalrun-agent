@@ -1,6 +1,6 @@
 // Port of common/interface/Agent.dart
-// Dart: abstract class Agent → TypeScript: interface Agent
-// Scoped to CLI usage only — excludes recording/streaming methods
+// Dart: abstract class Agent -> TypeScript: interface DeviceAgent
+// Full device interface including action execution, recording, and lifecycle methods
 
 import { DeviceActionRequest } from '../models/DeviceActionRequest.js';
 import { DeviceInfo } from '../models/DeviceInfo.js';
@@ -13,7 +13,7 @@ import type { RecordingRequest } from '../models/RecordingRequest.js';
  *
  * Dart equivalent: common/interface/Agent.dart
  */
-export interface Agent {
+export interface DeviceAgent {
   // Dart: Future<DeviceNodeResponse> setUp({bool reuseAddress = false})
   setUp(options?: { reuseAddress?: boolean }): Promise<DeviceNodeResponse>;
 
@@ -48,9 +48,9 @@ export interface Agent {
 
   // Screen recording methods
   startRecording(recordingRequest: RecordingRequest): Promise<DeviceNodeResponse>;
-  stopRecording(testRunId: string, testCaseId: string): Promise<DeviceNodeResponse>;
+  stopRecording(runId: string, testId: string): Promise<DeviceNodeResponse>;
   recordingCleanUp(): Promise<void>;
-  abortRecording(testRunId: string, keepOutput?: boolean): Promise<void>;
+  abortRecording(runId: string, keepOutput?: boolean): Promise<void>;
 
   // Dart: void uninstallDriver()
   uninstallDriver(): void;

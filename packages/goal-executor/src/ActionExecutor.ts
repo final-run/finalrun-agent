@@ -2,7 +2,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import {
-  Agent,
+  DeviceAgent,
   Hierarchy,
   DeviceActionRequest,
   Logger,
@@ -111,15 +111,15 @@ class TimedActionPhaseFailure extends Error {
 }
 
 // ============================================================================
-// HeadlessActionExecutor
+// ActionExecutor
 // ============================================================================
 
 /**
  * Executes individual actions: ground UI element → compute coordinates → device action.
  *
  */
-export class HeadlessActionExecutor {
-  private _agent: Agent;
+export class ActionExecutor {
+  private _agent: DeviceAgent;
   private _aiAgent: AIAgent;
   private _visualGrounder: VisualGrounder;
   private _platform: string;
@@ -127,7 +127,7 @@ export class HeadlessActionExecutor {
   private _runtimeBindings?: RuntimeBindings;
 
   constructor(params: {
-    agent: Agent;
+    agent: DeviceAgent;
     aiAgent: AIAgent;
     platform: string;
     appIdentifier?: string;
