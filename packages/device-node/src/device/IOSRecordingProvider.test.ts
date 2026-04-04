@@ -40,8 +40,8 @@ test('IOSRecordingProvider starts xcrun simctl recording with the simulator UDID
     deviceId: 'SIM-1',
     filePath: '/tmp/run_case.mov',
     recordingRequest: new RecordingRequest({
-      testRunId: 'run',
-      testCaseId: 'case',
+      runId: 'run',
+      testId: 'case',
       apiKey: 'key',
     }),
   });

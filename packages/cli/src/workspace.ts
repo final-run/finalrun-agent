@@ -4,10 +4,10 @@ import * as path from 'node:path';
 import {
   PLATFORM_ANDROID,
   PLATFORM_IOS,
-  type RepoAppConfig,
+  type AppConfig,
 } from '@finalrun/common';
 import YAML from 'yaml';
-import { readRepoAppConfig } from './appConfig.js';
+import { readAppConfig } from './appConfig.js';
 import { resolveFinalRunRootDir } from './runtimePaths.js';
 
 export interface FinalRunWorkspace {
@@ -28,7 +28,7 @@ export interface AppOverrideValidationResult {
 export interface WorkspaceConfig {
   env?: string;
   model?: string;
-  app?: RepoAppConfig;
+  app?: AppConfig;
 }
 
 export interface ResolvedEnvironmentFile {
@@ -114,7 +114,7 @@ export function assertPathWithinRoot(
   }
 }
 
-export function sanitizeSpecId(relativePath: string): string {
+export function sanitizeId(relativePath: string): string {
   return relativePath
     .replace(/\.[^.]+$/, '')
     .replace(/[\\/]+/g, '__')
@@ -291,7 +291,7 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
     model: readOptionalTrimmedString(parsed['model'], `${configPath} model`, {
       allowEmpty: true,
     }),
-    app: readRepoAppConfig(parsed['app'], `${configPath} app`),
+    app: readAppConfig(parsed['app'], `${configPath} app`),
   };
 }
 

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { ChildProcess, SpawnSyncReturns } from 'node:child_process';
-import type { ReportServerStateRecord } from '@finalrun/common';
+import type { ReportServerState } from '@finalrun/common';
 import {
   buildRunReportUrl,
   openReportUrl,
@@ -45,7 +45,7 @@ function createWorkspace(): FinalRunWorkspace {
   };
 }
 
-function createServerState(workspace: FinalRunWorkspace): ReportServerStateRecord {
+function createServerState(workspace: FinalRunWorkspace): ReportServerState {
   return {
     pid: 4321,
     port: 4173,

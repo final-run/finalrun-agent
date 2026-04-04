@@ -2,7 +2,7 @@ import * as fsp from 'node:fs/promises';
 import * as net from 'node:net';
 import * as path from 'node:path';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
-import type { ReportServerStateRecord } from '@finalrun/common';
+import type { ReportServerState } from '@finalrun/common';
 import type { FinalRunWorkspace } from './workspace.js';
 import { resolveCliLaunchArgs } from './runtimePaths.js';
 
@@ -23,7 +23,7 @@ export interface StartReportServerOptions {
 }
 
 export interface ReportServerSession {
-  state: ReportServerStateRecord;
+  state: ReportServerState;
   url: string;
   reused: boolean;
 }
@@ -128,7 +128,7 @@ export async function startOrReuseWorkspaceReportServer(
     url,
   });
 
-  const state: ReportServerStateRecord = {
+  const state: ReportServerState = {
     pid: child.pid ?? 0,
     port,
     url,
@@ -148,7 +148,7 @@ export async function startOrReuseWorkspaceReportServer(
 
 export async function resolveHealthyWorkspaceReportServer(
   workspace: FinalRunWorkspace,
-): Promise<ReportServerStateRecord | undefined> {
+): Promise<ReportServerState | undefined> {
   const state = await readWorkspaceReportServerState(workspace);
   if (!state) {
     return undefined;
@@ -177,10 +177,10 @@ export function buildRunReportUrl(serverUrl: string, runId: string): string {
 
 export async function readWorkspaceReportServerState(
   workspace: FinalRunWorkspace,
-): Promise<ReportServerStateRecord | undefined> {
+): Promise<ReportServerState | undefined> {
   try {
     const raw = await fsp.readFile(getWorkspaceReportServerStatePath(workspace), 'utf-8');
-    return JSON.parse(raw) as ReportServerStateRecord;
+    return JSON.parse(raw) as ReportServerState;
   } catch {
     return undefined;
   }
@@ -188,7 +188,7 @@ export async function readWorkspaceReportServerState(
 
 export async function writeWorkspaceReportServerState(
   workspace: FinalRunWorkspace,
-  state: ReportServerStateRecord,
+  state: ReportServerState,
 ): Promise<void> {
   await fsp.mkdir(workspace.artifactsDir, { recursive: true });
   await fsp.writeFile(
@@ -209,7 +209,7 @@ export function getWorkspaceReportServerStatePath(workspace: FinalRunWorkspace):
 }
 
 async function isHealthyWorkspaceReportServer(
-  state: ReportServerStateRecord,
+  state: ReportServerState,
   workspace: FinalRunWorkspace,
 ): Promise<boolean> {
   try {
@@ -234,7 +234,7 @@ async function waitForHealthyWorkspaceReportServer(params: {
 }): Promise<void> {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
-    const state: ReportServerStateRecord = {
+    const state: ReportServerState = {
       pid: 0,
       port: new URL(params.url).port
         ? parseInt(new URL(params.url).port, 10)

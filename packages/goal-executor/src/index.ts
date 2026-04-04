@@ -1,18 +1,18 @@
 // Barrel export for @finalrun/goal-executor
 
-export { HeadlessGoalExecutor } from './HeadlessGoalExecutor.js';
+export { TestExecutor } from './TestExecutor.js';
 export type {
-  GoalExecutorConfig,
-  GoalExecutionStatus,
-  GoalResult,
-  GoalRecordingResult,
-  StepResult,
-  GoalProgressCallback,
-  GoalProgressEvent,
-} from './HeadlessGoalExecutor.js';
+  TestExecutorConfig,
+  ExecutionStatus,
+  TestExecutionResult,
+  TestRecordingResult,
+  AgentActionResult,
+  ExecutionProgressCallback,
+  ExecutionProgressEvent,
+} from './TestExecutor.js';
 
-export { HeadlessActionExecutor } from './HeadlessActionExecutor.js';
-export type { ActionInput, ActionOutput } from './HeadlessActionExecutor.js';
+export { ActionExecutor } from './ActionExecutor.js';
+export type { ActionInput, ActionOutput } from './ActionExecutor.js';
 
 export { AIAgent } from './ai/AIAgent.js';
 export type { PlannerRequest, PlannerResponse, GrounderRequest, GrounderResponse } from './ai/AIAgent.js';

@@ -1,4 +1,4 @@
-import type { RuntimeBindings } from './models/RepoEnvironment.js';
+import type { RuntimeBindings } from './models/Environment.js';
 
 const PLACEHOLDER_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
 

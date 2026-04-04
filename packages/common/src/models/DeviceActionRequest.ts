@@ -1,22 +1,22 @@
 // Port of common/model/DeviceActionRequest.dart
 
-import { StepAction } from './TestStep.js';
+import { DeviceAction } from './DeviceAction.js';
 
 /**
- * Wraps a StepAction for device execution, adding requestId and timeout.
+ * Wraps a DeviceAction for device execution, adding requestId and timeout.
  *
  * Dart equivalent: common/model/DeviceActionRequest.dart
  */
 export class DeviceActionRequest {
   readonly requestId: string;
-  readonly action: StepAction;
+  readonly action: DeviceAction;
   readonly timeout: number;
   readonly shouldEnsureStability: boolean;
   readonly traceStep: number | null;
 
   constructor(params: {
     requestId: string;
-    action: StepAction;
+    action: DeviceAction;
     timeout?: number;
     shouldEnsureStability?: boolean;
     traceStep?: number | null;

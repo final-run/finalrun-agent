@@ -1,36 +1,19 @@
 import { performance } from 'node:perf_hooks';
 import { Logger } from '@finalrun/common';
+import type {
+  AgentActionTrace,
+  TraceSpan as CommonTraceSpan,
+  SpanTiming as CommonSpanTiming,
+  TimingInfo,
+} from '@finalrun/common';
 
 export type TraceStatus = 'success' | 'failure';
 
-export interface TraceSpan {
-  name: string;
-  startMs: number;
-  durationMs: number;
-  status: TraceStatus;
-  detail?: string;
-}
-
-export interface StepTrace {
-  step: number;
-  action: string;
-  status: TraceStatus;
-  totalMs: number;
-  spans: TraceSpan[];
-  failureReason?: string;
-}
-
-export interface SpanTiming {
-  name: string;
-  durationMs: number;
-  status: TraceStatus;
-  detail?: string;
-}
-
-export interface TimingMetadata {
-  totalMs: number;
-  spans: SpanTiming[];
-}
+// Re-export common types under the names used internally
+export type TraceSpan = CommonTraceSpan;
+export type StepTrace = AgentActionTrace;
+export type SpanTiming = CommonSpanTiming;
+export type TimingMetadata = TimingInfo;
 
 export interface LLMTrace {
   totalMs: number;

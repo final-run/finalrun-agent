@@ -9,14 +9,14 @@ import {
   PLANNER_ACTION_TAP,
   PLANNER_ACTION_COMPLETED,
 } from '@finalrun/common';
-import type { Agent } from '@finalrun/common';
+import type { DeviceAgent } from '@finalrun/common';
 import type { AIAgent, PlannerResponse } from './ai/AIAgent.js';
-import { HeadlessGoalExecutor } from './HeadlessGoalExecutor.js';
+import { TestExecutor } from './TestExecutor.js';
 import { FatalProviderError } from './ai/providerFailure.js';
 
 function createAgent(
   responses: DeviceNodeResponse[],
-): Agent {
+): DeviceAgent {
   let responseIndex = 0;
 
   return {
@@ -66,7 +66,7 @@ function createAgent(
     uninstallDriver() {
       return undefined;
     },
-  } as unknown as Agent;
+  } as unknown as DeviceAgent;
 }
 
 function createAiAgent(
@@ -80,7 +80,7 @@ function createAiAgent(
 function createGoalAgent(params: {
   captureResponses: DeviceNodeResponse[];
   executedActions?: unknown[];
-}): Agent {
+}): DeviceAgent {
   let responseIndex = 0;
 
   return {
@@ -134,10 +134,10 @@ function createGoalAgent(params: {
     uninstallDriver() {
       return undefined;
     },
-  } as unknown as Agent;
+  } as unknown as DeviceAgent;
 }
 
-test('HeadlessGoalExecutor continues after a transient capture failure and recovers next iteration', async () => {
+test('TestExecutor continues after a transient capture failure and recovers next iteration', async () => {
   const agent = createAgent([
     new DeviceNodeResponse({
       success: false,
@@ -164,7 +164,7 @@ test('HeadlessGoalExecutor continues after a transient capture failure and recov
     };
   });
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Add Hindi',
     platform: 'android',
     maxIterations: 3,
@@ -186,7 +186,7 @@ test('HeadlessGoalExecutor continues after a transient capture failure and recov
   );
 });
 
-test('HeadlessGoalExecutor passes pre-context and app knowledge through to the planner', async () => {
+test('TestExecutor passes pre-context and app knowledge through to the planner', async () => {
   const agent = createAgent([
     new DeviceNodeResponse({
       success: true,
@@ -219,7 +219,7 @@ test('HeadlessGoalExecutor passes pre-context and app knowledge through to the p
     },
   } as unknown as AIAgent;
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Open the app',
     platform: 'android',
     maxIterations: 1,
@@ -242,7 +242,7 @@ test('HeadlessGoalExecutor passes pre-context and app knowledge through to the p
   );
 });
 
-test('HeadlessGoalExecutor aborts immediately on fatal capture/setup failure', async () => {
+test('TestExecutor aborts immediately on fatal capture/setup failure', async () => {
   const agent = createAgent([
     new DeviceNodeResponse({
       success: false,
@@ -254,7 +254,7 @@ test('HeadlessGoalExecutor aborts immediately on fatal capture/setup failure', a
     throw new Error('Planner should not be called on fatal capture failure');
   });
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Add Hindi',
     platform: 'android',
     maxIterations: 3,
@@ -270,7 +270,7 @@ test('HeadlessGoalExecutor aborts immediately on fatal capture/setup failure', a
   assert.equal(result.steps[0]?.action, 'captureDeviceState');
 });
 
-test('HeadlessGoalExecutor fails immediately on terminal planner provider errors', async () => {
+test('TestExecutor fails immediately on terminal planner provider errors', async () => {
   const agent = createAgent([
     new DeviceNodeResponse({
       success: true,
@@ -292,7 +292,7 @@ test('HeadlessGoalExecutor fails immediately on terminal planner provider errors
     });
   });
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Add Hindi',
     platform: 'android',
     maxIterations: 3,
@@ -317,7 +317,7 @@ test('HeadlessGoalExecutor fails immediately on terminal planner provider errors
   );
 });
 
-test('HeadlessGoalExecutor fails immediately on terminal grounder provider errors', async () => {
+test('TestExecutor fails immediately on terminal grounder provider errors', async () => {
   const executedActions: unknown[] = [];
   const agent = createGoalAgent({
     captureResponses: [
@@ -352,7 +352,7 @@ test('HeadlessGoalExecutor fails immediately on terminal grounder provider error
     },
   } as unknown as AIAgent;
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Add Hindi',
     platform: 'android',
     maxIterations: 3,
@@ -378,7 +378,7 @@ test('HeadlessGoalExecutor fails immediately on terminal grounder provider error
   assert.equal(executedActions.length, 0);
 });
 
-test('HeadlessGoalExecutor emits debug step trace logs and summary timings', async (t) => {
+test('TestExecutor emits debug step trace logs and summary timings', async (t) => {
   const executedActions: unknown[] = [];
   const agent = createGoalAgent({
     captureResponses: [
@@ -499,7 +499,7 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
     Logger.init({ level: LogLevel.INFO, tag: 'finalrun' });
   });
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Add Hindi',
     platform: 'android',
     maxIterations: 3,
@@ -546,7 +546,7 @@ test('HeadlessGoalExecutor emits debug step trace logs and summary timings', asy
   assert.match(summaryLine!, /result=success action=tap/);
 });
 
-test('HeadlessGoalExecutor records completed-step metadata for reporting', async () => {
+test('TestExecutor records completed-step metadata for reporting', async () => {
   const agent = createAgent([
     new DeviceNodeResponse({
       success: true,
@@ -586,7 +586,7 @@ test('HeadlessGoalExecutor records completed-step metadata for reporting', async
     },
   }));
 
-  const executor = new HeadlessGoalExecutor({
+  const executor = new TestExecutor({
     goal: 'Log in and verify the feed',
     platform: 'android',
     maxIterations: 2,

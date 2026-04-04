@@ -3,36 +3,30 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import {
-  type BindingReferenceRecord,
+  type BindingReference,
   type FailurePhase,
   Logger,
-  type LoadedRepoTestSpec,
-  type LoadedRepoTestSuite,
+  type TestDefinition,
+  type SuiteDefinition,
   type LogEntry,
   type LoggerSink,
   type RunManifestAppRecord,
-  type RunManifestCliRecord,
-  type RunManifestEnvironmentRecord,
-  type RunManifestFirstFailureRecord,
-  type RunManifestModelRecord,
-  type RunManifestRecord,
-  type RunManifestSelectedSpecRecord,
-  type RunManifestSpecRecord,
-  type RunManifestSuiteRecord,
-  type RunManifestStepRecord,
-  type RunArtifactStatus,
-  type RunTargetRecord,
-  type RunSummaryRecord,
+  type EnvironmentRecord,
+  type FirstFailure,
+  type RunManifest,
+  type TestResult,
+  type AgentAction,
+  type RunStatus,
+  type TestStatus,
+  type RunTarget,
+  type RunSummary,
   type RuntimeBindings,
-  type SpecArtifactStatus,
-  type SpecArtifactRecord,
-  type StepArtifactRecord,
   redactResolvedValue,
 } from '@finalrun/common';
-import type { GoalResult, StepResult } from '@finalrun/goal-executor';
-import type { LoadedEnvironmentConfig } from './specLoader.js';
+import type { TestExecutionResult, AgentActionResult } from '@finalrun/goal-executor';
+import type { LoadedEnvironmentConfig } from './testLoader.js';
 
-interface SpecSnapshotState {
+interface TestSnapshotState {
   authored: {
     name: string;
     description?: string;
@@ -40,7 +34,7 @@ interface SpecSnapshotState {
     steps: string[];
     assertions: string[];
   };
-  bindingReferences: BindingReferenceRecord;
+  bindingReferences: BindingReference;
   snapshotYamlPath: string;
   snapshotJsonPath: string;
   workspaceSourcePath: string;
@@ -58,19 +52,27 @@ export class ReportWriter {
   private readonly _runId: string;
   private readonly _bindings: RuntimeBindings;
   private readonly _runnerLogPath: string;
-  private _inputEnvironment: RunManifestEnvironmentRecord;
-  private _inputSuite?: RunManifestSuiteRecord;
-  private _inputSpecs: RunManifestSelectedSpecRecord[] = [];
-  private readonly _specSnapshots = new Map<string, SpecSnapshotState>();
-  private _cliContext: RunManifestCliRecord = {
+  private _inputEnvironment: EnvironmentRecord;
+  private _inputSuite?: SuiteDefinition;
+  private _inputTests: TestDefinition[] = [];
+  private readonly _testSnapshots = new Map<string, TestSnapshotState>();
+  private _cliContext: {
+    command: string;
+    selectors: string[];
+    debug: boolean;
+  } = {
     command: 'finalrun test',
     selectors: [],
     debug: false,
   };
-  private _runTarget: RunTargetRecord = {
+  private _runTarget: RunTarget = {
     type: 'direct',
   };
-  private _modelContext: RunManifestModelRecord = {
+  private _modelContext: {
+    provider: string;
+    modelName: string;
+    label: string;
+  } = {
     provider: 'unknown',
     modelName: 'unknown',
     label: 'unknown/unknown',
@@ -137,10 +139,10 @@ export class ReportWriter {
   }
 
   setRunContext(params: {
-    cli: RunManifestCliRecord;
-    model: RunManifestModelRecord;
+    cli: { command: string; selectors: string[]; debug: boolean; [key: string]: unknown };
+    model: { provider: string; modelName: string; label: string };
     app: RunManifestAppRecord;
-    target?: RunTargetRecord;
+    target?: RunTarget;
   }): void {
     this._cliContext = params.cli;
     this._modelContext = params.model;
@@ -151,16 +153,16 @@ export class ReportWriter {
   async writeRunInputs(params: {
     workspaceRoot: string;
     environment: LoadedEnvironmentConfig;
-    specs: LoadedRepoTestSpec[];
-    suite?: LoadedRepoTestSuite;
+    specs: TestDefinition[];
+    suite?: SuiteDefinition;
     effectiveGoals: Map<string, string>;
-    target: RunTargetRecord;
-    cli: RunManifestCliRecord;
-    model: RunManifestModelRecord;
+    target: RunTarget;
+    cli: { command: string; selectors: string[]; debug: boolean; [key: string]: unknown };
+    model: { provider: string; modelName: string; label: string };
     app: RunManifestAppRecord;
   }): Promise<void> {
     const inputDir = path.join(this._runDir, 'input');
-    const specSnapshotDir = path.join(inputDir, 'specs');
+    const specSnapshotDir = path.join(inputDir, 'tests');
     await fsp.mkdir(specSnapshotDir, { recursive: true });
 
     this.setRunContext({
@@ -218,20 +220,24 @@ export class ReportWriter {
     if (params.suite) {
       const suiteSnapshotYamlPath = path.posix.join('input', 'suite.snapshot.yaml');
       const suiteSnapshotJsonPath = path.posix.join('input', 'suite.json');
-      const suiteRecord: RunManifestSuiteRecord = {
+      const suiteRecord: SuiteDefinition = {
         suiteId: params.suite.suiteId,
-        suiteName: params.suite.name,
+        name: params.suite.name,
         description: params.suite.description,
-        workspaceSourcePath: toDisplayPath(params.workspaceRoot, params.suite.sourcePath),
+        workspaceSourcePath: params.suite.sourcePath
+          ? toDisplayPath(params.workspaceRoot, params.suite.sourcePath)
+          : undefined,
         snapshotYamlPath: suiteSnapshotYamlPath,
         snapshotJsonPath: suiteSnapshotJsonPath,
         tests: params.suite.tests,
-        resolvedSpecIds: params.specs.map((spec) => spec.specId),
+        resolvedTestIds: params.specs.map((spec) => spec.testId!),
       };
-      await fsp.copyFile(
-        params.suite.sourcePath,
-        path.join(this._runDir, suiteSnapshotYamlPath),
-      );
+      if (params.suite.sourcePath) {
+        await fsp.copyFile(
+          params.suite.sourcePath,
+          path.join(this._runDir, suiteSnapshotYamlPath),
+        );
+      }
       await fsp.writeFile(
         path.join(this._runDir, suiteSnapshotJsonPath),
         JSON.stringify(suiteRecord, null, 2),
@@ -240,11 +246,11 @@ export class ReportWriter {
       this._inputSuite = suiteRecord;
     }
 
-    const selectedSpecs: RunManifestSelectedSpecRecord[] = [];
-    this._specSnapshots.clear();
+    const selectedTests: TestDefinition[] = [];
+    this._testSnapshots.clear();
     for (const spec of params.specs) {
-      const snapshotYamlPath = path.posix.join('input', 'specs', `${spec.specId}.yaml`);
-      const snapshotJsonPath = path.posix.join('input', 'specs', `${spec.specId}.json`);
+      const snapshotYamlPath = path.posix.join('input', 'tests', `${spec.testId!}.yaml`);
+      const snapshotJsonPath = path.posix.join('input', 'tests', `${spec.testId!}.json`);
       const bindingReferences = collectBindingReferences(spec);
       const authored = {
         name: spec.name,
@@ -253,15 +259,19 @@ export class ReportWriter {
         steps: spec.steps,
         assertions: spec.assertions,
       };
-      const workspaceSourcePath = toDisplayPath(params.workspaceRoot, spec.sourcePath);
-      const effectiveGoal = params.effectiveGoals.get(spec.specId) ?? '';
-      await fsp.copyFile(spec.sourcePath, path.join(this._runDir, snapshotYamlPath));
+      const workspaceSourcePath = spec.sourcePath
+        ? toDisplayPath(params.workspaceRoot, spec.sourcePath)
+        : undefined;
+      const effectiveGoal = params.effectiveGoals.get(spec.testId!) ?? '';
+      if (spec.sourcePath) {
+        await fsp.copyFile(spec.sourcePath, path.join(this._runDir, snapshotYamlPath));
+      }
       await fsp.writeFile(
         path.join(this._runDir, snapshotJsonPath),
         JSON.stringify(
           {
-            specId: spec.specId,
-            specName: spec.name,
+            testId: spec.testId!,
+            testName: spec.name,
             relativePath: spec.relativePath,
             workspaceSourcePath,
             bindingReferences,
@@ -272,50 +282,53 @@ export class ReportWriter {
         ),
         'utf-8',
       );
-      this._specSnapshots.set(spec.specId, {
+      this._testSnapshots.set(spec.testId!, {
         authored,
         bindingReferences,
         snapshotYamlPath,
         snapshotJsonPath,
-        workspaceSourcePath,
+        workspaceSourcePath: workspaceSourcePath ?? spec.sourcePath ?? '',
         effectiveGoal,
       });
-      selectedSpecs.push({
-        specId: spec.specId,
-        specName: spec.name,
+      selectedTests.push({
+        testId: spec.testId!,
+        name: spec.name,
         relativePath: spec.relativePath,
         workspaceSourcePath,
         snapshotYamlPath,
         snapshotJsonPath,
         bindingReferences,
+        setup: spec.setup,
+        steps: spec.steps,
+        assertions: spec.assertions,
       });
     }
 
-    this._inputSpecs = selectedSpecs;
+    this._inputTests = selectedTests;
   }
 
-  async writeSpecRecord(
-    spec: LoadedRepoTestSpec,
-    result: GoalResult,
+  async writeTestRecord(
+    spec: TestDefinition,
+    result: TestExecutionResult,
     bindings: RuntimeBindings,
-  ): Promise<SpecArtifactRecord> {
-    const specDir = path.join(this._runDir, 'tests', spec.specId);
-    const stepDir = path.join(specDir, 'steps');
+  ): Promise<TestResult> {
+    const specDir = path.join(this._runDir, 'tests', spec.testId!);
+    const stepDir = path.join(specDir, 'actions');
     const screenshotDir = path.join(specDir, 'screenshots');
     await fsp.mkdir(stepDir, { recursive: true });
     await fsp.mkdir(screenshotDir, { recursive: true });
 
-    const recordingRelative = await this._copyRecordingArtifact(spec.specId, result.recording);
+    const recordingRelative = await this._copyRecordingArtifact(spec.testId!, result.recording);
     const recordingStartedAt = result.recording?.startedAt;
     const recordingCompletedAt = result.recording?.completedAt;
 
-    const steps: StepArtifactRecord[] = [];
+    const steps: AgentAction[] = [];
     for (const [index, step] of result.steps.entries()) {
       const stepNumber = index + 1;
       const stepFileBase = `${String(stepNumber).padStart(3, '0')}`;
-      const stepJsonRelative = path.posix.join('tests', spec.specId, 'steps', `${stepFileBase}.json`);
+      const stepJsonRelative = path.posix.join('tests', spec.testId!, 'actions', `${stepFileBase}.json`);
       const screenshotRelative = step.screenshot
-        ? path.posix.join('tests', spec.specId, 'screenshots', `${stepFileBase}.jpg`)
+        ? path.posix.join('tests', spec.testId!, 'screenshots', `${stepFileBase}.jpg`)
         : undefined;
 
       if (step.screenshot && screenshotRelative) {
@@ -323,7 +336,7 @@ export class ReportWriter {
         await fsp.writeFile(path.join(this._runDir, screenshotRelative), buffer);
       }
 
-      const artifactStep = toStepArtifactRecord(step, {
+      const artifactStep = toAgentAction(step, {
         stepNumber,
         bindings,
         screenshotFile: screenshotRelative,
@@ -338,13 +351,13 @@ export class ReportWriter {
       );
     }
 
-    const specRecord: SpecArtifactRecord = {
-      specId: spec.specId,
-      specName: spec.name,
-      sourcePath: spec.sourcePath,
-      relativePath: spec.relativePath,
+    const specRecord: TestResult = {
+      testId: spec.testId!,
+      testName: spec.name,
+      sourcePath: spec.sourcePath ?? '',
+      relativePath: spec.relativePath ?? '',
       success: result.success,
-      status: resolveSpecArtifactStatus(result),
+      status: resolveTestStatus(result),
       message: redactResolvedValue(result.message, bindings) ?? result.message,
       analysis: redactResolvedValue(result.analysis, bindings),
       platform: result.platform,
@@ -372,16 +385,16 @@ export class ReportWriter {
   async finalize(params: {
     startedAt: string;
     completedAt: string;
-    specs: SpecArtifactRecord[];
+    specs: TestResult[];
     successOverride?: boolean;
-    statusOverride?: RunArtifactStatus;
+    statusOverride?: RunStatus;
     failurePhase?: FailurePhase;
     diagnosticsSummary?: string;
-  }): Promise<RunSummaryRecord> {
+  }): Promise<RunSummary> {
     const passedCount = params.specs.filter((spec) => spec.success).length;
     const failedCount = params.specs.length - passedCount;
     const stepCount = params.specs.reduce((total, spec) => total + spec.steps.length, 0);
-    const summary: RunSummaryRecord = {
+    const summary: RunSummary = {
       runId: this._runId,
       envName: this._envName,
       platform: this._platform,
@@ -394,20 +407,20 @@ export class ReportWriter {
       success: params.successOverride ?? failedCount === 0,
       status: params.statusOverride ?? ((params.successOverride ?? failedCount === 0) ? 'success' : 'failure'),
       failurePhase: params.failurePhase,
-      specCount: params.specs.length,
+      testCount: params.specs.length,
       passedCount,
       failedCount,
       stepCount,
       target: this._runTarget,
       variables: this._bindings.variables,
       tests: params.specs.map((spec) => ({
-        specId: spec.specId,
-        specName: spec.specName,
+        testId: spec.testId,
+        testName: spec.testName,
         relativePath: spec.relativePath,
         success: spec.success,
         status: spec.status,
         durationMs: spec.durationMs,
-        resultFile: path.posix.join('tests', spec.specId, 'result.json'),
+        resultFile: path.posix.join('tests', spec.testId, 'result.json'),
       })),
       runJsonFile: 'run.json',
     };
@@ -436,30 +449,30 @@ export class ReportWriter {
   }
 
   async writeSpecFailureRecord(params: {
-    spec: LoadedRepoTestSpec;
+    spec: TestDefinition;
     bindings: RuntimeBindings;
     message: string;
     platform: string;
     startedAt: string;
     completedAt: string;
-  }): Promise<SpecArtifactRecord> {
-    const specDir = path.join(this._runDir, 'tests', params.spec.specId);
-    const stepDir = path.join(specDir, 'steps');
+  }): Promise<TestResult> {
+    const specDir = path.join(this._runDir, 'tests', params.spec.testId!);
+    const stepDir = path.join(specDir, 'actions');
     const screenshotDir = path.join(specDir, 'screenshots');
     await fsp.mkdir(specDir, { recursive: true });
     await fsp.mkdir(stepDir, { recursive: true });
     await fsp.mkdir(screenshotDir, { recursive: true });
 
-    const stepJsonRelative = path.posix.join('tests', params.spec.specId, 'steps', '001.json');
+    const stepJsonRelative = path.posix.join('tests', params.spec.testId!, 'actions', '001.json');
     const screenshotRelative = path.posix.join(
       'tests',
-      params.spec.specId,
+      params.spec.testId!,
       'screenshots',
       '001.jpg',
     );
     const failureMessage =
       redactResolvedValue(params.message, params.bindings) ?? params.message;
-    const failureStep: StepArtifactRecord = {
+    const failureStep: AgentAction = {
       stepNumber: 1,
       iteration: 1,
       actionType: 'run_failure',
@@ -499,11 +512,11 @@ export class ReportWriter {
       'utf-8',
     );
 
-    const specRecord: SpecArtifactRecord = {
-      specId: params.spec.specId,
-      specName: params.spec.name,
-      sourcePath: params.spec.sourcePath,
-      relativePath: params.spec.relativePath,
+    const specRecord: TestResult = {
+      testId: params.spec.testId!,
+      testName: params.spec.name,
+      sourcePath: params.spec.sourcePath ?? '',
+      relativePath: params.spec.relativePath ?? '',
       success: false,
       status: 'error',
       message: failureMessage,
@@ -530,24 +543,24 @@ export class ReportWriter {
   private _buildRunManifest(params: {
     startedAt: string;
     completedAt: string;
-    specs: SpecArtifactRecord[];
+    specs: TestResult[];
     success: boolean;
-    status: RunArtifactStatus;
+    status: RunStatus;
     failurePhase?: FailurePhase;
     diagnosticsSummary?: string;
-  }): RunManifestRecord {
-    const specRecords = params.specs.map((spec) => this._toRunManifestSpec(spec));
-    const stepTotal = specRecords.reduce(
-      (total, spec) => total + spec.counts.executionStepsTotal,
+  }): RunManifest {
+    const testRecords = params.specs.map((spec) => this._toRunManifestTest(spec));
+    const stepTotal = testRecords.reduce(
+      (total, spec) => total + (spec.counts?.executionStepsTotal ?? 0),
       0,
     );
-    const stepPassed = specRecords.reduce(
-      (total, spec) => total + spec.counts.executionStepsPassed,
+    const stepPassed = testRecords.reduce(
+      (total, spec) => total + (spec.counts?.executionStepsPassed ?? 0),
       0,
     );
-    const firstFailure = findRunFirstFailure(specRecords, params.diagnosticsSummary);
+    const firstFailure = findRunFirstFailure(testRecords, params.diagnosticsSummary);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       run: {
         runId: this._runId,
         success: params.success,
@@ -566,10 +579,10 @@ export class ReportWriter {
         selectors: this._cliContext.selectors,
         target: this._runTarget,
         counts: {
-          specs: {
-            total: specRecords.length,
-            passed: specRecords.filter((spec) => spec.success).length,
-            failed: specRecords.filter((spec) => !spec.success).length,
+          tests: {
+            total: testRecords.length,
+            passed: testRecords.filter((spec) => spec.success).length,
+            failed: testRecords.filter((spec) => !spec.success).length,
           },
           steps: {
             total: stepTotal,
@@ -583,10 +596,10 @@ export class ReportWriter {
       input: {
         environment: this._inputEnvironment,
         suite: this._inputSuite,
-        specs: this._inputSpecs,
+        tests: this._inputTests,
         cli: this._cliContext,
       },
-      specs: specRecords,
+      tests: testRecords,
       paths: {
         runJson: 'run.json',
         summaryJson: 'summary.json',
@@ -596,15 +609,15 @@ export class ReportWriter {
     };
   }
 
-  private _toRunManifestSpec(spec: SpecArtifactRecord): RunManifestSpecRecord {
-    const snapshot = this._specSnapshots.get(spec.specId);
-    const steps = spec.steps.map((step) => ({ ...step })) as RunManifestStepRecord[];
+  private _toRunManifestTest(spec: TestResult): TestResult {
+    const snapshot = this._testSnapshots.get(spec.testId);
+    const steps = spec.steps.map((step) => ({ ...step })) as AgentAction[];
     const passedSteps = steps.filter((step) => step.success).length;
     const firstFailureStep = steps.find((step) => !step.success);
-    const firstFailure = firstFailureStep
+    const firstFailure: FirstFailure | undefined = firstFailureStep
       ? {
-          specId: spec.specId,
-          specName: spec.specName,
+          testId: spec.testId,
+          testName: spec.testName,
           stepNumber: firstFailureStep.stepNumber,
           actionType: firstFailureStep.actionType,
           message:
@@ -622,12 +635,20 @@ export class ReportWriter {
       snapshotYamlPath: snapshot?.snapshotYamlPath ?? '',
       snapshotJsonPath: snapshot?.snapshotJsonPath ?? '',
       bindingReferences: snapshot?.bindingReferences ?? { variables: [], secrets: [] },
-      authored: snapshot?.authored ?? {
-        name: spec.specName,
-        setup: [],
-        steps: [],
-        assertions: [],
-      },
+      authored: snapshot?.authored
+        ? {
+            name: snapshot.authored.name,
+            description: snapshot.authored.description,
+            setup: snapshot.authored.setup,
+            steps: snapshot.authored.steps,
+            assertions: snapshot.authored.assertions,
+          }
+        : {
+            name: spec.testName,
+            setup: [],
+            steps: [],
+            assertions: [],
+          },
       effectiveGoal: snapshot?.effectiveGoal ?? '',
       counts: {
         executionStepsTotal: steps.length,
@@ -636,21 +657,21 @@ export class ReportWriter {
       },
       firstFailure,
       previewScreenshotPath: selectPreviewScreenshotPath(steps),
-      resultJsonPath: path.posix.join('tests', spec.specId, 'result.json'),
+      resultJsonPath: path.posix.join('tests', spec.testId, 'result.json'),
       steps,
     };
   }
 
   private async _copyRecordingArtifact(
-    specId: string,
-    recording: GoalResult['recording'],
+    testId: string,
+    recording: TestExecutionResult['recording'],
   ): Promise<string | undefined> {
     if (!recording?.filePath) {
       return undefined;
     }
 
     const ext = path.extname(recording.filePath) || '.mov';
-    const recordingRelative = path.posix.join('tests', specId, `recording${ext}`);
+    const recordingRelative = path.posix.join('tests', testId, `recording${ext}`);
     const sourcePath = path.resolve(recording.filePath);
     const targetPath = path.resolve(path.join(this._runDir, recordingRelative));
 
@@ -670,14 +691,14 @@ export class ReportWriter {
   }
 }
 
-function resolveSpecArtifactStatus(result: GoalResult): SpecArtifactStatus {
+function resolveTestStatus(result: TestExecutionResult): TestStatus {
   if (result.status === 'aborted') {
     return 'aborted';
   }
   return result.success ? 'success' : 'failure';
 }
 
-function collectBindingReferences(spec: LoadedRepoTestSpec): BindingReferenceRecord {
+function collectBindingReferences(spec: TestDefinition): BindingReference {
   const variables = new Set<string>();
   const secrets = new Set<string>();
   const values = [
@@ -715,7 +736,7 @@ function toDisplayPath(rootDir: string, filePath: string): string {
 }
 
 function selectPreviewScreenshotPath(
-  steps: StepArtifactRecord[],
+  steps: AgentAction[],
 ): string | undefined {
   const failedScreenshot = steps.find((step) => !step.success && step.screenshotFile);
   if (failedScreenshot?.screenshotFile) {
@@ -725,17 +746,17 @@ function selectPreviewScreenshotPath(
 }
 
 function findRunFirstFailure(
-  specs: RunManifestSpecRecord[],
+  specs: TestResult[],
   diagnosticsSummary?: string,
-): RunManifestFirstFailureRecord | undefined {
+): FirstFailure | undefined {
   const failedSpec = specs.find((spec) => !spec.success);
   if (failedSpec?.firstFailure) {
     return failedSpec.firstFailure;
   }
   if (failedSpec) {
     return {
-      specId: failedSpec.specId,
-      specName: failedSpec.specName,
+      testId: failedSpec.testId,
+      testName: failedSpec.testName,
       message: failedSpec.message,
       screenshotPath: failedSpec.previewScreenshotPath,
     };
@@ -746,8 +767,8 @@ function findRunFirstFailure(
   return undefined;
 }
 
-function toStepArtifactRecord(
-  step: StepResult,
+function toAgentAction(
+  step: AgentActionResult,
   params: {
     stepNumber: number;
     bindings: RuntimeBindings;
@@ -755,7 +776,7 @@ function toStepArtifactRecord(
     videoOffsetMs?: number;
     stepJsonFile: string;
   },
-): StepArtifactRecord & { stepJsonFile: string } {
+): AgentAction & { stepJsonFile: string } {
   return {
     stepNumber: params.stepNumber,
     iteration: step.iteration,
@@ -825,9 +846,9 @@ function decodeScreenshot(value: string): Buffer {
 }
 
 function redactTrace(
-  trace: StepResult['trace'],
+  trace: AgentActionResult['trace'],
   bindings: RuntimeBindings,
-): StepArtifactRecord['trace'] {
+): AgentAction['trace'] {
   if (!trace) {
     return undefined;
   }
@@ -843,9 +864,9 @@ function redactTrace(
 }
 
 function redactTiming(
-  timing: StepResult['timing'],
+  timing: AgentActionResult['timing'],
   bindings: RuntimeBindings,
-): StepArtifactRecord['timing'] {
+): AgentAction['timing'] {
   if (!timing) {
     return undefined;
   }

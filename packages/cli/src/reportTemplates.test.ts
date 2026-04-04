@@ -4,10 +4,10 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import type { RunIndexRecord, RunManifestRecord } from '@finalrun/common';
+import type { RunIndex, RunManifest } from '@finalrun/common';
 import { renderRunIndexHtml, type ReportIndexViewModel } from './reportIndexTemplate.js';
 import { buildReportIndexViewModel, buildReportRunManifestViewModel } from './reportServer.js';
-import { renderHtmlReport } from './reportTemplate.js';
+import { renderHtmlReport, type ReportRunManifest } from './reportTemplate.js';
 
 function createRunIndexViewModel(): ReportIndexViewModel {
   return {
@@ -35,13 +35,13 @@ function createRunIndexViewModel(): ReportIndexViewModel {
           suiteName: 'login suite',
           suitePath: 'login_suite.yaml',
         },
-        specCount: 2,
+        testCount: 2,
         passedCount: 1,
         failedCount: 1,
         stepCount: 4,
         firstFailure: {
-          specId: 'login',
-          specName: 'login',
+          testId: 'login',
+          testName: 'login',
           message: 'button not found',
         },
         paths: {
@@ -51,7 +51,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         displayName: 'login suite',
         displayKind: 'suite',
         triggeredFrom: 'Suite',
-        selectedSpecCount: 2,
+        selectedTestCount: 2,
       },
       {
         runId: '2026-03-24T19-00-00.000Z-dev-android',
@@ -67,7 +67,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         target: {
           type: 'direct',
         },
-        specCount: 3,
+        testCount: 3,
         passedCount: 3,
         failedCount: 0,
         stepCount: 6,
@@ -78,15 +78,15 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         displayName: 'valid login +2 more',
         displayKind: 'multi_spec',
         triggeredFrom: 'Direct',
-        selectedSpecCount: 3,
+        selectedTestCount: 3,
       },
     ],
   };
 }
 
-function createSuiteRunManifest(): RunManifestRecord {
+function createSuiteRunManifest(): ReportRunManifest {
   return withSnapshotYamlText({
-    schemaVersion: 1,
+    schemaVersion: 2,
     run: {
       runId: '2026-03-24T18-00-00.000Z-dev-android',
       success: false,
@@ -114,7 +114,7 @@ function createSuiteRunManifest(): RunManifestRecord {
         suitePath: 'login_suite.yaml',
       },
       counts: {
-        specs: {
+        tests: {
           total: 2,
           passed: 0,
           failed: 1,
@@ -126,8 +126,8 @@ function createSuiteRunManifest(): RunManifestRecord {
         },
       },
       firstFailure: {
-        specId: 'login',
-        specName: 'login',
+        testId: 'login',
+        testName: 'login',
         message: 'button not found',
         screenshotPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/tests/login/screenshots/001.jpg',
       },
@@ -147,33 +147,39 @@ function createSuiteRunManifest(): RunManifestRecord {
       },
       suite: {
         suiteId: 'login_suite',
-        suiteName: 'login suite',
+        name: 'login suite',
         workspaceSourcePath: '.finalrun/suites/login_suite.yaml',
         snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/suite.snapshot.yaml',
         snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/suite.json',
         tests: ['login/valid_login.yaml', 'checkout/guest_checkout.yaml'],
-        resolvedSpecIds: ['login', 'checkout'],
+        resolvedTestIds: ['login', 'checkout'],
       },
-      specs: [
+      tests: [
         {
-          specId: 'login',
-          specName: 'valid login',
+          testId: 'login',
+          name: 'valid login',
+          setup: [],
+          steps: [],
+          assertions: [],
           relativePath: 'login/valid_login.yaml',
           workspaceSourcePath: '.finalrun/tests/login/valid_login.yaml',
-          snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/specs/login.yaml',
-          snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/specs/login.json',
+          snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/login.yaml',
+          snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/login.json',
           bindingReferences: {
             variables: [],
             secrets: ['email'],
           },
         },
         {
-          specId: 'checkout',
-          specName: 'guest checkout',
+          testId: 'checkout',
+          name: 'guest checkout',
+          setup: [],
+          steps: [],
+          assertions: [],
           relativePath: 'checkout/guest_checkout.yaml',
           workspaceSourcePath: '.finalrun/tests/checkout/guest_checkout.yaml',
-          snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/specs/checkout.yaml',
-          snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/specs/checkout.json',
+          snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/checkout.yaml',
+          snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/checkout.json',
           bindingReferences: {
             variables: [],
             secrets: [],
@@ -187,10 +193,10 @@ function createSuiteRunManifest(): RunManifestRecord {
         debug: false,
       },
     },
-    specs: [
+    tests: [
       {
-        specId: 'login',
-        specName: 'valid login',
+        testId: 'login',
+        testName: 'valid login',
         sourcePath: '/repo/.finalrun/tests/login/valid_login.yaml',
         relativePath: 'login/valid_login.yaml',
         success: false,
@@ -243,8 +249,8 @@ function createSuiteRunManifest(): RunManifestRecord {
           },
         ],
         workspaceSourcePath: '/repo/.finalrun/tests/login/valid_login.yaml',
-        snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/specs/login.yaml',
-        snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/specs/login.json',
+        snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/login.yaml',
+        snapshotJsonPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/login.json',
         bindingReferences: {
           variables: [],
           secrets: ['email'],
@@ -262,8 +268,8 @@ function createSuiteRunManifest(): RunManifestRecord {
           executionStepsFailed: 1,
         },
         firstFailure: {
-          specId: 'login',
-          specName: 'valid login',
+          testId: 'login',
+          testName: 'valid login',
           stepNumber: 1,
           actionType: 'tap',
           message: 'button not found',
@@ -283,7 +289,7 @@ function createSuiteRunManifest(): RunManifestRecord {
   });
 }
 
-function createSingleSpecManifest(): RunManifestRecord {
+function createSingleSpecManifest(): ReportRunManifest {
   const suiteManifest = createSuiteRunManifest();
   return withSnapshotYamlText({
     ...suiteManifest,
@@ -296,7 +302,7 @@ function createSingleSpecManifest(): RunManifestRecord {
         type: 'direct',
       },
       counts: {
-        specs: {
+        tests: {
           total: 1,
           passed: 1,
           failed: 0,
@@ -312,27 +318,27 @@ function createSingleSpecManifest(): RunManifestRecord {
     input: {
       ...suiteManifest.input,
       suite: undefined,
-      specs: [suiteManifest.input.specs[0]],
+      tests: [suiteManifest.input.tests[0]],
       cli: {
         command: 'finalrun test login/valid_login.yaml',
         selectors: ['login/valid_login.yaml'],
         debug: false,
       },
     },
-    specs: [
+    tests: [
       {
-        ...suiteManifest.specs[0],
+        ...suiteManifest.tests[0],
         success: true,
         message: 'All assertions passed',
         analysis: 'Goal completed successfully.',
         durationMs: 4500,
         recordingFile: '/artifacts/2026-03-24T20-00-00.000Z-dev-android/tests/login/recording.mp4',
         resultJsonPath: '/artifacts/2026-03-24T20-00-00.000Z-dev-android/tests/login/result.json',
-        snapshotYamlPath: '/artifacts/2026-03-24T20-00-00.000Z-dev-android/input/specs/login.yaml',
-        snapshotJsonPath: '/artifacts/2026-03-24T20-00-00.000Z-dev-android/input/specs/login.json',
+        snapshotYamlPath: '/artifacts/2026-03-24T20-00-00.000Z-dev-android/input/tests/login.yaml',
+        snapshotJsonPath: '/artifacts/2026-03-24T20-00-00.000Z-dev-android/input/tests/login.json',
         steps: [
           {
-            ...suiteManifest.specs[0].steps[0],
+            ...suiteManifest.tests[0].steps[0],
             success: true,
             status: 'success',
             errorMessage: undefined,
@@ -352,7 +358,7 @@ function createSingleSpecManifest(): RunManifestRecord {
   });
 }
 
-function withSnapshotYamlText(manifest: RunManifestRecord): RunManifestRecord {
+function withSnapshotYamlText(manifest: ReportRunManifest): ReportRunManifest {
   const snapshotBySpecId = new Map<string, string>([
     ['login', [
       'name: valid login',
@@ -370,20 +376,20 @@ function withSnapshotYamlText(manifest: RunManifestRecord): RunManifestRecord {
     ].join('\n')],
   ]);
 
-  for (const spec of manifest.input.specs) {
-    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.specId);
+  for (const spec of manifest.input.tests) {
+    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.testId!);
   }
-  for (const spec of manifest.specs) {
-    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.specId);
+  for (const spec of manifest.tests) {
+    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.testId);
   }
 
   return manifest;
 }
 
-function extractSpecDetailPanel(html: string, specId: string): string {
-  const marker = `data-spec-panel="${specId}"`;
+function extractTestDetailPanel(html: string, testId: string): string {
+  const marker = `data-test-panel="${testId}"`;
   const start = html.indexOf(marker);
-  assert.notEqual(start, -1, `Expected spec detail panel for ${specId}.`);
+  assert.notEqual(start, -1, `Expected test detail panel for ${testId}.`);
   const sectionStart = html.lastIndexOf('<section', start);
   const sectionEnd = html.indexOf('</section>', start);
   assert.notEqual(sectionStart, -1);
@@ -391,8 +397,8 @@ function extractSpecDetailPanel(html: string, specId: string): string {
   return html.slice(sectionStart, sectionEnd + '</section>'.length);
 }
 
-function assertSpecDetailSectionOrder(html: string, specId: string): void {
-  const panel = extractSpecDetailPanel(html, specId);
+function assertSpecDetailSectionOrder(html: string, testId: string): void {
+  const panel = extractTestDetailPanel(html, testId);
   const testIndex = panel.indexOf('>Test<');
   const runContextIndex = panel.indexOf('>Run Context<');
   const analysisIndex = panel.indexOf('>Analysis<');
@@ -415,7 +421,7 @@ function assertSimplifiedSpecDetailHtml(html: string): void {
   assert.match(html, /Session Recording/);
   assert.match(html, /function selectNearestStepForTime/);
   assert.match(html, /function findNearestStepIndex/);
-  assert.match(html, /selectNearestStepForTime\(specId, nextTime\)/);
+  assert.match(html, /selectNearestStepForTime\(testId, nextTime\)/);
   assert.doesNotMatch(html, /Selected Step/);
   assert.doesNotMatch(html, /<h4>Action<\/h4>/);
   assert.doesNotMatch(html, /<h4>Reasoning<\/h4>/);
@@ -426,7 +432,7 @@ function assertSimplifiedSpecDetailHtml(html: string): void {
   assert.doesNotMatch(html, /Raw Artifact Links/);
   assert.doesNotMatch(html, /data-role="screenshot"/);
   assert.doesNotMatch(html, /Back to suite list/);
-  assert.doesNotMatch(html, /onclick="clearSpecSelection\(\)"/);
+  assert.doesNotMatch(html, /onclick="clearTestSelection\(\)"/);
   assert.doesNotMatch(html, />Goal<\/strong>/);
 }
 
@@ -489,9 +495,9 @@ test('renderHtmlReport renders the new suite report layout on the live CLI serve
   assert.match(html, /Executed tests/);
   assert.match(html, /Tests passed/);
   assert.match(html, /Not Executed/);
-  assert.match(html, /selectSpec\('checkout'\)/);
-  assert.match(html, /data-spec-panel="login"/);
-  assert.match(html, /data-spec-panel="checkout"/);
+  assert.match(html, /selectTest\('checkout'\)/);
+  assert.match(html, /data-test-panel="login"/);
+  assert.match(html, /data-test-panel="checkout"/);
   assert.match(html, /id="primary-back-button"/);
   assert.match(html, /handlePrimaryBack\(event\)/);
   assert.match(html, /data-role="recording-seekbar"/);
@@ -537,8 +543,8 @@ test('renderHtmlReport opens directly into the single-spec layout for one-spec d
 
 test('renderHtmlReport renders compact recording empty states without reintroducing debug panels', () => {
   const noRecordingManifest = createSingleSpecManifest();
-  noRecordingManifest.specs[0] = {
-    ...noRecordingManifest.specs[0],
+  noRecordingManifest.tests[0] = {
+    ...noRecordingManifest.tests[0],
     recordingFile: undefined,
   };
 
@@ -547,8 +553,8 @@ test('renderHtmlReport renders compact recording empty states without reintroduc
   assertSimplifiedSpecDetailHtml(noRecordingHtml);
 
   const noActionsManifest = createSingleSpecManifest();
-  noActionsManifest.specs[0] = {
-    ...noActionsManifest.specs[0],
+  noActionsManifest.tests[0] = {
+    ...noActionsManifest.tests[0],
     steps: [],
   };
 
@@ -560,9 +566,9 @@ test('renderHtmlReport renders compact recording empty states without reintroduc
 
 test('renderHtmlReport surfaces the no-synced-timestamp caption when steps lack video offsets', () => {
   const manifest = createSingleSpecManifest();
-  manifest.specs[0] = {
-    ...manifest.specs[0],
-    steps: manifest.specs[0].steps.map((step) => ({
+  manifest.tests[0] = {
+    ...manifest.tests[0],
+    steps: manifest.tests[0].steps.map((step) => ({
       ...step,
       videoOffsetMs: undefined,
     })),
@@ -585,8 +591,8 @@ test('report templates render aborted runs and specs with explicit aborted badge
 
   const manifest = createSuiteRunManifest();
   manifest.run.status = 'aborted';
-  manifest.specs[0] = {
-    ...manifest.specs[0],
+  manifest.tests[0] = {
+    ...manifest.tests[0],
     status: 'aborted',
     message: 'Goal execution was aborted',
     analysis: 'The user aborted the run from the CLI.',
@@ -601,7 +607,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
   const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-report-'));
 
   try {
-    const index: RunIndexRecord = {
+    const index: RunIndex = {
       schemaVersion: 1,
       generatedAt: '2026-03-24T18:00:00.000Z',
       runs: [
@@ -622,7 +628,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
             suiteName: 'Smoke Suite',
             suitePath: 'smoke.yaml',
           },
-          specCount: 2,
+          testCount: 2,
           passedCount: 1,
           failedCount: 1,
           stepCount: 4,
@@ -645,7 +651,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           target: {
             type: 'direct',
           },
-          specCount: 3,
+          testCount: 3,
           passedCount: 3,
           failedCount: 0,
           stepCount: 6,
@@ -668,7 +674,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           target: {
             type: 'direct',
           },
-          specCount: 0,
+          testCount: 0,
           passedCount: 0,
           failedCount: 0,
           stepCount: 0,
@@ -688,18 +694,18 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
         suiteName: 'Smoke Suite',
         suitePath: 'smoke.yaml',
       },
-      selectedSpecs: [
-        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
-        { specId: 'checkout', specName: 'Guest checkout', relativePath: 'checkout/guest_checkout.yaml' },
+      selectedTests: [
+        { testId: 'login', testName: 'Valid login', relativePath: 'login/valid_login.yaml' },
+        { testId: 'checkout', testName: 'Guest checkout', relativePath: 'checkout/guest_checkout.yaml' },
       ],
       suite: {
         suiteId: 'smoke',
-        suiteName: 'Smoke Suite',
+        name: 'Smoke Suite',
         workspaceSourcePath: '.finalrun/suites/smoke.yaml',
         snapshotYamlPath: 'input/suite.snapshot.yaml',
         snapshotJsonPath: 'input/suite.json',
         tests: ['login/valid_login.yaml', 'checkout/guest_checkout.yaml'],
-        resolvedSpecIds: ['login', 'checkout'],
+        resolvedTestIds: ['login', 'checkout'],
       },
     });
 
@@ -708,10 +714,10 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
       target: {
         type: 'direct',
       },
-      selectedSpecs: [
-        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
-        { specId: 'signup', specName: 'Valid signup', relativePath: 'auth/valid_signup.yaml' },
-        { specId: 'logout', specName: 'Logout', relativePath: 'auth/logout.yaml' },
+      selectedTests: [
+        { testId: 'login', testName: 'Valid login', relativePath: 'login/valid_login.yaml' },
+        { testId: 'signup', testName: 'Valid signup', relativePath: 'auth/valid_signup.yaml' },
+        { testId: 'logout', testName: 'Logout', relativePath: 'auth/logout.yaml' },
       ],
     });
 
@@ -727,7 +733,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
         displayName: run.displayName,
         displayKind: run.displayKind,
         triggeredFrom: run.triggeredFrom,
-        selectedSpecCount: run.selectedSpecCount,
+        selectedTestCount: run.selectedTestCount,
         runJson: run.paths.runJson,
       })),
       [
@@ -736,7 +742,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           displayName: 'Smoke Suite',
           displayKind: 'suite',
           triggeredFrom: 'Suite',
-          selectedSpecCount: 2,
+          selectedTestCount: 2,
           runJson: '/artifacts/suite-run/run.json',
         },
         {
@@ -744,7 +750,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           displayName: 'Valid login +2 more',
           displayKind: 'multi_spec',
           triggeredFrom: 'Direct',
-          selectedSpecCount: 3,
+          selectedTestCount: 3,
           runJson: '/artifacts/direct-run/run.json',
         },
         {
@@ -752,7 +758,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           displayName: 'early-failure-run',
           displayKind: 'fallback',
           triggeredFrom: 'Direct',
-          selectedSpecCount: 0,
+          selectedTestCount: 0,
           runJson: '/artifacts/early-failure-run/run.json',
         },
       ],
@@ -771,24 +777,24 @@ test('buildReportRunManifestViewModel inlines snapshot YAML text and scopes snap
       target: {
         type: 'direct',
       },
-      selectedSpecs: [
-        { specId: 'login', specName: 'Valid login', relativePath: 'login/valid_login.yaml' },
+      selectedTests: [
+        { testId: 'login', testName: 'Valid login', relativePath: 'login/valid_login.yaml' },
       ],
     });
-    await fsp.mkdir(path.join(artifactsDir, 'yaml-run', 'input', 'specs'), { recursive: true });
+    await fsp.mkdir(path.join(artifactsDir, 'yaml-run', 'input', 'tests'), { recursive: true });
     await fsp.writeFile(
-      path.join(artifactsDir, 'yaml-run', 'input', 'specs', 'login.yaml'),
+      path.join(artifactsDir, 'yaml-run', 'input', 'tests', 'login.yaml'),
       ['name: valid login', 'steps:', '  - Tap login'].join('\n'),
       'utf-8',
     );
 
     const rawManifest = JSON.parse(
       await fsp.readFile(path.join(artifactsDir, 'yaml-run', 'run.json'), 'utf-8'),
-    ) as RunManifestRecord;
+    ) as RunManifest;
     const viewModel = await buildReportRunManifestViewModel(rawManifest, artifactsDir);
 
-    assert.equal(viewModel.input.specs[0]?.snapshotYamlPath, '/artifacts/yaml-run/input/specs/login.yaml');
-    assert.equal(viewModel.input.specs[0]?.snapshotYamlText, ['name: valid login', 'steps:', '  - Tap login'].join('\n'));
+    assert.equal(viewModel.input.tests[0]?.snapshotYamlPath, '/artifacts/yaml-run/input/tests/login.yaml');
+    assert.equal(viewModel.input.tests[0]?.snapshotYamlText, ['name: valid login', 'steps:', '  - Tap login'].join('\n'));
     assert.equal(viewModel.paths.runJson, '/artifacts/yaml-run/run.json');
   } finally {
     await fsp.rm(artifactsDir, { recursive: true, force: true });
@@ -806,19 +812,19 @@ async function writeRunManifest(
       suiteName?: string;
       suitePath?: string;
     };
-    selectedSpecs: Array<{
-      specId: string;
-      specName: string;
+    selectedTests: Array<{
+      testId: string;
+      testName: string;
       relativePath: string;
     }>;
     suite?: {
       suiteId: string;
-      suiteName: string;
+      name: string;
       workspaceSourcePath: string;
       snapshotYamlPath: string;
       snapshotJsonPath: string;
       tests: string[];
-      resolvedSpecIds: string[];
+      resolvedTestIds: string[];
     };
   },
 ): Promise<void> {
@@ -826,7 +832,7 @@ async function writeRunManifest(
   await fsp.writeFile(
     path.join(artifactsDir, params.runId, 'run.json'),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       run: {
         runId: params.runId,
         success: params.target.type === 'direct',
@@ -846,13 +852,13 @@ async function writeRunManifest(
           label: 'repo app',
         },
         selectors: params.target.type === 'direct'
-          ? params.selectedSpecs.map((spec) => spec.relativePath)
+          ? params.selectedTests.map((spec) => spec.relativePath)
           : [],
         target: params.target,
         counts: {
-          specs: {
-            total: params.selectedSpecs.length,
-            passed: params.target.type === 'direct' ? params.selectedSpecs.length : 0,
+          tests: {
+            total: params.selectedTests.length,
+            passed: params.target.type === 'direct' ? params.selectedTests.length : 0,
             failed: params.target.type === 'direct' ? 0 : 1,
           },
           steps: {
@@ -869,11 +875,12 @@ async function writeRunManifest(
           secretReferences: [],
         },
         suite: params.suite,
-        specs: params.selectedSpecs.map((spec) => ({
+        tests: params.selectedTests.map((spec) => ({
           ...spec,
+          name: spec.testName,
           workspaceSourcePath: `.finalrun/tests/${spec.relativePath}`,
-          snapshotYamlPath: `input/specs/${spec.specId}.yaml`,
-          snapshotJsonPath: `input/specs/${spec.specId}.json`,
+          snapshotYamlPath: `input/tests/${spec.testId}.yaml`,
+          snapshotJsonPath: `input/tests/${spec.testId}.json`,
           bindingReferences: {
             variables: [],
             secrets: [],
@@ -882,15 +889,15 @@ async function writeRunManifest(
         cli: {
           command: params.target.type === 'suite'
             ? `finalrun test --suite ${params.target.suitePath || 'suite.yaml'}`
-            : `finalrun test ${params.selectedSpecs.map((spec) => spec.relativePath).join(' ')}`,
+            : `finalrun test ${params.selectedTests.map((spec) => spec.relativePath).join(' ')}`,
           selectors: params.target.type === 'direct'
-            ? params.selectedSpecs.map((spec) => spec.relativePath)
+            ? params.selectedTests.map((spec) => spec.relativePath)
             : [],
           suitePath: params.target.type === 'suite' ? params.target.suitePath : undefined,
           debug: false,
         },
       },
-      specs: [],
+      tests: [],
       paths: {
         runJson: 'run.json',
         summaryJson: 'summary.json',

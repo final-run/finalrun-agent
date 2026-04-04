@@ -42,8 +42,8 @@ test('AndroidRecordingProvider starts headless scrcpy with the selected device s
     deviceId: 'emulator-5554',
     filePath: '/tmp/run_case.mp4',
     recordingRequest: new RecordingRequest({
-      testRunId: 'run',
-      testCaseId: 'case',
+      runId: 'run',
+      testId: 'case',
       apiKey: 'key',
     }),
   });
@@ -91,8 +91,8 @@ test('AndroidRecordingProvider fails startup if scrcpy exits during the readines
         deviceId: 'emulator-5554',
         filePath: '/tmp/run_case.mp4',
         recordingRequest: new RecordingRequest({
-          testRunId: 'run',
-          testCaseId: 'case',
+          runId: 'run',
+          testId: 'case',
           apiKey: 'key',
         }),
       }),

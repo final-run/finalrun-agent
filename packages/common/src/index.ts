@@ -1,7 +1,7 @@
 // Barrel export for @finalrun/common
 
 // Interfaces
-export type { Agent } from './interfaces/Agent.js';
+export type { DeviceAgent } from './interfaces/DeviceAgent.js';
 export type { FilePathUtil } from './interfaces/FilePathUtil.js';
 
 // Models
@@ -21,47 +21,48 @@ export { DeviceNodeResponse } from './models/DeviceNodeResponse.js';
 export { DeviceAppInfo } from './models/DeviceAppInfo.js';
 export { RecordingRequest } from './models/RecordingRequest.js';
 export type {
-  RepoAppConfig,
-  RepoEnvironmentConfig,
-  RepoVariableValue,
+  AppConfig,
+  EnvironmentConfig,
+  VariableValue,
   RuntimeBindings,
   SecretReference,
-} from './models/RepoEnvironment.js';
-export type { RepoTestSpec, LoadedRepoTestSpec } from './models/RepoTestSpec.js';
-export type { RepoTestSuite, LoadedRepoTestSuite } from './models/RepoTestSuite.js';
+} from './models/Environment.js';
+export type { TestDefinition, BindingReference } from './models/TestDefinition.js';
+export type { SuiteDefinition } from './models/SuiteDefinition.js';
 export type {
-  PlannerThoughtRecord,
-  ActionPayloadRecord,
+  AgentActionTrace,
+  TraceSpan,
+  TimingInfo,
+  SpanTiming,
+} from './models/Trace.js';
+export type {
+  PlannerThought,
+  ActionPayload,
+  AgentActionStatus,
+  TestStatus,
+  AgentAction,
+  TestResult,
+  FirstFailure,
+} from './models/TestResult.js';
+export type {
+  RunStatus,
+  RunTarget,
   FailurePhase,
-  BindingReferenceRecord,
-  ReportServerStateRecord,
-  RunTargetRecord,
-  StepArtifactRecord,
-  SpecArtifactRecord,
-  RunSummaryRecord,
-  RunManifestAuthoredRefRecord,
-  RunManifestFirstFailureRecord,
-  RunManifestStepRecord,
-  RunManifestSpecRecord,
-  RunManifestEnvironmentRecord,
-  RunManifestSelectedSpecRecord,
-  RunManifestSuiteRecord,
-  RunManifestCliRecord,
-  RunManifestModelRecord,
+  RunSummary,
+  EnvironmentRecord,
   RunManifestAppRecord,
-  RunManifestCountRecord,
-  RunManifestRecord,
-  RunIndexEntryRecord,
-  RunIndexRecord,
-  StepArtifactStatus,
-  SpecArtifactStatus,
-  RunArtifactStatus,
-} from './models/RunArtifacts.js';
+  RunManifest,
+} from './models/RunManifest.js';
+export type {
+  ReportServerState,
+  RunIndexEntry,
+  RunIndex,
+} from './models/RunIndex.js';
 export { Hierarchy, HierarchyNode } from './models/Hierarchy.js';
 export {
   Point,
   PointPercent,
-  StepAction,
+  DeviceAction,
   TapAction,
   TapPercentAction,
   LongPressAction,
@@ -84,8 +85,7 @@ export {
   KillAppAction,
   SwitchToPrimaryAppAction,
   CheckAppInForegroundAction,
-} from './models/TestStep.js';
-export { App } from './models/App.js';
+} from './models/DeviceAction.js';
 export { AppUpload } from './models/AppUpload.js';
 export { SingleArgument } from './models/SingleArgument.js';
 

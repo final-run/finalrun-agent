@@ -68,6 +68,7 @@ const DEFAULT_CAPTURE_READINESS_DELAY_MS = 500;
 
 const TRANSIENT_CAPTURE_PATTERNS = [
   /uiautomation not connected/i,
+  /already connected/i,
   /\bunavailable\b/i,
   /no connection established/i,
   /empty screenshot/i,

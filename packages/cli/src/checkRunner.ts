@@ -1,4 +1,4 @@
-import { type LoadedRepoTestSuite, type LoadedRepoTestSpec, type RunTargetRecord } from '@finalrun/common';
+import { type SuiteDefinition, type TestDefinition, type RunTarget } from '@finalrun/common';
 import { CliEnv } from './env.js';
 import {
   resolveAppOverrideIdentifier,
@@ -9,8 +9,8 @@ import {
   loadEnvironmentConfig,
   loadTestSpec,
   loadTestSuite,
-  validateSpecBindings,
-} from './specLoader.js';
+  validateTestBindings,
+} from './testLoader.js';
 import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
 import {
   ensureWorkspaceDirectories,
@@ -22,7 +22,7 @@ import {
   type AppOverrideValidationResult,
   type FinalRunWorkspace,
 } from './workspace.js';
-import type { LoadedEnvironmentConfig } from './specLoader.js';
+import type { LoadedEnvironmentConfig } from './testLoader.js';
 
 export const SUITE_SELECTOR_CONFLICT_ERROR =
   'Pass either --suite <path> or positional test selectors, not both.';
@@ -40,9 +40,9 @@ export interface CheckRunnerOptions {
 export interface CheckRunnerResult {
   workspace: FinalRunWorkspace;
   environment: LoadedEnvironmentConfig;
-  specs: LoadedRepoTestSpec[];
-  target: RunTargetRecord;
-  suite?: LoadedRepoTestSuite;
+  specs: TestDefinition[];
+  target: RunTarget;
+  suite?: SuiteDefinition;
   resolvedApp: ResolvedAppConfig;
   appOverride?: AppOverrideValidationResult;
 }
@@ -84,7 +84,7 @@ export async function runCheck(
   const specs = await Promise.all(
     selectedFiles.map(async (filePath) => {
       const spec = await loadTestSpec(filePath, workspace.testsDir);
-      validateSpecBindings(spec, environment.config, {
+      validateTestBindings(spec, environment.config, {
         environmentResolved: !resolvedEnvironment.usesEmptyBindings,
       });
       return spec;
@@ -123,9 +123,9 @@ async function resolveRunTarget(
   workspace: FinalRunWorkspace,
   options: CheckRunnerOptions,
 ): Promise<{
-  target: RunTargetRecord;
+  target: RunTarget;
   specSelectors: string[];
-  suite?: LoadedRepoTestSuite;
+  suite?: SuiteDefinition;
 }> {
   const normalizedSelectors = normalizeSpecSelectors(options.selectors);
   if (options.suitePath && normalizedSelectors.length > 0) {

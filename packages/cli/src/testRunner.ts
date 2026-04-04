@@ -5,28 +5,28 @@ import {
   type DeviceInfo,
   type DeviceInventoryDiagnostic,
   type LogEntry,
-  type RunTargetRecord,
+  type RunTarget,
   type RuntimeBindings,
-  type SpecArtifactRecord,
+  type TestResult,
 } from '@finalrun/common';
 import {
   DevicePreparationError,
-  executeGoalOnSession,
+  executeTestOnSession,
   isDevicePreparationError,
-  prepareGoalSession,
-  type GoalSession,
-} from './goalRunner.js';
+  prepareTestSession,
+  type TestSession,
+} from './sessionRunner.js';
 import {
   formatResolvedAppSummary,
   type ResolvedAppConfig,
 } from './appConfig.js';
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
-import { compileSpecToGoal } from './specCompiler.js';
-import type { GoalExecutionStatus } from '@finalrun/goal-executor';
+import { compileTestObjective } from './testCompiler.js';
+import type { ExecutionStatus } from '@finalrun/goal-executor';
 import { runCheck, type CheckRunnerOptions, type CheckRunnerResult } from './checkRunner.js';
 import { ReportWriter } from './reportWriter.js';
 import { rebuildRunIndex } from './runIndex.js';
-import type { LoadedEnvironmentConfig } from './specLoader.js';
+import type { LoadedEnvironmentConfig } from './testLoader.js';
 import {
   formatHostPreflightReport,
   resolveTestRequestedPlatforms,
@@ -51,11 +51,11 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
 
 export interface TestRunnerResult {
   success: boolean;
-  status: GoalExecutionStatus;
+  status: ExecutionStatus;
   runId: string;
   runDir: string;
   runIndexPath: string;
-  specResults: SpecArtifactRecord[];
+  specResults: TestResult[];
 }
 
 export type PreExecutionFailurePhase = 'validation' | 'setup';
@@ -83,8 +83,8 @@ const CLI_TEST_FORCE_DEVICE_SETUP_FAILURE_ENV_VAR = 'FINALRUN_CLI_TEST_FORCE_DEV
 const CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR = 'FINALRUN_CLI_TEST_SKIP_HOST_PREFLIGHT';
 
 export const testRunnerDependencies = {
-  prepareGoalSession,
-  executeGoalOnSession,
+  prepareTestSession: prepareTestSession,
+  executeTestOnSession: executeTestOnSession,
   runCheck,
   runHostPreflight,
   resolveWorkspace,
@@ -109,12 +109,12 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
   await testRunnerDependencies.ensureWorkspaceDirectories(workspace);
 
   const startedAt = new Date();
-  const specResults: SpecArtifactRecord[] = [];
+  const specResults: TestResult[] = [];
   let encounteredFailure = false;
   let reportWriter: ReportWriter | undefined;
   let runDir = '';
   let logSink: ReturnType<ReportWriter['createLoggerSink']> | undefined;
-  let goalSession: GoalSession | undefined;
+  let goalSession: TestSession | undefined;
   const bufferedLogEntries: LogEntry[] = [];
   const bufferingSink = (entry: LogEntry) => {
     bufferedLogEntries.push(entry);
@@ -145,8 +145,8 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
       });
       effectiveGoals = new Map(
         checked.specs.map((spec) => [
-          spec.specId,
-          compileSpecToGoal(spec, checked.environment.bindings),
+          spec.testId!,
+          compileTestObjective(spec, checked.environment.bindings),
         ]),
       );
     } catch (error) {
@@ -203,7 +203,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
       if (forcedDeviceSetupFailure) {
         throw new DevicePreparationError(forcedDeviceSetupFailure);
       }
-      goalSession = await testRunnerDependencies.prepareGoalSession({
+      goalSession = await testRunnerDependencies.prepareTestSession({
         platform: checked.resolvedApp.platform,
         appOverridePath: checked.appOverride?.appPath,
         app: checked.resolvedApp,
@@ -276,16 +276,16 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
 
         try {
           const goal =
-            effectiveGoals.get(spec.specId) ??
-            compileSpecToGoal(spec, checked.environment.bindings);
+            effectiveGoals.get(spec.testId!) ??
+            compileTestObjective(spec, checked.environment.bindings);
           const recordingExtension = goalSession.platform === 'android' ? '.mp4' : '.mov';
           const recordingOutputPath = path.join(
             runDir,
             'tests',
-            spec.specId,
+            spec.testId!,
             `recording${recordingExtension}`,
           );
-          const goalResult = await testRunnerDependencies.executeGoalOnSession(goalSession, {
+          const goalResult = await testRunnerDependencies.executeTestOnSession(goalSession, {
             goal,
             apiKey: options.apiKey,
             provider: options.provider,
@@ -295,14 +295,14 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
             runtimeBindings: checked.environment.bindings,
             abortSignal: runAbortController.signal,
             recording: {
-              testRunId: path.basename(runDir),
-              testCaseId: spec.specId,
+              runId: path.basename(runDir),
+              testId: spec.testId!,
               outputFilePath: recordingOutputPath,
               keepPartialOnFailure: true,
             },
           });
 
-          const specRecord = await reportWriter.writeSpecRecord(
+          const specRecord = await reportWriter.writeTestRecord(
             spec,
             goalResult,
             checked.environment.bindings,
@@ -342,7 +342,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
 
       const success =
         !runAborted && !encounteredFailure && specResults.every((spec) => spec.success);
-      const runStatus: GoalExecutionStatus = runAborted
+      const runStatus: ExecutionStatus = runAborted
         ? 'aborted'
         : success
           ? 'success'

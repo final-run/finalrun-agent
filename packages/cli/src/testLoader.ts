@@ -2,16 +2,15 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import type {
-  LoadedRepoTestSpec,
-  LoadedRepoTestSuite,
-  RepoEnvironmentConfig,
-  RepoTestSpec,
-  RepoVariableValue,
+  TestDefinition,
+  SuiteDefinition,
+  EnvironmentConfig,
+  VariableValue,
   RuntimeBindings,
   SecretReference,
 } from '@finalrun/common';
-import { readRepoAppConfig } from './appConfig.js';
-import { sanitizeSpecId } from './workspace.js';
+import { readAppConfig } from './appConfig.js';
+import { sanitizeId } from './workspace.js';
 import { CliEnv } from './env.js';
 
 const ENV_TOP_LEVEL_KEYS = new Set(['app', 'secrets', 'variables']);
@@ -29,7 +28,7 @@ const SPEC_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
 export interface LoadedEnvironmentConfig {
   envName: string;
   envPath?: string;
-  config: RepoEnvironmentConfig;
+  config: EnvironmentConfig;
   bindings: RuntimeBindings;
   secretReferences: SecretReference[];
 }
@@ -70,7 +69,7 @@ export async function loadEnvironmentConfig(
     envName,
     envPath,
     config: {
-      app: readRepoAppConfig(parsed['app'], `${envPath} app`),
+      app: readAppConfig(parsed['app'], `${envPath} app`),
       secrets: Object.fromEntries(
         secrets.references.map((entry) => [entry.key, `\${${entry.envVar}}`]),
       ),
@@ -87,7 +86,7 @@ export async function loadEnvironmentConfig(
 export async function loadTestSpec(
   filePath: string,
   testsDir: string,
-): Promise<LoadedRepoTestSpec> {
+): Promise<TestDefinition> {
   const raw = await fs.readFile(filePath, 'utf-8');
   const parsed = parseYamlDocument(raw, filePath);
   assertPlainObject(parsed, `Test spec ${filePath}`);
@@ -112,14 +111,14 @@ export async function loadTestSpec(
     assertions,
     sourcePath: filePath,
     relativePath,
-    specId: sanitizeSpecId(relativePath),
+    testId: sanitizeId(relativePath),
   };
 }
 
 export async function loadTestSuite(
   filePath: string,
   suitesDir: string,
-): Promise<LoadedRepoTestSuite> {
+): Promise<SuiteDefinition> {
   const raw = await fs.readFile(filePath, 'utf-8');
   const parsed = parseYamlDocument(raw, filePath);
   assertPlainObject(parsed, `Test suite ${filePath}`);
@@ -139,13 +138,13 @@ export async function loadTestSuite(
     tests,
     sourcePath: filePath,
     relativePath,
-    suiteId: sanitizeSpecId(relativePath),
+    suiteId: sanitizeId(relativePath),
   };
 }
 
-export function validateSpecBindings(
-  spec: RepoTestSpec,
-  envConfig: RepoEnvironmentConfig,
+export function validateTestBindings(
+  spec: TestDefinition,
+  envConfig: EnvironmentConfig,
   options?: { environmentResolved?: boolean },
 ): void {
   const unresolvedReferences = new Set<string>();
@@ -233,13 +232,13 @@ function readSecrets(
 function readVariables(
   value: unknown,
   filePath: string,
-): Record<string, RepoVariableValue> {
+): Record<string, VariableValue> {
   if (value === undefined || value === null) {
     return {};
   }
 
   assertPlainObject(value, `${filePath} variables`);
-  const variables: Record<string, RepoVariableValue> = {};
+  const variables: Record<string, VariableValue> = {};
   for (const [key, rawValue] of Object.entries(value)) {
     if (
       typeof rawValue !== 'string' &&

@@ -1,11 +1,11 @@
-// Port of common/model/TestStep.dart — a focused subset used by the CLI,
+// Port of common/model/TestStep.dart -- a focused subset used by the CLI,
 // device-node runtime, and transport parity layers.
 
 import { AppUpload } from './AppUpload.js';
 import { SingleArgument } from './SingleArgument.js';
 
 // ============================================================================
-// Point & PointPercent — used by GrounderResponseConverter and actions
+// Point & PointPercent -- used by GrounderResponseConverter and actions
 // ============================================================================
 
 /**
@@ -61,15 +61,15 @@ export class PointPercent {
 }
 
 // ============================================================================
-// StepAction — base class for all device actions
+// DeviceAction -- base class for all device actions
 // Dart equivalent: abstract class StepAction in TestStep.dart
 // ============================================================================
 
 /**
- * Base class for all step actions. In Dart this is an abstract class.
+ * Base class for all device actions. In Dart this is an abstract class.
  * We define action type constants as static members.
  */
-export abstract class StepAction {
+export abstract class DeviceAction {
   // Dart: static const String tap = 'tap'; etc.
   static readonly TAP = 'tap';
   static readonly TAP_PERCENT = 'tapPercent';
@@ -108,20 +108,20 @@ export abstract class StepAction {
 }
 
 // ============================================================================
-// Concrete action classes — focused subset used by the CLI + runtime parity
+// Concrete action classes -- focused subset used by the CLI + runtime parity
 // ============================================================================
 
 /**
  * Tap at absolute pixel coordinates.
  * Dart: TapAction in TestStep.dart
  */
-export class TapAction extends StepAction {
+export class TapAction extends DeviceAction {
   readonly point: Point;
   readonly repeat: number;
   readonly delay: number;
 
   constructor(params: { point: Point; repeat?: number; delay?: number }) {
-    super(StepAction.TAP);
+    super(DeviceAction.TAP);
     this.point = params.point;
     this.repeat = params.repeat ?? 1;
     this.delay = params.delay ?? 0;
@@ -149,11 +149,11 @@ export class TapAction extends StepAction {
  * Tap at percentage coordinates.
  * Dart: TapPercentAction in TestStep.dart
  */
-export class TapPercentAction extends StepAction {
+export class TapPercentAction extends DeviceAction {
   readonly point: PointPercent;
 
   constructor(params: { point: PointPercent }) {
-    super(StepAction.TAP_PERCENT);
+    super(DeviceAction.TAP_PERCENT);
     this.point = params.point;
   }
 
@@ -175,11 +175,11 @@ export class TapPercentAction extends StepAction {
  * Long-press at absolute pixel coordinates.
  * Dart: LongPressAction in TestStep.dart
  */
-export class LongPressAction extends StepAction {
+export class LongPressAction extends DeviceAction {
   readonly point: Point;
 
   constructor(params: { point: Point }) {
-    super(StepAction.LONG_PRESS);
+    super(DeviceAction.LONG_PRESS);
     this.point = params.point;
   }
 
@@ -201,7 +201,7 @@ export class LongPressAction extends StepAction {
  * Type text into a focused input field.
  * Dart: EnterTextAction in TestStep.dart
  */
-export class EnterTextAction extends StepAction {
+export class EnterTextAction extends DeviceAction {
   readonly value: string;
   readonly shouldEraseText: boolean;
   readonly eraseCount: number | null;
@@ -211,7 +211,7 @@ export class EnterTextAction extends StepAction {
     shouldEraseText?: boolean;
     eraseCount?: number | null;
   }) {
-    super(StepAction.ENTER_TEXT);
+    super(DeviceAction.ENTER_TEXT);
     this.value = params.value;
     this.shouldEraseText = params.shouldEraseText ?? false;
     this.eraseCount = params.eraseCount ?? null;
@@ -239,9 +239,9 @@ export class EnterTextAction extends StepAction {
  * Erase text from the focused input field.
  * Dart: EraseTextAction in TestStep.dart
  */
-export class EraseTextAction extends StepAction {
+export class EraseTextAction extends DeviceAction {
   constructor() {
-    super(StepAction.ERASE_TEXT);
+    super(DeviceAction.ERASE_TEXT);
   }
 }
 
@@ -249,7 +249,7 @@ export class EraseTextAction extends StepAction {
  * Absolute-coordinate scroll/swipe action.
  * Dart: ScrollAbsAction in TestStep.dart
  */
-export class ScrollAbsAction extends StepAction {
+export class ScrollAbsAction extends DeviceAction {
   readonly startX: number;
   readonly startY: number;
   readonly endX: number;
@@ -263,7 +263,7 @@ export class ScrollAbsAction extends StepAction {
     endY: number;
     durationMs?: number;
   }) {
-    super(StepAction.SCROLL_ABS);
+    super(DeviceAction.SCROLL_ABS);
     this.startX = params.startX;
     this.startY = params.startY;
     this.endX = params.endX;
@@ -297,9 +297,9 @@ export class ScrollAbsAction extends StepAction {
  * Press the system Back button (Android) / swipe-back (iOS).
  * Dart: BackAction in TestStep.dart
  */
-export class BackAction extends StepAction {
+export class BackAction extends DeviceAction {
   constructor() {
-    super(StepAction.BACK);
+    super(DeviceAction.BACK);
   }
 }
 
@@ -307,9 +307,9 @@ export class BackAction extends StepAction {
  * Press the system Home button.
  * Dart: HomeAction in TestStep.dart
  */
-export class HomeAction extends StepAction {
+export class HomeAction extends DeviceAction {
   constructor() {
-    super(StepAction.HOME);
+    super(DeviceAction.HOME);
   }
 }
 
@@ -317,9 +317,9 @@ export class HomeAction extends StepAction {
  * Rotate device orientation.
  * Dart: RotateAction in TestStep.dart
  */
-export class RotateAction extends StepAction {
+export class RotateAction extends DeviceAction {
   constructor() {
-    super(StepAction.ROTATE);
+    super(DeviceAction.ROTATE);
   }
 }
 
@@ -327,9 +327,9 @@ export class RotateAction extends StepAction {
  * Hide the software keyboard.
  * Dart: HideKeyboardAction in TestStep.dart
  */
-export class HideKeyboardAction extends StepAction {
+export class HideKeyboardAction extends DeviceAction {
   constructor() {
-    super(StepAction.HIDE_KEYBOARD);
+    super(DeviceAction.HIDE_KEYBOARD);
   }
 }
 
@@ -337,11 +337,11 @@ export class HideKeyboardAction extends StepAction {
  * Press a named key (e.g., 'enter', 'tab').
  * Dart: PressKeyAction in TestStep.dart
  */
-export class PressKeyAction extends StepAction {
+export class PressKeyAction extends DeviceAction {
   readonly key: string;
 
   constructor(params: { key: string }) {
-    super(StepAction.PRESS_KEY);
+    super(DeviceAction.PRESS_KEY);
     this.key = params.key;
   }
 
@@ -358,7 +358,7 @@ export class PressKeyAction extends StepAction {
  * Launch an app on the device.
  * Dart: LaunchAppAction in TestStep.dart
  */
-export class LaunchAppAction extends StepAction {
+export class LaunchAppAction extends DeviceAction {
   readonly appUpload: AppUpload;
   readonly allowAllPermissions: boolean;
   readonly shouldUninstallBeforeLaunch: boolean;
@@ -376,7 +376,7 @@ export class LaunchAppAction extends StepAction {
     arguments?: Record<string, SingleArgument>;
     permissions?: Record<string, string>;
   }) {
-    super(StepAction.LAUNCH_APP);
+    super(DeviceAction.LAUNCH_APP);
     this.appUpload = params.appUpload;
     this.allowAllPermissions = params.allowAllPermissions ?? true;
     this.shouldUninstallBeforeLaunch = params.shouldUninstallBeforeLaunch ?? true;
@@ -408,11 +408,11 @@ export class LaunchAppAction extends StepAction {
  * Open a deeplink URL on the device.
  * Dart: DeeplinkAction in TestStep.dart
  */
-export class DeeplinkAction extends StepAction {
+export class DeeplinkAction extends DeviceAction {
   readonly deeplink: string;
 
   constructor(params: { deeplink: string }) {
-    super(StepAction.DEEPLINK);
+    super(DeviceAction.DEEPLINK);
     this.deeplink = params.deeplink;
   }
 
@@ -429,12 +429,12 @@ export class DeeplinkAction extends StepAction {
  * Set the device's GPS location.
  * Dart: SetLocationAction in TestStep.dart
  */
-export class SetLocationAction extends StepAction {
+export class SetLocationAction extends DeviceAction {
   readonly lat: string;
   readonly long: string;
 
   constructor(params: { lat: string; long: string }) {
-    super(StepAction.SET_LOCATION);
+    super(DeviceAction.SET_LOCATION);
     this.lat = params.lat;
     this.long = params.long;
   }
@@ -455,9 +455,9 @@ export class SetLocationAction extends StepAction {
  * Wait/pause for a duration.
  * Dart: WaitAction in TestStep.dart
  */
-export class WaitAction extends StepAction {
+export class WaitAction extends DeviceAction {
   constructor() {
-    super(StepAction.WAIT);
+    super(DeviceAction.WAIT);
   }
 }
 
@@ -465,9 +465,9 @@ export class WaitAction extends StepAction {
  * Request screenshot + hierarchy from the device.
  * Dart: GetScreenshotAndHierarchyAction in TestStep.dart
  */
-export class GetScreenshotAndHierarchyAction extends StepAction {
+export class GetScreenshotAndHierarchyAction extends DeviceAction {
   constructor() {
-    super(StepAction.GET_SCREENSHOT_AND_HIERARCHY);
+    super(DeviceAction.GET_SCREENSHOT_AND_HIERARCHY);
   }
 }
 
@@ -475,9 +475,9 @@ export class GetScreenshotAndHierarchyAction extends StepAction {
  * Request the current device screenshot.
  * Dart: GetScreenshotAction in TestStep.dart
  */
-export class GetScreenshotAction extends StepAction {
+export class GetScreenshotAction extends DeviceAction {
   constructor() {
-    super(StepAction.GET_SCREENSHOT);
+    super(DeviceAction.GET_SCREENSHOT);
   }
 }
 
@@ -485,9 +485,9 @@ export class GetScreenshotAction extends StepAction {
  * Request the current device hierarchy.
  * Dart: GetHierarchyAction in TestStep.dart
  */
-export class GetHierarchyAction extends StepAction {
+export class GetHierarchyAction extends DeviceAction {
   constructor() {
-    super(StepAction.GET_HIERARCHY);
+    super(DeviceAction.GET_HIERARCHY);
   }
 }
 
@@ -495,9 +495,9 @@ export class GetHierarchyAction extends StepAction {
  * Request the list of installed apps from the device.
  * Dart: GetAppListAction in TestStep.dart
  */
-export class GetAppListAction extends StepAction {
+export class GetAppListAction extends DeviceAction {
   constructor() {
-    super(StepAction.GET_APP_LIST);
+    super(DeviceAction.GET_APP_LIST);
   }
 }
 
@@ -505,11 +505,11 @@ export class GetAppListAction extends StepAction {
  * Kill a running app.
  * Dart: KillAppAction in TestStep.dart
  */
-export class KillAppAction extends StepAction {
+export class KillAppAction extends DeviceAction {
   readonly packageName: string;
 
   constructor(params: { packageName: string }) {
-    super(StepAction.KILL_APP);
+    super(DeviceAction.KILL_APP);
     this.packageName = params.packageName;
   }
 
@@ -528,11 +528,11 @@ export class KillAppAction extends StepAction {
  * Switch to the primary app.
  * Dart: SwitchToPrimaryAppAction in TestStep.dart
  */
-export class SwitchToPrimaryAppAction extends StepAction {
+export class SwitchToPrimaryAppAction extends DeviceAction {
   readonly packageName: string;
 
   constructor(params: { packageName: string }) {
-    super(StepAction.SWITCH_TO_PRIMARY_APP);
+    super(DeviceAction.SWITCH_TO_PRIMARY_APP);
     this.packageName = params.packageName;
   }
 
@@ -545,12 +545,12 @@ export class SwitchToPrimaryAppAction extends StepAction {
  * Check if an app is in the foreground.
  * Dart: CheckAppInForegroundAction in TestStep.dart
  */
-export class CheckAppInForegroundAction extends StepAction {
+export class CheckAppInForegroundAction extends DeviceAction {
   readonly packageName: string;
   readonly timeoutSeconds: number;
 
   constructor(params: { packageName: string; timeoutSeconds?: number }) {
-    super(StepAction.CHECK_APP_IN_FOREGROUND);
+    super(DeviceAction.CHECK_APP_IN_FOREGROUND);
     this.packageName = params.packageName;
     this.timeoutSeconds = params.timeoutSeconds ?? 10;
   }

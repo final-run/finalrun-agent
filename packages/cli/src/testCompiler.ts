@@ -1,14 +1,14 @@
-import type { LoadedRepoTestSpec, RuntimeBindings } from '@finalrun/common';
+import type { TestDefinition, RuntimeBindings } from '@finalrun/common';
 
 const VARIABLE_REFERENCE_PATTERN = /\$\{variables\.([A-Za-z0-9_-]+)\}/g;
 
-export function compileSpecToGoal(
-  spec: LoadedRepoTestSpec,
+export function compileTestObjective(
+  spec: TestDefinition,
   bindings: RuntimeBindings,
 ): string {
   const sections: string[] = [
     `Test Name: ${interpolateVariables(spec.name, bindings)}`,
-    `Spec Path: ${spec.relativePath}`,
+    `Spec Path: ${spec.relativePath!}`,
   ];
 
   if (spec.description) {

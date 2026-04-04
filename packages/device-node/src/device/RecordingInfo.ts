@@ -2,8 +2,8 @@ export class RecordingInfo {
   readonly deviceId: string;
   readonly fileName: string;
   readonly filePath: string;
-  readonly testRunId: string;
-  readonly testCaseId: string;
+  readonly runId: string;
+  readonly testId: string;
   readonly platform: string;
   readonly apiKey: string;
   readonly startTime: Date;
@@ -13,16 +13,16 @@ export class RecordingInfo {
     deviceId: string;
     fileName: string;
     filePath: string;
-    testRunId: string;
-    testCaseId: string;
+    runId: string;
+    testId: string;
     platform: string;
     apiKey: string;
   }) {
     this.deviceId = params.deviceId;
     this.fileName = params.fileName;
     this.filePath = params.filePath;
-    this.testRunId = params.testRunId;
-    this.testCaseId = params.testCaseId;
+    this.runId = params.runId;
+    this.testId = params.testId;
     this.platform = params.platform;
     this.apiKey = params.apiKey;
     this.startTime = new Date();

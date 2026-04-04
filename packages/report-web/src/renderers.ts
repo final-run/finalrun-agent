@@ -1,14 +1,14 @@
 import type {
-  RunManifestRecord as SharedRunManifestRecord,
-  RunManifestStepRecord,
-  RunTargetRecord,
+  RunManifest,
+  AgentAction,
+  RunTarget,
 } from '@finalrun/common';
 import type {
   ReportIndexRunRecord,
   ReportIndexViewModel,
-  ReportManifestSelectedSpecRecord,
-  ReportManifestSpecRecord,
-  ReportRunManifestRecord,
+  ReportManifestSelectedTestRecord,
+  ReportManifestTestRecord,
+  ReportRunManifest,
 } from './artifacts';
 import { buildArtifactRoute, buildRunRoute } from './artifacts';
 
@@ -28,12 +28,12 @@ const LOCAL_ICON_SRC = svgDataUri(
   '<svg width="65" height="48" viewBox="0 0 65 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="63" height="42" rx="8" stroke="#707EAE" stroke-width="2"/><line x1="16" y1="47" x2="52" y2="47" stroke="#707EAE" stroke-width="2" stroke-linecap="round"/></svg>',
 );
 
-type SpecOutcomeStatus = 'success' | 'failure' | 'error' | 'not_executed';
+type TestOutcomeStatus = 'success' | 'failure' | 'error' | 'not_executed';
 
-interface ReportSpecListItem {
-  input: ReportManifestSelectedSpecRecord;
-  executed?: ReportManifestSpecRecord;
-  status: SpecOutcomeStatus;
+interface ReportTestListItem {
+  input: ReportManifestSelectedTestRecord;
+  executed?: ReportManifestTestRecord;
+  status: TestOutcomeStatus;
   durationLabel: string;
 }
 
@@ -310,13 +310,13 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
 </html>`;
 }
 
-export function renderRunHtml(manifest: ReportRunManifestRecord): string {
+export function renderRunHtml(manifest: ReportRunManifest): string {
   const view = toReportViewModel(manifest);
   const run = view.run;
-  const specItems = buildSpecListItems(view);
-  const isSingleSpec = specItems.length <= 1;
-  const outcomeSummary = summarizeSpecItems(specItems);
-  const initialSpec = specItems[0];
+  const testItems = buildTestListItems(view);
+  const isSingleTest = testItems.length <= 1;
+  const outcomeSummary = summarizeTestItems(testItems);
+  const initialTest = testItems[0];
   const reportTitle = deriveReportTitle(view);
   const reportPayload = JSON.stringify(stripSnapshotYamlText(view)).replace(/</g, '\\u003c');
 
@@ -1113,11 +1113,11 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       <div class="report-header-main">
         <a
           class="back-button"
-          id="${isSingleSpec ? 'report-back-button' : 'primary-back-button'}"
+          id="${isSingleTest ? 'report-back-button' : 'primary-back-button'}"
           href="/"
           aria-label="Back to run history"
           title="Back to run history"
-          ${isSingleSpec ? '' : 'onclick="return handlePrimaryBack(event)"'}
+          ${isSingleTest ? '' : 'onclick="return handlePrimaryBack(event)"'}
         >
           ${renderBackArrowIconSvg()}
         </a>
@@ -1130,44 +1130,44 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       ${renderStatusPill(run.success ? 'success' : 'failure')}
     </section>
 
-    ${isSingleSpec
-      ? renderSingleSpecPage(view, initialSpec)
-      : renderSuiteRunPage(view, specItems, outcomeSummary)}
+    ${isSingleTest
+      ? renderSingleTestPage(view, initialTest)
+      : renderSuiteRunPage(view, testItems, outcomeSummary)}
   </main>
 
   <script id="finalrun-report-data" type="application/json">${reportPayload}</script>
   <script>
     const reportPayload = JSON.parse(document.getElementById('finalrun-report-data').textContent);
-    const specMap = Object.fromEntries(reportPayload.specs.map((spec) => [spec.specId, spec]));
+    const testMap = Object.fromEntries(reportPayload.tests.map((spec) => [spec.testId, spec]));
 
-    function clearSpecSelection() {
+    function clearTestSelection() {
       const overview = document.getElementById('suite-overview');
       if (overview) {
         overview.style.display = 'block';
       }
-      for (const panel of document.querySelectorAll('[data-spec-panel]')) {
+      for (const panel of document.querySelectorAll('[data-test-panel]')) {
         panel.classList.remove('is-visible');
       }
       updatePrimaryBackButton();
     }
 
-    function selectSpec(specId) {
+    function selectSpec(testId) {
       const overview = document.getElementById('suite-overview');
       if (overview) {
         overview.style.display = 'none';
       }
-      for (const panel of document.querySelectorAll('[data-spec-panel]')) {
-        panel.classList.toggle('is-visible', panel.dataset.specPanel === specId);
+      for (const panel of document.querySelectorAll('[data-test-panel]')) {
+        panel.classList.toggle('is-visible', panel.dataset.testPanel === testId);
       }
-      if (specMap[specId] && specMap[specId].steps.length > 0) {
-        selectStep(specId, 0);
+      if (testMap[testId] && testMap[testId].steps.length > 0) {
+        selectStep(testId, 0);
       }
       updatePrimaryBackButton();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     function hasVisibleSpecPanel() {
-      for (const panel of document.querySelectorAll('[data-spec-panel]')) {
+      for (const panel of document.querySelectorAll('[data-test-panel]')) {
         if (panel.classList.contains('is-visible')) {
           return true;
         }
@@ -1190,31 +1190,31 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
         return true;
       }
       event.preventDefault();
-      clearSpecSelection();
+      clearTestSelection();
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return false;
     }
 
-    function selectStep(specId, stepIndex) {
-      const spec = specMap[specId];
+    function selectStep(testId, stepIndex) {
+      const spec = testMap[testId];
       const step = spec?.steps?.[stepIndex];
-      const container = document.querySelector('[data-step-detail="' + specId + '"]');
+      const container = document.querySelector('[data-step-detail="' + testId + '"]');
       if (!container || !step) {
         return;
       }
 
-      setSelectedStep(specId, stepIndex);
+      setSelectedStep(testId, stepIndex);
       syncRecording(container, spec, step);
     }
 
-    function setSelectedStep(specId, stepIndex) {
-      for (const button of document.querySelectorAll('[data-spec-id="' + specId + '"][data-step-index]')) {
+    function setSelectedStep(testId, stepIndex) {
+      for (const button of document.querySelectorAll('[data-test-id="' + testId + '"][data-step-index]')) {
         button.classList.toggle('is-selected', Number(button.dataset.stepIndex) === stepIndex);
       }
     }
 
-    function selectNearestStepForTime(specId, targetSeconds) {
-      const spec = specMap[specId];
+    function selectNearestStepForTime(testId, targetSeconds) {
+      const spec = testMap[testId];
       if (!spec) {
         return;
       }
@@ -1225,12 +1225,12 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
       }
 
       const step = spec.steps[nearestStepIndex];
-      const container = document.querySelector('[data-step-detail="' + specId + '"]');
+      const container = document.querySelector('[data-step-detail="' + testId + '"]');
       if (!container || !step) {
         return;
       }
 
-      setSelectedStep(specId, nearestStepIndex);
+      setSelectedStep(testId, nearestStepIndex);
       updateRecordingCaption(container, spec, step, targetSeconds);
     }
 
@@ -1298,9 +1298,9 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
           video.currentTime = nextTime;
         }
         syncControls();
-        const specId = container.getAttribute('data-step-detail');
-        if (specId) {
-          selectNearestStepForTime(specId, nextTime);
+        const testId = container.getAttribute('data-step-detail');
+        if (testId) {
+          selectNearestStepForTime(testId, nextTime);
         }
       };
 
@@ -1464,9 +1464,9 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
 
     updatePrimaryBackButton();
 
-    for (const spec of reportPayload.specs) {
+    for (const spec of reportPayload.tests) {
       if (spec.steps.length > 0) {
-        selectStep(spec.specId, 0);
+        selectStep(spec.testId, 0);
       }
     }
   </script>
@@ -1474,9 +1474,9 @@ export function renderRunHtml(manifest: ReportRunManifestRecord): string {
 </html>`;
 }
 
-function renderSingleSpecPage(
-  manifest: ReportRunManifestRecord,
-  item: ReportSpecListItem | undefined,
+function renderSingleTestPage(
+  manifest: ReportRunManifest,
+  item: ReportTestListItem | undefined,
 ): string {
   if (!item) {
     return `
@@ -1492,8 +1492,8 @@ function renderSingleSpecPage(
 }
 
 function renderSuiteRunPage(
-  manifest: ReportRunManifestRecord,
-  items: ReportSpecListItem[],
+  manifest: ReportRunManifest,
+  items: ReportTestListItem[],
   summary: OutcomeSummary,
 ): string {
   const suiteLabel = deriveReportTitle(manifest);
@@ -1543,7 +1543,7 @@ function renderSuiteRunPage(
   `;
 }
 
-function renderRunContextPanel(manifest: ReportRunManifestRecord): string {
+function renderRunContextPanel(manifest: ReportRunManifest): string {
   return `
     <section class="overview-panel">
       <div class="overview-panel-body">
@@ -1554,7 +1554,7 @@ function renderRunContextPanel(manifest: ReportRunManifestRecord): string {
 }
 
 function renderRunContextContent(
-  manifest: ReportRunManifestRecord,
+  manifest: ReportRunManifest,
   titleClass: string,
   subtitleClass: string,
 ): string {
@@ -1567,7 +1567,7 @@ function renderRunContextContent(
   `;
 }
 
-function renderRunContextSummary(manifest: ReportRunManifestRecord): string {
+function renderRunContextSummary(manifest: ReportRunManifest): string {
   return [
     renderContextSummaryItem('Environment', manifest.input.environment.envName),
     renderContextSummaryItem('Platform', manifest.run.platform),
@@ -1626,7 +1626,7 @@ function renderSummarySegments(summary: OutcomeSummary): string {
 function renderRunIndexRow(run: ReportIndexRunRecord): string {
   const resultLabel = run.passedCount + run.failedCount === 0
     ? 'NA'
-    : `${run.passedCount} / ${run.selectedSpecCount}`;
+    : `${run.passedCount} / ${run.selectedTestCount}`;
   const href = buildRunRoute(run.runId);
 
   return `
@@ -1655,15 +1655,15 @@ function renderRunIndexRow(run: ReportIndexRunRecord): string {
   `;
 }
 
-function renderSuiteRow(item: ReportSpecListItem, appLabel: string): string {
+function renderSuiteRow(item: ReportTestListItem, appLabel: string): string {
   return `
-    <tr class="suite-row" onclick="selectSpec('${escapeJs(item.input.specId)}')">
+    <tr class="suite-row" onclick="selectSpec('${escapeJs(item.input.testId!)}')">
       <td>
         <div class="run-name-cell">
           ${renderTintedPngIcon(TEST_ICON_SRC)}
           <div class="run-name-copy">
-            <span class="run-name-link">${escapeHtml(item.input.specName)}</span>
-            <div class="run-secondary">${escapeHtml(item.input.relativePath)}</div>
+            <span class="run-name-link">${escapeHtml(item.input.name)}</span>
+            <div class="run-secondary">${escapeHtml(item.input.relativePath ?? '')}</div>
           </div>
         </div>
       </td>
@@ -1675,15 +1675,15 @@ function renderSuiteRow(item: ReportSpecListItem, appLabel: string): string {
 }
 
 function renderSpecDetailSection(
-  item: ReportSpecListItem,
+  item: ReportTestListItem,
   visible: boolean,
   parentLabel?: string,
-  manifest?: ReportRunManifestRecord,
+  manifest?: ReportRunManifest,
 ): string {
   const detailClass = visible ? 'detail-shell is-visible' : 'detail-shell';
   const detailSubtitle = parentLabel
-    ? `${parentLabel} · ${item.input.relativePath}`
-    : item.input.relativePath;
+    ? `${parentLabel} · ${item.input.relativePath ?? ''}`
+    : item.input.relativePath ?? '';
   const spec = item.executed;
   const initialStep = spec?.steps[0];
   const statusText = item.status === 'error'
@@ -1699,14 +1699,14 @@ function renderSpecDetailSection(
   const snapshotYamlText = spec?.snapshotYamlText ?? item.input.snapshotYamlText;
   const snapshotYamlPath = spec?.snapshotYamlPath ?? item.input.snapshotYamlPath;
   const stepCount = spec?.steps.length ?? 0;
-  const recordingSpeedId = `recording-speed-${item.input.specId}`;
+  const recordingSpeedId = `recording-speed-${item.input.testId!}`;
 
   return `
-    <section class="${detailClass}" data-spec-panel="${escapeHtml(item.input.specId)}">
+    <section class="${detailClass}" data-test-panel="${escapeHtml(item.input.testId!)}">
       <div class="detail-header">
         <div class="detail-header-main">
           <div class="detail-header-copy">
-            <h2>${escapeHtml(item.input.specName)}</h2>
+            <h2>${escapeHtml(item.input.name)}</h2>
             <p>${escapeHtml(detailSubtitle)}</p>
           </div>
         </div>
@@ -1717,24 +1717,24 @@ function renderSpecDetailSection(
         <div class="detail-meta-card"><strong>Status</strong><span>${escapeHtml(statusText)}</span></div>
         <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(spec ? formatLongDuration(spec.durationMs) : 'NA')}</span></div>
         <div class="detail-meta-card"><strong>Steps</strong><span>${stepCount} recorded</span></div>
-        <div class="detail-meta-card"><strong>Path</strong><span>${escapeHtml(item.input.relativePath)}</span></div>
+        <div class="detail-meta-card"><strong>Path</strong><span>${escapeHtml(item.input.relativePath ?? '')}</span></div>
       </div>
 
       ${renderSpecTestSection(snapshotYamlPath, snapshotYamlText)}
       ${manifest ? renderRunContextSection(manifest) : ''}
-      ${renderSpecAnalysisSection(item.status, analysisText)}
+      ${renderTestAnalysisSection(item.status, analysisText)}
 
       <div class="workspace">
         <div class="timeline-panel">
           <p class="section-label">Agent Actions</p>
           <div class="timeline-scroll">
             ${spec && spec.steps.length > 0
-              ? spec.steps.map((step, index) => renderStepButton(spec.specId, step, index)).join('')
+              ? spec.steps.map((step, index) => renderStepButton(spec.testId, step, index)).join('')
               : '<div class="empty-panel">No steps were recorded for this spec.</div>'}
           </div>
         </div>
 
-        <div class="detail-panel" data-step-detail="${escapeHtml(item.input.specId)}">
+        <div class="detail-panel" data-step-detail="${escapeHtml(item.input.testId!)}">
           <p class="section-label">Session Recording</p>
           <div class="media-shell recording-shell">
             ${spec?.recordingFile
@@ -1803,7 +1803,7 @@ function renderSpecTestSection(
   });
 }
 
-function renderRunContextSection(manifest: ReportRunManifestRecord): string {
+function renderRunContextSection(manifest: ReportRunManifest): string {
   return renderDetailSectionCard({
     title: 'Run Context',
     subtitle: 'Inputs and environment captured for this report.',
@@ -1811,7 +1811,7 @@ function renderRunContextSection(manifest: ReportRunManifestRecord): string {
   });
 }
 
-function renderSpecAnalysisSection(status: SpecOutcomeStatus, analysisText: string): string {
+function renderTestAnalysisSection(status: TestOutcomeStatus, analysisText: string): string {
   return renderDetailSectionCard({
     title: 'Analysis',
     subtitle: 'Overall result commentary captured for this spec.',
@@ -1844,15 +1844,15 @@ function renderDetailSectionCard(params: {
   `;
 }
 
-function renderStepButton(specId: string, step: RunManifestStepRecord, index: number): string {
+function renderStepButton(testId: string, step: AgentAction, index: number): string {
   const statusClass = step.success ? 'success' : step.actionType === 'run_failure' ? 'error' : 'failure';
   const reasoningText = resolveStepReasoning(step);
   return `
     <button
       class="step-button ${index === 0 ? 'is-selected' : ''}"
-      data-spec-id="${escapeHtml(specId)}"
+      data-test-id="${escapeHtml(testId)}"
       data-step-index="${index}"
-      onclick="selectStep('${escapeJs(specId)}', ${index})"
+      onclick="selectStep('${escapeJs(testId)}', ${index})"
       type="button"
     >
       <div class="step-row">
@@ -1869,7 +1869,7 @@ function renderStepButton(specId: string, step: RunManifestStepRecord, index: nu
   `;
 }
 
-function resolveStepReasoning(step: RunManifestStepRecord): string | undefined {
+function resolveStepReasoning(step: AgentAction): string | undefined {
   const title = normalizeStepText(step.naturalLanguageAction || step.actionType);
   for (const candidate of [step.thought?.think, step.thought?.plan, step.reason]) {
     const normalized = normalizeStepText(candidate);
@@ -1886,7 +1886,7 @@ function normalizeStepText(value: string | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-function toReportViewModel(manifest: ReportRunManifestRecord): ReportRunManifestRecord {
+function toReportViewModel(manifest: ReportRunManifest): ReportRunManifest {
   const runId = manifest.run.runId;
   return {
     ...manifest,
@@ -1895,13 +1895,17 @@ function toReportViewModel(manifest: ReportRunManifestRecord): ReportRunManifest
       suite: manifest.input.suite
         ? {
             ...manifest.input.suite,
-            snapshotYamlPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath),
-            snapshotJsonPath: buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath),
+            snapshotYamlPath: manifest.input.suite.snapshotYamlPath
+              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath)
+              : undefined,
+            snapshotJsonPath: manifest.input.suite.snapshotJsonPath
+              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath)
+              : undefined,
           }
         : undefined,
-      specs: manifest.input.specs.map((spec) => toSelectedSpecViewModel(runId, spec)),
+      tests: manifest.input.tests.map((spec) => toSelectedSpecViewModel(runId, spec)),
     },
-    specs: manifest.specs.map((spec) => toSpecViewModel(runId, spec)),
+    tests: manifest.tests.map((spec) => toTestViewModel(runId, spec)),
     paths: {
       ...manifest.paths,
       runJson: buildRunScopedArtifactPath(runId, manifest.paths.runJson),
@@ -1916,24 +1920,34 @@ function toReportViewModel(manifest: ReportRunManifestRecord): ReportRunManifest
 
 function toSelectedSpecViewModel(
   runId: string,
-  spec: ReportManifestSelectedSpecRecord,
-): ReportManifestSelectedSpecRecord {
+  spec: ReportManifestSelectedTestRecord,
+): ReportManifestSelectedTestRecord {
   return {
     ...spec,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath),
+    snapshotYamlPath: spec.snapshotYamlPath
+      ? buildRunScopedArtifactPath(runId, spec.snapshotYamlPath)
+      : undefined,
+    snapshotJsonPath: spec.snapshotJsonPath
+      ? buildRunScopedArtifactPath(runId, spec.snapshotJsonPath)
+      : undefined,
   };
 }
 
-function toSpecViewModel(runId: string, spec: ReportManifestSpecRecord): ReportManifestSpecRecord {
+function toTestViewModel(runId: string, spec: ReportManifestTestRecord): ReportManifestTestRecord {
   return {
     ...spec,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath),
+    snapshotYamlPath: spec.snapshotYamlPath
+      ? buildRunScopedArtifactPath(runId, spec.snapshotYamlPath)
+      : undefined,
+    snapshotJsonPath: spec.snapshotJsonPath
+      ? buildRunScopedArtifactPath(runId, spec.snapshotJsonPath)
+      : undefined,
     previewScreenshotPath: spec.previewScreenshotPath
       ? buildRunScopedArtifactPath(runId, spec.previewScreenshotPath)
       : undefined,
-    resultJsonPath: buildRunScopedArtifactPath(runId, spec.resultJsonPath),
+    resultJsonPath: spec.resultJsonPath
+      ? buildRunScopedArtifactPath(runId, spec.resultJsonPath)
+      : undefined,
     recordingFile: spec.recordingFile
       ? buildRunScopedArtifactPath(runId, spec.recordingFile)
       : undefined,
@@ -1964,39 +1978,42 @@ function buildRunScopedArtifactPath(runId: string, relativePath: string): string
   return buildArtifactRoute(`${runId}/${relativePath}`);
 }
 
-function buildSpecListItems(manifest: ReportRunManifestRecord): ReportSpecListItem[] {
-  const executedById = new Map(manifest.specs.map((spec) => [spec.specId, spec]));
-  const selectedSpecs = manifest.input.specs;
-  if (selectedSpecs.length === 0) {
-    return manifest.specs.map((spec) => ({
+function buildTestListItems(manifest: ReportRunManifest): ReportTestListItem[] {
+  const executedById = new Map(manifest.tests.map((spec) => [spec.testId, spec]));
+  const selectedTests = manifest.input.tests;
+  if (selectedTests.length === 0) {
+    return manifest.tests.map((spec) => ({
       input: {
-        specId: spec.specId,
-        specName: spec.specName,
+        testId: spec.testId,
+        name: spec.testName,
         relativePath: spec.relativePath,
         workspaceSourcePath: spec.workspaceSourcePath,
         snapshotYamlPath: spec.snapshotYamlPath,
         snapshotJsonPath: spec.snapshotJsonPath,
         snapshotYamlText: spec.snapshotYamlText,
         bindingReferences: spec.bindingReferences,
+        setup: [],
+        steps: [],
+        assertions: [],
       },
       executed: spec,
-      status: classifySpecStatus(spec),
+      status: classifyTestStatus(spec),
       durationLabel: formatLongDuration(spec.durationMs),
     }));
   }
 
-  return selectedSpecs.map((selected) => {
-    const executed = executedById.get(selected.specId);
+  return selectedTests.map((selected) => {
+    const executed = executedById.get(selected.testId!);
     return {
       input: selected,
       executed,
-      status: executed ? classifySpecStatus(executed) : 'not_executed',
+      status: executed ? classifyTestStatus(executed) : 'not_executed',
       durationLabel: executed ? formatLongDuration(executed.durationMs) : 'NA',
     };
   });
 }
 
-function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
+function summarizeTestItems(items: ReportTestListItem[]): OutcomeSummary {
   return items.reduce<OutcomeSummary>(
     (summary, item) => {
       summary.total += 1;
@@ -2021,7 +2038,7 @@ function summarizeSpecItems(items: ReportSpecListItem[]): OutcomeSummary {
   );
 }
 
-function classifySpecStatus(spec: ReportManifestSpecRecord): SpecOutcomeStatus {
+function classifyTestStatus(spec: ReportManifestTestRecord): TestOutcomeStatus {
   if (spec.success) {
     return 'success';
   }
@@ -2031,25 +2048,25 @@ function classifySpecStatus(spec: ReportManifestSpecRecord): SpecOutcomeStatus {
   return 'failure';
 }
 
-function deriveReportTitle(manifest: ReportRunManifestRecord): string {
+function deriveReportTitle(manifest: ReportRunManifest): string {
   const target = resolveRunTarget(manifest);
   if (target.type === 'suite' && target.suiteName) {
     return target.suiteName;
   }
 
-  if (manifest.input.specs.length === 1) {
-    return manifest.input.specs[0]?.specName || manifest.run.runId;
+  if (manifest.input.tests.length === 1) {
+    return manifest.input.tests[0]?.name || manifest.run.runId;
   }
 
-  if (manifest.input.specs.length > 1) {
-    const first = manifest.input.specs[0];
-    return `${first?.specName || 'Selected specs'} +${manifest.input.specs.length - 1} more`;
+  if (manifest.input.tests.length > 1) {
+    const first = manifest.input.tests[0];
+    return `${first?.name || 'Selected specs'} +${manifest.input.tests.length - 1} more`;
   }
 
   return manifest.run.runId;
 }
 
-function renderStatusPill(status: SpecOutcomeStatus | 'success' | 'failure'): string {
+function renderStatusPill(status: TestOutcomeStatus | 'success' | 'failure'): string {
   const label = status === 'success'
     ? 'Passed'
     : status === 'failure'
@@ -2081,18 +2098,18 @@ function renderSummaryCard(label: string, value: string, tone: 'accent' | 'succe
   `;
 }
 
-function resolveRunTarget(manifest: ReportRunManifestRecord): RunTargetRecord {
+function resolveRunTarget(manifest: ReportRunManifest): RunTarget {
   return manifest.run.target ?? { type: 'direct' };
 }
 
-function stripSnapshotYamlText(manifest: ReportRunManifestRecord): SharedRunManifestRecord {
+function stripSnapshotYamlText(manifest: ReportRunManifest): RunManifest {
   return {
     ...manifest,
     input: {
       ...manifest.input,
-      specs: manifest.input.specs.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
+      tests: manifest.input.tests.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
     },
-    specs: manifest.specs.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
+    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
   };
 }
 
