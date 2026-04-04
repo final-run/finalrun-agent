@@ -317,11 +317,11 @@ export async function buildReportRunManifestViewModel(
           }
         : undefined,
       tests: await Promise.all(
-        manifest.input.tests.map(async (spec) => await toSelectedTestViewModel(runId, spec, readSnapshotYamlText)),
+        manifest.input.tests.map(async (test) => await toSelectedTestViewModel(runId, test, readSnapshotYamlText)),
       ),
     },
     tests: await Promise.all(
-      manifest.tests.map(async (spec) => await toTestViewModel(runId, spec, readSnapshotYamlText)),
+      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText)),
     ),
     paths: {
       ...manifest.paths,
@@ -337,35 +337,35 @@ export async function buildReportRunManifestViewModel(
 
 async function toSelectedTestViewModel(
   runId: string,
-  spec: TestDefinition,
+  test: TestDefinition,
   readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
 ): Promise<ReportManifestSelectedTestRecord> {
   return {
-    ...spec,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath!),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath!),
-    snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath!),
+    ...test,
+    snapshotYamlPath: buildRunScopedArtifactPath(runId, test.snapshotYamlPath!),
+    snapshotJsonPath: buildRunScopedArtifactPath(runId, test.snapshotJsonPath!),
+    snapshotYamlText: await readSnapshotYamlText(test.snapshotYamlPath!),
   };
 }
 
 async function toTestViewModel(
   runId: string,
-  spec: TestResult,
+  test: TestResult,
   readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
 ): Promise<ReportManifestTestRecord> {
   return {
-    ...spec,
-    snapshotYamlPath: buildRunScopedArtifactPath(runId, spec.snapshotYamlPath!),
-    snapshotJsonPath: buildRunScopedArtifactPath(runId, spec.snapshotJsonPath!),
-    snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath!),
-    previewScreenshotPath: spec.previewScreenshotPath
-      ? buildRunScopedArtifactPath(runId, spec.previewScreenshotPath)
+    ...test,
+    snapshotYamlPath: buildRunScopedArtifactPath(runId, test.snapshotYamlPath!),
+    snapshotJsonPath: buildRunScopedArtifactPath(runId, test.snapshotJsonPath!),
+    snapshotYamlText: await readSnapshotYamlText(test.snapshotYamlPath!),
+    previewScreenshotPath: test.previewScreenshotPath
+      ? buildRunScopedArtifactPath(runId, test.previewScreenshotPath)
       : undefined,
-    resultJsonPath: buildRunScopedArtifactPath(runId, spec.resultJsonPath!),
-    recordingFile: spec.recordingFile
-      ? buildRunScopedArtifactPath(runId, spec.recordingFile)
+    resultJsonPath: buildRunScopedArtifactPath(runId, test.resultJsonPath!),
+    recordingFile: test.recordingFile
+      ? buildRunScopedArtifactPath(runId, test.recordingFile)
       : undefined,
-    steps: spec.steps.map((step) => ({
+    steps: test.steps.map((step) => ({
       ...step,
       screenshotFile: step.screenshotFile
         ? buildRunScopedArtifactPath(runId, step.screenshotFile)
@@ -374,14 +374,14 @@ async function toTestViewModel(
         ? buildRunScopedArtifactPath(runId, step.stepJsonFile)
         : undefined,
     })),
-    firstFailure: spec.firstFailure
+    firstFailure: test.firstFailure
       ? {
-          ...spec.firstFailure,
-          screenshotPath: spec.firstFailure.screenshotPath
-            ? buildRunScopedArtifactPath(runId, spec.firstFailure.screenshotPath)
+          ...test.firstFailure,
+          screenshotPath: test.firstFailure.screenshotPath
+            ? buildRunScopedArtifactPath(runId, test.firstFailure.screenshotPath)
             : undefined,
-          stepJsonPath: spec.firstFailure.stepJsonPath
-            ? buildRunScopedArtifactPath(runId, spec.firstFailure.stepJsonPath)
+          stepJsonPath: test.firstFailure.stepJsonPath
+            ? buildRunScopedArtifactPath(runId, test.firstFailure.stepJsonPath)
             : undefined,
         }
       : undefined,
@@ -479,10 +479,10 @@ function deriveRunDisplayKind(
 
   const selectedCount = manifest?.input.tests?.length ?? run.testCount;
   if (selectedCount === 1) {
-    return 'single_spec';
+    return 'single_test';
   }
   if (selectedCount > 1) {
-    return 'multi_spec';
+    return 'multi_test';
   }
 
   return 'fallback';

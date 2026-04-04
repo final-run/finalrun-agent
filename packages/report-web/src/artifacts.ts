@@ -21,7 +21,7 @@ export interface ReportWorkspaceContext {
 
 export interface ReportIndexRunRecord extends RunIndexEntry {
   displayName: string;
-  displayKind: 'suite' | 'single_spec' | 'multi_spec' | 'fallback';
+  displayKind: 'suite' | 'single_test' | 'multi_test' | 'fallback';
   triggeredFrom: 'Suite' | 'Direct';
   selectedTestCount: number;
 }
@@ -291,16 +291,16 @@ async function enrichRunManifestRecord(
     input: {
       ...manifest.input,
       tests: await Promise.all(
-        manifest.input.tests.map(async (spec) => ({
-          ...spec,
-          snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+        manifest.input.tests.map(async (t) => ({
+          ...t,
+          snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
         })),
       ),
     },
     tests: await Promise.all(
-      manifest.tests.map(async (spec) => ({
-        ...spec,
-        snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+      manifest.tests.map(async (t) => ({
+        ...t,
+        snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
       })),
     ),
   };
@@ -388,10 +388,10 @@ function deriveRunDisplayKind(
 
   const selectedCount = manifest?.input.tests?.length ?? run.testCount;
   if (selectedCount === 1) {
-    return 'single_spec';
+    return 'single_test';
   }
   if (selectedCount > 1) {
-    return 'multi_spec';
+    return 'multi_test';
   }
 
   return 'fallback';

@@ -14,7 +14,7 @@ import { sanitizeId } from './workspace.js';
 import { CliEnv } from './env.js';
 
 const ENV_TOP_LEVEL_KEYS = new Set(['app', 'secrets', 'variables']);
-const SPEC_TOP_LEVEL_KEYS = new Set([
+const TEST_TOP_LEVEL_KEYS = new Set([
   'name',
   'description',
   'setup',
@@ -23,7 +23,7 @@ const SPEC_TOP_LEVEL_KEYS = new Set([
 ]);
 const SUITE_TOP_LEVEL_KEYS = new Set(['name', 'description', 'tests']);
 const SECRET_PLACEHOLDER = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
-const SPEC_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
+const TEST_REFERENCE_PATTERN = /\$\{(variables|secrets)\.([A-Za-z0-9_-]+)\}/g;
 
 export interface LoadedEnvironmentConfig {
   envName: string;
@@ -83,14 +83,14 @@ export async function loadEnvironmentConfig(
   };
 }
 
-export async function loadTestSpec(
+export async function loadTest(
   filePath: string,
   testsDir: string,
 ): Promise<TestDefinition> {
   const raw = await fs.readFile(filePath, 'utf-8');
   const parsed = parseYamlDocument(raw, filePath);
-  assertPlainObject(parsed, `Test spec ${filePath}`);
-  assertAllowedKeys(parsed, SPEC_TOP_LEVEL_KEYS, `Test spec ${filePath}`);
+  assertPlainObject(parsed, `Test file ${filePath}`);
+  assertAllowedKeys(parsed, TEST_TOP_LEVEL_KEYS, `Test file ${filePath}`);
 
   const name = readRequiredString(parsed['name'], `${filePath} name`);
   const description = readOptionalString(parsed['description'], `${filePath} description`);
@@ -99,7 +99,7 @@ export async function loadTestSpec(
   const assertions = readStringArray(parsed['assertions'], `${filePath} assertions`);
 
   if (steps.length === 0) {
-    throw new Error(`Test spec ${filePath} must define a non-empty steps array.`);
+    throw new Error(`Test file ${filePath} must define a non-empty steps array.`);
   }
 
   const relativePath = path.relative(testsDir, filePath).split(path.sep).join('/');
@@ -143,21 +143,21 @@ export async function loadTestSuite(
 }
 
 export function validateTestBindings(
-  spec: TestDefinition,
+  test: TestDefinition,
   envConfig: EnvironmentConfig,
   options?: { environmentResolved?: boolean },
 ): void {
   const unresolvedReferences = new Set<string>();
   const values = [
-    spec.name,
-    spec.description,
-    ...spec.setup,
-    ...spec.steps,
-    ...spec.assertions,
+    test.name,
+    test.description,
+    ...test.setup,
+    ...test.steps,
+    ...test.assertions,
   ].filter((value): value is string => typeof value === 'string');
 
   for (const value of values) {
-    for (const match of value.matchAll(SPEC_REFERENCE_PATTERN)) {
+    for (const match of value.matchAll(TEST_REFERENCE_PATTERN)) {
       const namespace = match[1];
       const key = match[2];
       if (namespace === 'variables' && envConfig.variables[key] === undefined) {
@@ -172,11 +172,11 @@ export function validateTestBindings(
   if (unresolvedReferences.size > 0) {
     if (options?.environmentResolved === false) {
       throw new Error(
-        `Spec references environment bindings, but no environment configuration was resolved. Add .finalrun/env/<name>.yaml or pass --env <name>: ${Array.from(unresolvedReferences).join(', ')}`,
+        `Test references environment bindings, but no environment configuration was resolved. Add .finalrun/env/<name>.yaml or pass --env <name>: ${Array.from(unresolvedReferences).join(', ')}`,
       );
     }
     throw new Error(
-      `Spec references unknown environment bindings: ${Array.from(unresolvedReferences).join(', ')}`,
+      `Test references unknown environment bindings: ${Array.from(unresolvedReferences).join(', ')}`,
     );
   }
 }

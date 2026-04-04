@@ -17,7 +17,7 @@ import {
   startOrReuseWorkspaceReportServer,
   stopWorkspaceReportServer,
 } from '../src/reportServerManager.js';
-import { normalizeSpecSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
 import { PreExecutionFailureError, runTests } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
@@ -43,7 +43,7 @@ const program = new Command()
 
 program
   .command('check')
-  .description('Validate the .finalrun workspace, env config, and test specs')
+  .description('Validate the .finalrun workspace, env config, and test files')
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
@@ -52,7 +52,7 @@ program
   .action(async (selectors: string[] | undefined, options: CheckCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
-      const normalizedSelectors = normalizeSpecSelectors(selectors);
+      const normalizedSelectors = normalizeTestSelectors(selectors);
       if (options.suite && normalizedSelectors.length > 0) {
         throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
       }
@@ -70,7 +70,7 @@ program
           : `using env ${result.environment.envName}.`;
       console.log(formatResolvedAppSummary(result.resolvedApp));
       console.log(
-        `Validated ${result.specs.length} spec(s) in ${result.workspace.testsDir} ${envSummary}`,
+        `Validated ${result.tests.length} test(s) in ${result.workspace.testsDir} ${envSummary}`,
       );
     });
   });
@@ -124,7 +124,7 @@ program
 
 program
   .command('test')
-  .description('Run repo-local FinalRun YAML specs from .finalrun/tests')
+  .description('Run repo-local FinalRun YAML tests from .finalrun/tests')
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
@@ -287,7 +287,7 @@ async function runTestCommand(params: {
   options: TestCommandOptions;
 }): Promise<void> {
   try {
-    const normalizedSelectors = normalizeSpecSelectors(params.selectors);
+    const normalizedSelectors = normalizeTestSelectors(params.selectors);
     const normalizedSuitePath = params.suitePath?.trim() || params.options.suite;
     if (normalizedSuitePath && normalizedSelectors.length > 0) {
       throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);

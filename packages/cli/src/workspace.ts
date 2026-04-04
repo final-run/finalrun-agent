@@ -749,10 +749,10 @@ function formatMissingEnvironmentError(
   envDirExists: boolean,
 ): string {
   if (!envDirExists) {
-    return `Environment "${requestedEnvName}" was requested, but ${envDir} does not exist. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free specs.`;
+    return `Environment "${requestedEnvName}" was requested, but ${envDir} does not exist. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free tests.`;
   }
   if (availableEnvNames.length === 0) {
-    return `Environment "${requestedEnvName}" was not found in ${envDir}, and no environment files are available there. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free specs.`;
+    return `Environment "${requestedEnvName}" was not found in ${envDir}, and no environment files are available there. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free tests.`;
   }
 
   return `Environment "${requestedEnvName}" was not found in ${envDir}. Available environments: ${availableEnvNames.join(', ')}`;

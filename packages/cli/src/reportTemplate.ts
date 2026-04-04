@@ -889,7 +889,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
   <script id="finalrun-report-data" type="application/json">${reportPayload}</script>
   <script>
     const reportPayload = JSON.parse(document.getElementById('finalrun-report-data').textContent);
-    const testMap = Object.fromEntries(reportPayload.tests.map((spec) => [spec.testId, spec]));
+    const testMap = Object.fromEntries(reportPayload.tests.map((t) => [t.testId, t]));
 
     function clearTestSelection() {
       const overview = document.getElementById('suite-overview');
@@ -947,15 +947,15 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     }
 
     function selectStep(testId, stepIndex) {
-      const spec = testMap[testId];
-      const step = spec?.steps?.[stepIndex];
+      const test = testMap[testId];
+      const step = test?.steps?.[stepIndex];
       const container = document.querySelector('[data-step-detail="' + testId + '"]');
       if (!container || !step) {
         return;
       }
 
       setSelectedStep(testId, stepIndex);
-      syncRecording(container, spec, step);
+      syncRecording(container, test, step);
     }
 
     function setSelectedStep(testId, stepIndex) {
@@ -965,31 +965,31 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     }
 
     function selectNearestStepForTime(testId, targetSeconds) {
-      const spec = testMap[testId];
-      if (!spec) {
+      const test = testMap[testId];
+      if (!test) {
         return;
       }
 
-      const nearestStepIndex = findNearestStepIndex(spec, targetSeconds);
+      const nearestStepIndex = findNearestStepIndex(test, targetSeconds);
       if (nearestStepIndex === null) {
         return;
       }
 
-      const step = spec.steps[nearestStepIndex];
+      const step = test.steps[nearestStepIndex];
       const container = document.querySelector('[data-step-detail="' + testId + '"]');
       if (!container || !step) {
         return;
       }
 
       setSelectedStep(testId, nearestStepIndex);
-      updateRecordingCaption(container, spec, step, targetSeconds);
+      updateRecordingCaption(container, test, step, targetSeconds);
     }
 
-    function findNearestStepIndex(spec, targetSeconds) {
+    function findNearestStepIndex(test, targetSeconds) {
       let nearestIndex = null;
       let nearestDistance = Number.POSITIVE_INFINITY;
 
-      for (const [index, step] of spec.steps.entries()) {
+      for (const [index, step] of test.steps.entries()) {
         if (typeof step.videoOffsetMs !== 'number') {
           continue;
         }
@@ -1126,7 +1126,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       }
     }
 
-    function syncRecording(container, spec, step) {
+    function syncRecording(container, test, step) {
       const video = container.querySelector('[data-role="recording-video"]');
       const empty = container.querySelector('[data-role="empty-recording"]');
       const controls = container.querySelector('[data-role="recording-controls"]');
@@ -1137,12 +1137,12 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
       ensureRecordingControls(container);
 
-      if (!spec.recordingFile) {
+      if (!test.recordingFile) {
         if (empty) empty.style.display = 'block';
         video.style.display = 'none';
         if (controls) controls.style.display = 'none';
         syncRecordingShell(container, video);
-        updateRecordingCaption(container, spec);
+        updateRecordingCaption(container, test);
         return;
       }
 
@@ -1153,12 +1153,12 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       if (step.videoOffsetMs === undefined || step.videoOffsetMs === null) {
         video.pause();
         updateRecordingControls(container, video);
-        updateRecordingCaption(container, spec, step);
+        updateRecordingCaption(container, test, step);
         return;
       }
 
       const seekSeconds = Math.max(0, step.videoOffsetMs / 1000);
-      updateRecordingCaption(container, spec, step);
+      updateRecordingCaption(container, test, step);
 
       const applySeek = () => {
         const duration = Number.isFinite(video.duration) ? video.duration : undefined;
@@ -1189,17 +1189,17 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       video.load();
     }
 
-    function updateRecordingCaption(container, spec, step, currentSeconds) {
+    function updateRecordingCaption(container, test, step, currentSeconds) {
       const label = container.querySelector('[data-role="recording-caption"]');
       if (!label) {
         return;
       }
-      if (!spec.recordingFile) {
-        label.textContent = 'No session recording was captured for this spec.';
+      if (!test.recordingFile) {
+        label.textContent = 'No session recording was captured for this test.';
         return;
       }
       if (!step) {
-        label.textContent = 'No recorded actions are available for this spec.';
+        label.textContent = 'No recorded actions are available for this test.';
         return;
       }
       if (step.videoOffsetMs === undefined || step.videoOffsetMs === null) {
@@ -1215,9 +1215,9 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     updatePrimaryBackButton();
 
-    for (const spec of reportPayload.tests) {
-      if (spec.steps.length > 0) {
-        selectStep(spec.testId, 0);
+    for (const test of reportPayload.tests) {
+      if (test.steps.length > 0) {
+        selectStep(test.testId, 0);
       }
     }
   </script>
@@ -1233,7 +1233,7 @@ function renderSingleSpecPage(
     return `
       <section class="overview-panel">
         <div class="overview-panel-body">
-          <div class="empty-panel">No spec details were recorded for this run.</div>
+          <div class="empty-panel">No test details were recorded for this run.</div>
         </div>
       </section>
     `;
@@ -1406,8 +1406,8 @@ function renderSpecDetailSection(
   const detailSubtitle = parentLabel
     ? `${parentLabel} · ${item.input.relativePath}`
     : item.input.relativePath;
-  const spec = item.executed;
-  const initialStep = spec?.steps[0];
+  const test = item.executed;
+  const initialStep = test?.steps[0];
   const statusText = item.status === 'error'
     ? 'Error'
     : item.status === 'aborted'
@@ -1417,12 +1417,12 @@ function renderSpecDetailSection(
       : item.status === 'not_executed'
         ? 'Not executed'
         : 'Passed';
-  const analysisText = spec
-    ? spec.analysis || spec.message || 'No overall analysis recorded.'
-    : 'This spec was selected for the run, but it never started. The batch ended before this spec could execute.';
-  const snapshotYamlText = spec?.snapshotYamlText ?? item.input.snapshotYamlText;
-  const snapshotYamlPath = spec?.snapshotYamlPath ?? item.input.snapshotYamlPath;
-  const stepCount = spec?.steps.length ?? 0;
+  const analysisText = test
+    ? test.analysis || test.message || 'No overall analysis recorded.'
+    : 'This test was selected for the run, but it never started. The batch ended before this test could execute.';
+  const snapshotYamlText = test?.snapshotYamlText ?? item.input.snapshotYamlText;
+  const snapshotYamlPath = test?.snapshotYamlPath ?? item.input.snapshotYamlPath;
+  const stepCount = test?.steps.length ?? 0;
   const recordingSpeedId = `recording-speed-${item.input.testId!}`;
 
   return `
@@ -1439,7 +1439,7 @@ function renderSpecDetailSection(
 
       <div class="detail-meta">
         <div class="detail-meta-card"><strong>Status</strong><span>${escapeHtml(statusText)}</span></div>
-        <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(spec ? formatLongDuration(spec.durationMs) : 'NA')}</span></div>
+        <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(test ? formatLongDuration(test.durationMs) : 'NA')}</span></div>
         <div class="detail-meta-card"><strong>Steps</strong><span>${stepCount} recorded</span></div>
         <div class="detail-meta-card"><strong>Path</strong><span>${escapeHtml(item.input.relativePath)}</span></div>
       </div>
@@ -1452,23 +1452,23 @@ function renderSpecDetailSection(
         <div class="timeline-panel">
           <p class="section-label">Agent Actions</p>
           <div class="timeline-scroll">
-            ${spec && spec.steps.length > 0
-              ? spec.steps.map((step, index) => renderStepButton(spec.testId, step, index)).join('')
-              : '<div class="empty-panel">No steps were recorded for this spec.</div>'}
+            ${test && test.steps.length > 0
+              ? test.steps.map((step, index) => renderStepButton(test.testId, step, index)).join('')
+              : '<div class="empty-panel">No steps were recorded for this test.</div>'}
           </div>
         </div>
 
         <div class="detail-panel" data-step-detail="${escapeHtml(item.input.testId!)}">
           <p class="section-label">Session Recording</p>
           <div class="media-shell recording-shell">
-            ${spec?.recordingFile
-              ? `<video data-role="recording-video" playsinline preload="metadata" src="${escapeHtml(spec.recordingFile)}"></video>`
-              : '<div class="empty-shot" data-role="empty-recording">No session recording was captured for this spec.</div>'}
-            ${spec?.recordingFile
-              ? '<div class="empty-shot" data-role="empty-recording" style="display:none">No session recording was captured for this spec.</div>'
+            ${test?.recordingFile
+              ? `<video data-role="recording-video" playsinline preload="metadata" src="${escapeHtml(test.recordingFile)}"></video>`
+              : '<div class="empty-shot" data-role="empty-recording">No session recording was captured for this test.</div>'}
+            ${test?.recordingFile
+              ? '<div class="empty-shot" data-role="empty-recording" style="display:none">No session recording was captured for this test.</div>'
               : ''}
           </div>
-          <div class="recording-controls" data-role="recording-controls" style="display:${spec?.recordingFile ? 'block' : 'none'}">
+          <div class="recording-controls" data-role="recording-controls" style="display:${test?.recordingFile ? 'block' : 'none'}">
             <div class="recording-control-row">
               <button
                 class="recording-icon-button primary"
@@ -1521,7 +1521,7 @@ function renderSpecTestSection(
     : '';
   return renderDetailSectionCard({
     title: 'Test',
-    subtitle: 'Captured YAML snapshot for this spec.',
+    subtitle: 'Captured YAML snapshot for this test.',
     action,
     content,
   });
@@ -1538,7 +1538,7 @@ function renderRunContextSection(manifest: ReportRunManifest): string {
 function renderSpecAnalysisSection(status: TestOutcomeStatus, analysisText: string): string {
   return renderDetailSectionCard({
     title: 'Analysis',
-    subtitle: 'Overall result commentary captured for this spec.',
+    subtitle: 'Overall result commentary captured for this test.',
     action: renderStatusPill(status),
     cardClass: `analysis-card ${status}`,
     content: `<div class="analysis-copy">${escapeHtml(analysisText)}</div>`,
@@ -1611,26 +1611,26 @@ function normalizeStepText(value: string | undefined): string | undefined {
 }
 
 function buildTestListItems(manifest: ReportRunManifest): ReportTestListItem[] {
-  const executedById = new Map(manifest.tests.map((spec) => [spec.testId, spec]));
+  const executedById = new Map(manifest.tests.map((test) => [test.testId, test]));
   const selectedTests = manifest.input.tests;
   if (selectedTests.length === 0) {
-    return manifest.tests.map((spec) => ({
+    return manifest.tests.map((test) => ({
       input: {
-        testId: spec.testId,
-        name: spec.testName,
+        testId: test.testId,
+        name: test.testName,
         setup: [],
         steps: [],
         assertions: [],
-        relativePath: spec.relativePath,
-        workspaceSourcePath: spec.workspaceSourcePath,
-        snapshotYamlPath: spec.snapshotYamlPath,
-        snapshotJsonPath: spec.snapshotJsonPath,
-        snapshotYamlText: spec.snapshotYamlText,
-        bindingReferences: spec.bindingReferences,
+        relativePath: test.relativePath,
+        workspaceSourcePath: test.workspaceSourcePath,
+        snapshotYamlPath: test.snapshotYamlPath,
+        snapshotJsonPath: test.snapshotJsonPath,
+        snapshotYamlText: test.snapshotYamlText,
+        bindingReferences: test.bindingReferences,
       },
-      executed: spec,
-      status: classifyTestStatus(spec),
-      durationLabel: formatLongDuration(spec.durationMs),
+      executed: test,
+      status: classifyTestStatus(test),
+      durationLabel: formatLongDuration(test.durationMs),
     }));
   }
 
@@ -1673,23 +1673,23 @@ function summarizeTestItems(items: ReportTestListItem[]): OutcomeSummary {
   );
 }
 
-function classifyTestStatus(spec: ReportManifestTestRecord): TestOutcomeStatus {
-  if (spec.status === 'aborted') {
+function classifyTestStatus(test: ReportManifestTestRecord): TestOutcomeStatus {
+  if (test.status === 'aborted') {
     return 'aborted';
   }
-  if (spec.status === 'error') {
+  if (test.status === 'error') {
     return 'error';
   }
-  if (spec.status === 'success') {
+  if (test.status === 'success') {
     return 'success';
   }
-  if (spec.status === 'failure') {
+  if (test.status === 'failure') {
     return 'failure';
   }
-  if (spec.success) {
+  if (test.success) {
     return 'success';
   }
-  if (spec.steps[0]?.actionType === 'run_failure') {
+  if (test.steps[0]?.actionType === 'run_failure') {
     return 'error';
   }
   return 'failure';
@@ -1741,9 +1741,9 @@ function stripSnapshotYamlText(manifest: ReportRunManifest): ReportRunManifest {
     ...manifest,
     input: {
       ...manifest.input,
-      tests: manifest.input.tests.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
+      tests: manifest.input.tests.map(({ snapshotYamlText: _snapshotYamlText, ...test }) => test),
     },
-    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, ...spec }) => spec),
+    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, ...test }) => test),
   };
 }
 

@@ -20,7 +20,7 @@ const LOCAL_ICON_SRC = svgDataUri(
 
 export interface ReportIndexRunRecord extends RunIndexEntry {
   displayName: string;
-  displayKind: 'suite' | 'single_spec' | 'multi_spec' | 'fallback';
+  displayKind: 'suite' | 'single_test' | 'multi_test' | 'fallback';
   triggeredFrom: 'Suite' | 'Direct';
   selectedTestCount: number;
 }

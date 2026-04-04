@@ -344,11 +344,11 @@ export async function executeTestOnSession(
           keepPartialOnFailure: config.recording.keepPartialOnFailure ?? false,
         };
         Logger.i(
-          `Recording started for spec ${config.recording.testId} at ${activeRecording.startedAt}`,
+          `Recording started for test ${config.recording.testId} at ${activeRecording.startedAt}`,
         );
       } else {
         const message =
-          `Unable to start recording for spec ${config.recording.testId}: ` +
+          `Unable to start recording for test ${config.recording.testId}: ` +
           `${recordingResponse.message ?? 'unknown recording error'}`;
         if (recordingRequired) {
           Logger.e(message);
@@ -389,17 +389,17 @@ export async function executeTestOnSession(
         } else if (recordingRequired) {
           const message =
             `Recording is required for Android runs. ` +
-            `Recording stopped for spec ${activeRecording.testId} but no file path was returned.`;
+            `Recording stopped for test ${activeRecording.testId} but no file path was returned.`;
           Logger.e(message);
           result = markGoalResultFailed(result, message);
         } else {
           Logger.w(
-            `Recording stopped for spec ${activeRecording.testId} but no file path was returned.`,
+            `Recording stopped for test ${activeRecording.testId} but no file path was returned.`,
           );
         }
       } else {
         const message =
-          `Unable to stop recording for spec ${activeRecording.testId}: ` +
+          `Unable to stop recording for test ${activeRecording.testId}: ` +
           `${stopResponse.message ?? 'unknown recording error'}`;
         try {
           await session.device.abortRecording(

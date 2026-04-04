@@ -7,11 +7,11 @@ import {
 } from './appConfig.js';
 import {
   loadEnvironmentConfig,
-  loadTestSpec,
+  loadTest,
   loadTestSuite,
   validateTestBindings,
 } from './testLoader.js';
-import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
+import { normalizeTestSelectors, selectTestFiles } from './testSelection.js';
 import {
   loadWorkspaceConfig,
   resolveWorkspace,
@@ -39,7 +39,7 @@ export interface CheckRunnerOptions {
 export interface CheckRunnerResult {
   workspace: FinalRunWorkspace;
   environment: LoadedEnvironmentConfig;
-  specs: TestDefinition[];
+  tests: TestDefinition[];
   target: RunTarget;
   suite?: SuiteDefinition;
   resolvedApp: ResolvedAppConfig;
@@ -69,9 +69,9 @@ export async function runCheck(
     runtimeEnv,
   );
   const resolvedRunTarget = await resolveRunTarget(workspace, options);
-  const selectedFiles = await selectSpecFiles(
+  const selectedFiles = await selectTestFiles(
     workspace.testsDir,
-    resolvedRunTarget.specSelectors,
+    resolvedRunTarget.testSelectors,
     {
       requireSelection:
         resolvedRunTarget.target.type === 'suite'
@@ -79,13 +79,13 @@ export async function runCheck(
           : options.requireSelection,
     },
   );
-  const specs = await Promise.all(
+  const tests = await Promise.all(
     selectedFiles.map(async (filePath) => {
-      const spec = await loadTestSpec(filePath, workspace.testsDir);
-      validateTestBindings(spec, environment.config, {
+      const test = await loadTest(filePath, workspace.testsDir);
+      validateTestBindings(test, environment.config, {
         environmentResolved: !resolvedEnvironment.usesEmptyBindings,
       });
-      return spec;
+      return test;
     }),
   );
 
@@ -109,7 +109,7 @@ export async function runCheck(
   return {
     workspace,
     environment,
-    specs,
+    tests,
     target: resolvedRunTarget.target,
     suite: resolvedRunTarget.suite,
     resolvedApp,
@@ -122,10 +122,10 @@ async function resolveRunTarget(
   options: CheckRunnerOptions,
 ): Promise<{
   target: RunTarget;
-  specSelectors: string[];
+  testSelectors: string[];
   suite?: SuiteDefinition;
 }> {
-  const normalizedSelectors = normalizeSpecSelectors(options.selectors);
+  const normalizedSelectors = normalizeTestSelectors(options.selectors);
   if (options.suitePath && normalizedSelectors.length > 0) {
     throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
   }
@@ -133,7 +133,7 @@ async function resolveRunTarget(
   if (!options.suitePath) {
     return {
       target: { type: 'direct' },
-      specSelectors: normalizedSelectors,
+      testSelectors: normalizedSelectors,
     };
   }
 
@@ -146,7 +146,7 @@ async function resolveRunTarget(
       suiteName: suite.name,
       suitePath: suite.relativePath,
     },
-    specSelectors: suite.tests,
+    testSelectors: suite.tests,
     suite,
   };
 }

@@ -576,7 +576,7 @@ test('TestExecutor records completed-step metadata for reporting', async () => {
     thought: {
       plan: 'Check whether login is already complete.',
       think: 'The feed is visible and no further action is needed.',
-      act: 'Mark the spec as complete.',
+      act: 'Mark the test as complete.',
     },
     trace: {
       totalMs: 28,
@@ -607,7 +607,7 @@ test('TestExecutor records completed-step metadata for reporting', async () => {
   assert.deepEqual(result.steps[0]?.thought, {
     plan: 'Check whether login is already complete.',
     think: 'The feed is visible and no further action is needed.',
-    act: 'Mark the spec as complete.',
+    act: 'Mark the test as complete.',
   });
   assert.deepEqual(result.steps[0]?.actionPayload, {
     text: '${secrets.email}',

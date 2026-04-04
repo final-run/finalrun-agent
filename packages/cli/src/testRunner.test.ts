@@ -139,7 +139,7 @@ test('redactResolvedValue preserves complete placeholders when secrets overlap',
 test('ReportWriter emits redacted JSON artifacts and input snapshots without persisted HTML', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-'));
   const workspaceRoot = path.join(runDir, 'workspace');
-  const specSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'auth', 'login.yaml');
+  const testSourcePath = path.join(workspaceRoot, '.finalrun', 'tests', 'auth', 'login.yaml');
   const envPath = path.join(workspaceRoot, '.finalrun', 'env', 'staging.yaml');
   const writer = new ReportWriter({
     runDir,
@@ -165,13 +165,13 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
     },
   };
 
-  const spec: TestDefinition = {
+  const testDef: TestDefinition = {
     name: 'login',
     description: 'Verify a user can log in.',
     setup: [],
     steps: ['Enter ${secrets.email} on the login screen.'],
     assertions: ['The feed is visible.'],
-    sourcePath: specSourcePath,
+    sourcePath: testSourcePath,
     relativePath: 'auth/login.yaml',
     testId: 'auth__login',
   };
@@ -244,10 +244,10 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
   };
 
   try {
-    await fsp.mkdir(path.dirname(specSourcePath), { recursive: true });
+    await fsp.mkdir(path.dirname(testSourcePath), { recursive: true });
     await fsp.mkdir(path.dirname(envPath), { recursive: true });
     await fsp.writeFile(
-      specSourcePath,
+      testSourcePath,
       [
         'name: login',
         'description: Verify a user can log in.',
@@ -291,9 +291,9 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
           },
         ],
       },
-      specs: [spec],
+      tests: [testDef],
       effectiveGoals: new Map([
-        [spec.testId!, 'Test Name: login\n\nSteps:\n1. Enter ${secrets.email}.'],
+        [testDef.testId!, 'Test Name: login\n\nSteps:\n1. Enter ${secrets.email}.'],
       ]),
       target: {
         type: 'direct',
@@ -325,11 +325,11 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
       tag: 'finalrun',
     });
 
-    const specRecord = await writer.writeTestRecord(spec, goalResult, bindings);
+    const testRecord = await writer.writeTestRecord(testDef, goalResult, bindings);
     await writer.finalize({
       startedAt: goalResult.startedAt,
       completedAt: goalResult.completedAt,
-      specs: [specRecord],
+      tests: [testRecord],
     });
 
     const stepJsonPath = path.join(runDir, 'tests', 'auth__login', 'actions', '001.json');
@@ -339,8 +339,8 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
     const summaryJsonPath = path.join(runDir, 'summary.json');
     const runJsonPath = path.join(runDir, 'run.json');
     const runnerLogPath = path.join(runDir, 'runner.log');
-    const specSnapshotYamlPath = path.join(runDir, 'input', 'tests', 'auth__login.yaml');
-    const specSnapshotJsonPath = path.join(runDir, 'input', 'tests', 'auth__login.json');
+    const testSnapshotYamlPath = path.join(runDir, 'input', 'tests', 'auth__login.yaml');
+    const testSnapshotJsonPath = path.join(runDir, 'input', 'tests', 'auth__login.json');
     const envSnapshotYamlPath = path.join(runDir, 'input', 'env.snapshot.yaml');
     const envSnapshotJsonPath = path.join(runDir, 'input', 'env.json');
 
@@ -352,8 +352,8 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
       summaryJsonPath,
       runJsonPath,
       runnerLogPath,
-      specSnapshotYamlPath,
-      specSnapshotJsonPath,
+      testSnapshotYamlPath,
+      testSnapshotJsonPath,
       envSnapshotYamlPath,
       envSnapshotJsonPath,
     ]) {
@@ -380,10 +380,10 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
   }
 });
 
-test('ReportWriter persists suite snapshots and suite metadata without changing per-spec result files', async () => {
+test('ReportWriter persists suite snapshots and suite metadata without changing per-test result files', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-suite-report-'));
   const workspaceRoot = path.join(runDir, 'workspace');
-  const specSourcePath = path.join(
+  const testSourcePath = path.join(
     workspaceRoot,
     '.finalrun',
     'tests',
@@ -402,21 +402,21 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
     },
   });
 
-  const spec: TestDefinition = {
+  const testDef: TestDefinition = {
     name: 'valid login',
     setup: [],
     steps: ['Open login.', 'Submit valid credentials.'],
     assertions: ['The dashboard is visible.'],
-    sourcePath: specSourcePath,
+    sourcePath: testSourcePath,
     relativePath: 'login/valid_login.yaml',
     testId: 'login__valid_login',
   };
 
   try {
-    await fsp.mkdir(path.dirname(specSourcePath), { recursive: true });
+    await fsp.mkdir(path.dirname(testSourcePath), { recursive: true });
     await fsp.mkdir(path.dirname(suiteSourcePath), { recursive: true });
     await fsp.writeFile(
-      specSourcePath,
+      testSourcePath,
       [
         'name: valid login',
         'steps:',
@@ -453,7 +453,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
         },
         secretReferences: [],
       },
-      specs: [spec],
+      tests: [testDef],
       suite: {
         name: 'login suite',
         description: 'Covers login and dashboard smoke paths.',
@@ -464,7 +464,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
       },
       effectiveGoals: new Map([
         [
-          spec.testId!,
+          testDef.testId!,
           'Test Name: valid login\n\nSteps:\n1. Open login.\n2. Submit valid credentials.',
         ],
       ]),
@@ -491,14 +491,14 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
       },
     });
 
-    const specRecord = await writer.writeTestRecord(spec, createTestExecutionResult(), {
+    const testRecord = await writer.writeTestRecord(testDef, createTestExecutionResult(), {
       secrets: {},
       variables: {},
     });
     await writer.finalize({
       startedAt: '2026-03-24T08:10:11.000Z',
       completedAt: '2026-03-24T08:10:20.000Z',
-      specs: [specRecord],
+      tests: [testRecord],
       successOverride: true,
     });
 
@@ -552,7 +552,7 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
       variables: {},
     },
   });
-  const spec: TestDefinition = {
+  const testDef: TestDefinition = {
     name: 'login',
     description: 'Verify login.',
     setup: [],
@@ -569,8 +569,8 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
     await fsp.mkdir(path.dirname(recordingPath), { recursive: true });
     await fsp.writeFile(recordingPath, 'artifact-native-recording', 'utf-8');
 
-    const specRecord = await writer.writeTestRecord(
-      spec,
+    const testRecord = await writer.writeTestRecord(
+      testDef,
       createTestExecutionResult({
         recording: {
           filePath: recordingPath,
@@ -584,14 +584,14 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
       },
     );
 
-    assert.equal(specRecord.recordingFile, 'tests/login/recording.mp4');
+    assert.equal(testRecord.recordingFile, 'tests/login/recording.mp4');
     assert.equal(await fsp.readFile(recordingPath, 'utf-8'), 'artifact-native-recording');
   } finally {
     await fsp.rm(runDir, { recursive: true, force: true });
   }
 });
 
-test('runTests finalizes top-level artifacts when shared-session execution throws before a spec completes', async () => {
+test('runTests finalizes top-level artifacts when shared-session execution throws before a test completes', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-runner-'));
   writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -637,10 +637,10 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     });
 
     assert.equal(result.success, false);
-    assert.equal(result.specResults.length, 1);
-    assert.equal(result.specResults[0]?.success, false);
+    assert.equal(result.testResults.length, 1);
+    assert.equal(result.testResults[0]?.success, false);
     assert.equal(
-      result.specResults[0]?.message,
+      result.testResults[0]?.message,
       'Driver failed for ${secrets.email} before goal completion',
     );
 
@@ -665,13 +665,13 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
     }
 
     const summaryJson = await fsp.readFile(summaryPath, 'utf-8');
-    const specResultJson = await fsp.readFile(resultPath, 'utf-8');
+    const testResultJson = await fsp.readFile(resultPath, 'utf-8');
     const stepJson = await fsp.readFile(stepPath, 'utf-8');
     const runnerLog = await fsp.readFile(runnerLogPath, 'utf-8');
 
     assert.equal(summaryJson.includes('person@example.com'), false);
     assert.equal(summaryJson.includes('${secrets.email}'), false);
-    for (const content of [specResultJson, stepJson, runnerLog]) {
+    for (const content of [testResultJson, stepJson, runnerLog]) {
       assert.equal(content.includes('person@example.com'), false);
       assert.equal(content.includes('${secrets.email}'), true);
     }
@@ -725,7 +725,7 @@ test('runTests succeeds without env config when the repo is env-free', async () 
     });
 
     assert.equal(result.success, true);
-    assert.equal(result.specResults.length, 1);
+    assert.equal(result.testResults.length, 1);
     assert.match(result.runDir, /-none-android$/);
 
     const summaryPath = path.join(result.runDir, 'summary.json');
@@ -797,7 +797,7 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
   }
 });
 
-test('runTests prepares one shared session for multiple specs and cleans it up once', async () => {
+test('runTests prepares one shared session for multiple tests and cleans it up once', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-'));
   writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -852,7 +852,7 @@ test('runTests prepares one shared session for multiple specs and cleans it up o
     });
 
     assert.equal(result.success, true);
-    assert.equal(result.specResults.length, 2);
+    assert.equal(result.testResults.length, 2);
     assert.equal(prepareCalls, 1);
     assert.equal(cleanupCalls, 1);
     assert.deepEqual(executedCases, ['login', 'search']);
@@ -868,7 +868,7 @@ test('runTests prepares one shared session for multiple specs and cleans it up o
   }
 });
 
-test('runTests uses mov artifact recording output paths for iOS specs', async () => {
+test('runTests uses mov artifact recording output paths for iOS tests', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-ios-recording-output-'));
   writeWorkspaceConfig(rootDir, 'ios');
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -983,11 +983,11 @@ test('runTests stops the batch after a shared-session failure and cleans up once
     });
 
     assert.equal(result.success, false);
-    assert.equal(result.specResults.length, 2);
+    assert.equal(result.testResults.length, 2);
     assert.deepEqual(executedCases, ['first', 'second']);
-    assert.equal(result.specResults[0]?.success, true);
-    assert.equal(result.specResults[1]?.success, false);
-    assert.match(result.specResults[1]?.message ?? '', /gRPC client not connected/);
+    assert.equal(result.testResults[0]?.success, true);
+    assert.equal(result.testResults[1]?.success, false);
+    assert.match(result.testResults[1]?.message ?? '', /gRPC client not connected/);
     assert.equal(cleanupCalls, 1);
   } finally {
     testRunnerDependencies.prepareTestSession = originalPrepareTestSession;
@@ -996,7 +996,7 @@ test('runTests stops the batch after a shared-session failure and cleans up once
   }
 });
 
-test('runTests stops remaining specs after a terminal AI provider failure', async () => {
+test('runTests stops remaining tests after a terminal AI provider failure', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-terminal-provider-failure-'));
   writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -1050,7 +1050,7 @@ test('runTests stops remaining specs after a terminal AI provider failure', asyn
       });
     }
     if (testId === 'third') {
-      throw new Error('Third spec should not execute after a terminal provider failure');
+      throw new Error('Third test should not execute after a terminal provider failure');
     }
     return createTestExecutionResult();
   };
@@ -1068,9 +1068,9 @@ test('runTests stops remaining specs after a terminal AI provider failure', asyn
     assert.equal(result.success, false);
     assert.equal(result.status, 'failure');
     assert.deepEqual(executedCases, ['first', 'second']);
-    assert.equal(result.specResults.length, 2);
-    assert.equal(result.specResults[1]?.status, 'failure');
-    assert.match(result.specResults[1]?.message ?? '', /HTTP 401/);
+    assert.equal(result.testResults.length, 2);
+    assert.equal(result.testResults[1]?.status, 'failure');
+    assert.match(result.testResults[1]?.message ?? '', /HTTP 401/);
     assert.equal(cleanupCalls, 1);
 
     const summary = JSON.parse(
@@ -1184,8 +1184,8 @@ test('runTests aborts the batch after SIGINT and marks the active run as aborted
     assert.equal(result.success, false);
     assert.equal(result.status, 'aborted');
     assert.deepEqual(executedCases, ['first']);
-    assert.equal(result.specResults.length, 1);
-    assert.equal(result.specResults[0]?.status, 'aborted');
+    assert.equal(result.testResults.length, 1);
+    assert.equal(result.testResults[0]?.status, 'aborted');
     assert.equal(cleanupCalls, 1);
 
     const summary = JSON.parse(

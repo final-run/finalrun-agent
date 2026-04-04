@@ -339,7 +339,7 @@ test('executeTestOnSession forwards explicit recording output paths and preserve
         executeTestOnSession(
           session,
           {
-            goal: 'Spec 1',
+            goal: 'Test 1',
             apiKey: 'test-key',
             provider: 'openai',
             modelName: 'gpt-4.1',
@@ -612,7 +612,7 @@ test('prepareTestSession reports Android app override failure after driver conne
   assert.equal(cleanupCalls, 1);
 });
 
-test('executeTestOnSession reuses one prepared session while keeping recording scoped per spec', async () => {
+test('executeTestOnSession reuses one prepared session while keeping recording scoped per test', async () => {
   const recordingRequests: RecordingRequest[] = [];
   const stopCalls: Array<[string, string]> = [];
   let detectCalls = 0;
@@ -661,7 +661,7 @@ test('executeTestOnSession reuses one prepared session while keeping recording s
     await executeTestOnSession(
       session,
       {
-        goal: 'Spec 1',
+        goal: 'Test 1',
         apiKey: 'test-key',
         provider: 'openai',
         modelName: 'gpt-4.1',
@@ -675,7 +675,7 @@ test('executeTestOnSession reuses one prepared session while keeping recording s
     await executeTestOnSession(
       session,
       {
-        goal: 'Spec 2',
+        goal: 'Test 2',
         apiKey: 'test-key',
         provider: 'openai',
         modelName: 'gpt-4.1',
@@ -743,7 +743,7 @@ test('executeTestOnSession forwards the prelaunch summary and app identifier to 
   await executeTestOnSession(
     session,
     {
-      goal: 'Spec 1',
+      goal: 'Test 1',
       apiKey: 'test-key',
       provider: 'openai',
       modelName: 'gpt-4.1',
@@ -757,7 +757,7 @@ test('executeTestOnSession forwards the prelaunch summary and app identifier to 
   });
 });
 
-test('runGoal still performs isolated setup and cleanup for single-spec execution', async () => {
+test('runGoal still performs isolated setup and cleanup for single-test execution', async () => {
   let detectCalls = 0;
   let setUpCalls = 0;
   let cleanupCalls = 0;
@@ -825,7 +825,7 @@ test('runGoal fails before execution if required Android recording cannot start'
   assert.match(result.message, /Recording is required for Android runs/);
 });
 
-test('runGoal marks the Android spec as failed if recording stops without a video file', async () => {
+test('runGoal marks the Android test as failed if recording stops without a video file', async () => {
   const abortCalls: Array<[string, boolean | undefined]> = [];
   const dependencies = createDependencies({
     async startRecording() {

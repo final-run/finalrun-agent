@@ -5,11 +5,11 @@ import { assertPathWithinRoot, isYamlFile } from './workspace.js';
 export const TEST_SELECTION_REQUIRED_ERROR =
   'At least one test selector is required. Pass a YAML file, directory, or glob under .finalrun/tests.';
 
-export interface SelectSpecFilesOptions {
+export interface SelectTestFilesOptions {
   requireSelection?: boolean;
 }
 
-export function normalizeSpecSelectors(
+export function normalizeTestSelectors(
   selectors?: readonly string[],
 ): string[] {
   if (!selectors) {
@@ -24,27 +24,27 @@ export function normalizeSpecSelectors(
   );
 }
 
-export async function selectSpecFiles(
+export async function selectTestFiles(
   testsDir: string,
   selectors?: string[],
-  options?: SelectSpecFilesOptions,
+  options?: SelectTestFilesOptions,
 ): Promise<string[]> {
-  const normalizedSelectors = normalizeSpecSelectors(selectors);
-  const allSpecFiles = (await collectYamlFiles(testsDir)).sort();
+  const normalizedSelectors = normalizeTestSelectors(selectors);
+  const allTestFiles = (await collectYamlFiles(testsDir)).sort();
 
   if (normalizedSelectors.length === 0) {
     if (options?.requireSelection) {
       throw new Error(TEST_SELECTION_REQUIRED_ERROR);
     }
-    if (allSpecFiles.length === 0) {
-      throw new Error(`No YAML specs found under ${testsDir}`);
+    if (allTestFiles.length === 0) {
+      throw new Error(`No YAML tests found under ${testsDir}`);
     }
-    return allSpecFiles;
+    return allTestFiles;
   }
 
   const selectedFiles = new Set<string>();
   for (const selector of normalizedSelectors) {
-    const matchedFiles = await expandSelector(testsDir, selector, allSpecFiles);
+    const matchedFiles = await expandSelector(testsDir, selector, allTestFiles);
     for (const filePath of matchedFiles) {
       selectedFiles.add(filePath);
     }
@@ -56,35 +56,35 @@ export async function selectSpecFiles(
 async function expandSelector(
   testsDir: string,
   selector: string,
-  allSpecFiles: string[],
+  allTestFiles: string[],
 ): Promise<string[]> {
   if (!hasGlobMagic(selector)) {
     const resolvedPath = resolveSelectorPath(selector, testsDir);
-    assertPathWithinRoot(testsDir, resolvedPath, 'Spec selector');
+    assertPathWithinRoot(testsDir, resolvedPath, 'Test selector');
 
     const stats = await fs.stat(resolvedPath).catch(() => null);
     if (stats?.isDirectory()) {
-      return expandDirectorySelector(testsDir, selector, resolvedPath, allSpecFiles);
+      return expandDirectorySelector(testsDir, selector, resolvedPath, allTestFiles);
     }
 
     if (!isYamlFile(resolvedPath)) {
-      throw new Error(`Spec selector must point to a .yaml or .yml file: ${selector}`);
+      throw new Error(`Test selector must point to a .yaml or .yml file: ${selector}`);
     }
     if (!stats?.isFile()) {
-      throw new Error(`Spec selector not found: ${resolvedPath}`);
+      throw new Error(`Test selector not found: ${resolvedPath}`);
     }
     return [resolvedPath];
   }
 
   const pattern = normalizeGlobSelector(selector, testsDir);
   const matcher = globToRegExp(pattern);
-  const matchedFiles = allSpecFiles.filter((filePath) => {
+  const matchedFiles = allTestFiles.filter((filePath) => {
     const relativePath = path.relative(testsDir, filePath).split(path.sep).join('/');
     return matcher.test(relativePath);
   });
 
   if (matchedFiles.length === 0) {
-    throw new Error(`No specs matched selector "${selector}" inside ${testsDir}`);
+    throw new Error(`No tests matched selector "${selector}" inside ${testsDir}`);
   }
 
   return matchedFiles;
@@ -94,14 +94,14 @@ function expandDirectorySelector(
   testsDir: string,
   selector: string,
   directoryPath: string,
-  allSpecFiles: string[],
+  allTestFiles: string[],
 ): string[] {
-  const matchedFiles = allSpecFiles.filter((filePath) =>
+  const matchedFiles = allTestFiles.filter((filePath) =>
     isPathWithinDirectory(directoryPath, filePath),
   );
 
   if (matchedFiles.length === 0) {
-    throw new Error(`No YAML specs found under selector "${selector}" inside ${testsDir}`);
+    throw new Error(`No YAML tests found under selector "${selector}" inside ${testsDir}`);
   }
 
   return matchedFiles;
@@ -127,7 +127,7 @@ function resolveSelectorPath(selector: string, testsDir: string): string {
 
 function normalizeGlobSelector(selector: string, testsDir: string): string {
   if (path.isAbsolute(selector)) {
-    assertPathWithinRoot(testsDir, selector, 'Spec selector');
+    assertPathWithinRoot(testsDir, selector, 'Test selector');
     return path.relative(testsDir, selector).split(path.sep).join('/');
   }
 
@@ -135,13 +135,13 @@ function normalizeGlobSelector(selector: string, testsDir: string): string {
   if (normalizedSelector.startsWith('.finalrun/tests/')) {
     const relativePattern = normalizedSelector.replace(/^\.finalrun\/tests\//, '');
     if (relativePattern.startsWith('..')) {
-      throw new Error(`Spec selector must stay inside ${testsDir}`);
+      throw new Error(`Test selector must stay inside ${testsDir}`);
     }
     return relativePattern;
   }
 
   if (normalizedSelector.startsWith('../')) {
-    throw new Error(`Spec selector must stay inside ${testsDir}`);
+    throw new Error(`Test selector must stay inside ${testsDir}`);
   }
 
   return normalizedSelector.replace(/^\.\//, '');

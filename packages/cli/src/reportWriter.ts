@@ -153,7 +153,7 @@ export class ReportWriter {
   async writeRunInputs(params: {
     workspaceRoot: string;
     environment: LoadedEnvironmentConfig;
-    specs: TestDefinition[];
+    tests: TestDefinition[];
     suite?: SuiteDefinition;
     effectiveGoals: Map<string, string>;
     target: RunTarget;
@@ -162,8 +162,8 @@ export class ReportWriter {
     app: RunManifestAppRecord;
   }): Promise<void> {
     const inputDir = path.join(this._runDir, 'input');
-    const specSnapshotDir = path.join(inputDir, 'tests');
-    await fsp.mkdir(specSnapshotDir, { recursive: true });
+    const testSnapshotDir = path.join(inputDir, 'tests');
+    await fsp.mkdir(testSnapshotDir, { recursive: true });
 
     this.setRunContext({
       cli: params.cli,
@@ -230,7 +230,7 @@ export class ReportWriter {
         snapshotYamlPath: suiteSnapshotYamlPath,
         snapshotJsonPath: suiteSnapshotJsonPath,
         tests: params.suite.tests,
-        resolvedTestIds: params.specs.map((spec) => spec.testId!),
+        resolvedTestIds: params.tests.map((test) => test.testId!),
       };
       if (params.suite.sourcePath) {
         await fsp.copyFile(
@@ -248,31 +248,31 @@ export class ReportWriter {
 
     const selectedTests: TestDefinition[] = [];
     this._testSnapshots.clear();
-    for (const spec of params.specs) {
-      const snapshotYamlPath = path.posix.join('input', 'tests', `${spec.testId!}.yaml`);
-      const snapshotJsonPath = path.posix.join('input', 'tests', `${spec.testId!}.json`);
-      const bindingReferences = collectBindingReferences(spec);
+    for (const test of params.tests) {
+      const snapshotYamlPath = path.posix.join('input', 'tests', `${test.testId!}.yaml`);
+      const snapshotJsonPath = path.posix.join('input', 'tests', `${test.testId!}.json`);
+      const bindingReferences = collectBindingReferences(test);
       const authored = {
-        name: spec.name,
-        description: spec.description,
-        setup: spec.setup,
-        steps: spec.steps,
-        assertions: spec.assertions,
+        name: test.name,
+        description: test.description,
+        setup: test.setup,
+        steps: test.steps,
+        assertions: test.assertions,
       };
-      const workspaceSourcePath = spec.sourcePath
-        ? toDisplayPath(params.workspaceRoot, spec.sourcePath)
+      const workspaceSourcePath = test.sourcePath
+        ? toDisplayPath(params.workspaceRoot, test.sourcePath)
         : undefined;
-      const effectiveGoal = params.effectiveGoals.get(spec.testId!) ?? '';
-      if (spec.sourcePath) {
-        await fsp.copyFile(spec.sourcePath, path.join(this._runDir, snapshotYamlPath));
+      const effectiveGoal = params.effectiveGoals.get(test.testId!) ?? '';
+      if (test.sourcePath) {
+        await fsp.copyFile(test.sourcePath, path.join(this._runDir, snapshotYamlPath));
       }
       await fsp.writeFile(
         path.join(this._runDir, snapshotJsonPath),
         JSON.stringify(
           {
-            testId: spec.testId!,
-            testName: spec.name,
-            relativePath: spec.relativePath,
+            testId: test.testId!,
+            testName: test.name,
+            relativePath: test.relativePath,
             workspaceSourcePath,
             bindingReferences,
             ...authored,
@@ -282,25 +282,25 @@ export class ReportWriter {
         ),
         'utf-8',
       );
-      this._testSnapshots.set(spec.testId!, {
+      this._testSnapshots.set(test.testId!, {
         authored,
         bindingReferences,
         snapshotYamlPath,
         snapshotJsonPath,
-        workspaceSourcePath: workspaceSourcePath ?? spec.sourcePath ?? '',
+        workspaceSourcePath: workspaceSourcePath ?? test.sourcePath ?? '',
         effectiveGoal,
       });
       selectedTests.push({
-        testId: spec.testId!,
-        name: spec.name,
-        relativePath: spec.relativePath,
+        testId: test.testId!,
+        name: test.name,
+        relativePath: test.relativePath,
         workspaceSourcePath,
         snapshotYamlPath,
         snapshotJsonPath,
         bindingReferences,
-        setup: spec.setup,
-        steps: spec.steps,
-        assertions: spec.assertions,
+        setup: test.setup,
+        steps: test.steps,
+        assertions: test.assertions,
       });
     }
 
@@ -308,17 +308,17 @@ export class ReportWriter {
   }
 
   async writeTestRecord(
-    spec: TestDefinition,
+    test: TestDefinition,
     result: TestExecutionResult,
     bindings: RuntimeBindings,
   ): Promise<TestResult> {
-    const specDir = path.join(this._runDir, 'tests', spec.testId!);
-    const stepDir = path.join(specDir, 'actions');
-    const screenshotDir = path.join(specDir, 'screenshots');
+    const testDir = path.join(this._runDir, 'tests', test.testId!);
+    const stepDir = path.join(testDir, 'actions');
+    const screenshotDir = path.join(testDir, 'screenshots');
     await fsp.mkdir(stepDir, { recursive: true });
     await fsp.mkdir(screenshotDir, { recursive: true });
 
-    const recordingRelative = await this._copyRecordingArtifact(spec.testId!, result.recording);
+    const recordingRelative = await this._copyRecordingArtifact(test.testId!, result.recording);
     const recordingStartedAt = result.recording?.startedAt;
     const recordingCompletedAt = result.recording?.completedAt;
 
@@ -326,9 +326,9 @@ export class ReportWriter {
     for (const [index, step] of result.steps.entries()) {
       const stepNumber = index + 1;
       const stepFileBase = `${String(stepNumber).padStart(3, '0')}`;
-      const stepJsonRelative = path.posix.join('tests', spec.testId!, 'actions', `${stepFileBase}.json`);
+      const stepJsonRelative = path.posix.join('tests', test.testId!, 'actions', `${stepFileBase}.json`);
       const screenshotRelative = step.screenshot
-        ? path.posix.join('tests', spec.testId!, 'screenshots', `${stepFileBase}.jpg`)
+        ? path.posix.join('tests', test.testId!, 'screenshots', `${stepFileBase}.jpg`)
         : undefined;
 
       if (step.screenshot && screenshotRelative) {
@@ -351,11 +351,11 @@ export class ReportWriter {
       );
     }
 
-    const specRecord: TestResult = {
-      testId: spec.testId!,
-      testName: spec.name,
-      sourcePath: spec.sourcePath ?? '',
-      relativePath: spec.relativePath ?? '',
+    const testRecord: TestResult = {
+      testId: test.testId!,
+      testName: test.name,
+      sourcePath: test.sourcePath ?? '',
+      relativePath: test.relativePath ?? '',
       success: result.success,
       status: resolveTestStatus(result),
       message: redactResolvedValue(result.message, bindings) ?? result.message,
@@ -374,26 +374,26 @@ export class ReportWriter {
     };
 
     await fsp.writeFile(
-      path.join(specDir, 'result.json'),
-      JSON.stringify(specRecord, null, 2),
+      path.join(testDir, 'result.json'),
+      JSON.stringify(testRecord, null, 2),
       'utf-8',
     );
 
-    return specRecord;
+    return testRecord;
   }
 
   async finalize(params: {
     startedAt: string;
     completedAt: string;
-    specs: TestResult[];
+    tests: TestResult[];
     successOverride?: boolean;
     statusOverride?: RunStatus;
     failurePhase?: FailurePhase;
     diagnosticsSummary?: string;
   }): Promise<RunSummary> {
-    const passedCount = params.specs.filter((spec) => spec.success).length;
-    const failedCount = params.specs.length - passedCount;
-    const stepCount = params.specs.reduce((total, spec) => total + spec.steps.length, 0);
+    const passedCount = params.tests.filter((test) => test.success).length;
+    const failedCount = params.tests.length - passedCount;
+    const stepCount = params.tests.reduce((total, test) => total + test.steps.length, 0);
     const summary: RunSummary = {
       runId: this._runId,
       envName: this._envName,
@@ -407,27 +407,27 @@ export class ReportWriter {
       success: params.successOverride ?? failedCount === 0,
       status: params.statusOverride ?? ((params.successOverride ?? failedCount === 0) ? 'success' : 'failure'),
       failurePhase: params.failurePhase,
-      testCount: params.specs.length,
+      testCount: params.tests.length,
       passedCount,
       failedCount,
       stepCount,
       target: this._runTarget,
       variables: this._bindings.variables,
-      tests: params.specs.map((spec) => ({
-        testId: spec.testId,
-        testName: spec.testName,
-        relativePath: spec.relativePath,
-        success: spec.success,
-        status: spec.status,
-        durationMs: spec.durationMs,
-        resultFile: path.posix.join('tests', spec.testId, 'result.json'),
+      tests: params.tests.map((test) => ({
+        testId: test.testId,
+        testName: test.testName,
+        relativePath: test.relativePath,
+        success: test.success,
+        status: test.status,
+        durationMs: test.durationMs,
+        resultFile: path.posix.join('tests', test.testId, 'result.json'),
       })),
       runJsonFile: 'run.json',
     };
     const manifest = this._buildRunManifest({
       startedAt: params.startedAt,
       completedAt: params.completedAt,
-      specs: params.specs,
+      tests: params.tests,
       success: summary.success,
       status: summary.status,
       failurePhase: params.failurePhase,
@@ -448,25 +448,25 @@ export class ReportWriter {
     return summary;
   }
 
-  async writeSpecFailureRecord(params: {
-    spec: TestDefinition;
+  async writeTestFailureRecord(params: {
+    test: TestDefinition;
     bindings: RuntimeBindings;
     message: string;
     platform: string;
     startedAt: string;
     completedAt: string;
   }): Promise<TestResult> {
-    const specDir = path.join(this._runDir, 'tests', params.spec.testId!);
-    const stepDir = path.join(specDir, 'actions');
-    const screenshotDir = path.join(specDir, 'screenshots');
-    await fsp.mkdir(specDir, { recursive: true });
+    const testDir = path.join(this._runDir, 'tests', params.test.testId!);
+    const stepDir = path.join(testDir, 'actions');
+    const screenshotDir = path.join(testDir, 'screenshots');
+    await fsp.mkdir(testDir, { recursive: true });
     await fsp.mkdir(stepDir, { recursive: true });
     await fsp.mkdir(screenshotDir, { recursive: true });
 
-    const stepJsonRelative = path.posix.join('tests', params.spec.testId!, 'actions', '001.json');
+    const stepJsonRelative = path.posix.join('tests', params.test.testId!, 'actions', '001.json');
     const screenshotRelative = path.posix.join(
       'tests',
-      params.spec.testId!,
+      params.test.testId!,
       'screenshots',
       '001.jpg',
     );
@@ -512,11 +512,11 @@ export class ReportWriter {
       'utf-8',
     );
 
-    const specRecord: TestResult = {
-      testId: params.spec.testId!,
-      testName: params.spec.name,
-      sourcePath: params.spec.sourcePath ?? '',
-      relativePath: params.spec.relativePath ?? '',
+    const testRecord: TestResult = {
+      testId: params.test.testId!,
+      testName: params.test.name,
+      sourcePath: params.test.sourcePath ?? '',
+      relativePath: params.test.relativePath ?? '',
       success: false,
       status: 'error',
       message: failureMessage,
@@ -532,30 +532,30 @@ export class ReportWriter {
     };
 
     await fsp.writeFile(
-      path.join(specDir, 'result.json'),
-      JSON.stringify(specRecord, null, 2),
+      path.join(testDir, 'result.json'),
+      JSON.stringify(testRecord, null, 2),
       'utf-8',
     );
 
-    return specRecord;
+    return testRecord;
   }
 
   private _buildRunManifest(params: {
     startedAt: string;
     completedAt: string;
-    specs: TestResult[];
+    tests: TestResult[];
     success: boolean;
     status: RunStatus;
     failurePhase?: FailurePhase;
     diagnosticsSummary?: string;
   }): RunManifest {
-    const testRecords = params.specs.map((spec) => this._toRunManifestTest(spec));
+    const testRecords = params.tests.map((test) => this._toRunManifestTest(test));
     const stepTotal = testRecords.reduce(
-      (total, spec) => total + (spec.counts?.executionStepsTotal ?? 0),
+      (total, test) => total + (test.counts?.executionStepsTotal ?? 0),
       0,
     );
     const stepPassed = testRecords.reduce(
-      (total, spec) => total + (spec.counts?.executionStepsPassed ?? 0),
+      (total, test) => total + (test.counts?.executionStepsPassed ?? 0),
       0,
     );
     const firstFailure = findRunFirstFailure(testRecords, params.diagnosticsSummary);
@@ -581,8 +581,8 @@ export class ReportWriter {
         counts: {
           tests: {
             total: testRecords.length,
-            passed: testRecords.filter((spec) => spec.success).length,
-            failed: testRecords.filter((spec) => !spec.success).length,
+            passed: testRecords.filter((test) => test.success).length,
+            failed: testRecords.filter((test) => !test.success).length,
           },
           steps: {
             total: stepTotal,
@@ -609,29 +609,29 @@ export class ReportWriter {
     };
   }
 
-  private _toRunManifestTest(spec: TestResult): TestResult {
-    const snapshot = this._testSnapshots.get(spec.testId);
-    const steps = spec.steps.map((step) => ({ ...step })) as AgentAction[];
+  private _toRunManifestTest(test: TestResult): TestResult {
+    const snapshot = this._testSnapshots.get(test.testId);
+    const steps = test.steps.map((step) => ({ ...step })) as AgentAction[];
     const passedSteps = steps.filter((step) => step.success).length;
     const firstFailureStep = steps.find((step) => !step.success);
     const firstFailure: FirstFailure | undefined = firstFailureStep
       ? {
-          testId: spec.testId,
-          testName: spec.testName,
+          testId: test.testId,
+          testName: test.testName,
           stepNumber: firstFailureStep.stepNumber,
           actionType: firstFailureStep.actionType,
           message:
             firstFailureStep.errorMessage ??
             firstFailureStep.trace?.failureReason ??
-            spec.message,
+            test.message,
           screenshotPath: firstFailureStep.screenshotFile,
           stepJsonPath: firstFailureStep.stepJsonFile,
         }
       : undefined;
 
     return {
-      ...spec,
-      workspaceSourcePath: snapshot?.workspaceSourcePath ?? spec.sourcePath,
+      ...test,
+      workspaceSourcePath: snapshot?.workspaceSourcePath ?? test.sourcePath,
       snapshotYamlPath: snapshot?.snapshotYamlPath ?? '',
       snapshotJsonPath: snapshot?.snapshotJsonPath ?? '',
       bindingReferences: snapshot?.bindingReferences ?? { variables: [], secrets: [] },
@@ -644,7 +644,7 @@ export class ReportWriter {
             assertions: snapshot.authored.assertions,
           }
         : {
-            name: spec.testName,
+            name: test.testName,
             setup: [],
             steps: [],
             assertions: [],
@@ -657,7 +657,7 @@ export class ReportWriter {
       },
       firstFailure,
       previewScreenshotPath: selectPreviewScreenshotPath(steps),
-      resultJsonPath: path.posix.join('tests', spec.testId, 'result.json'),
+      resultJsonPath: path.posix.join('tests', test.testId, 'result.json'),
       steps,
     };
   }
@@ -698,15 +698,15 @@ function resolveTestStatus(result: TestExecutionResult): TestStatus {
   return result.success ? 'success' : 'failure';
 }
 
-function collectBindingReferences(spec: TestDefinition): BindingReference {
+function collectBindingReferences(test: TestDefinition): BindingReference {
   const variables = new Set<string>();
   const secrets = new Set<string>();
   const values = [
-    spec.name,
-    spec.description,
-    ...spec.setup,
-    ...spec.steps,
-    ...spec.assertions,
+    test.name,
+    test.description,
+    ...test.setup,
+    ...test.steps,
+    ...test.assertions,
   ].filter((value): value is string => typeof value === 'string');
 
   for (const value of values) {
@@ -746,19 +746,19 @@ function selectPreviewScreenshotPath(
 }
 
 function findRunFirstFailure(
-  specs: TestResult[],
+  tests: TestResult[],
   diagnosticsSummary?: string,
 ): FirstFailure | undefined {
-  const failedSpec = specs.find((spec) => !spec.success);
-  if (failedSpec?.firstFailure) {
-    return failedSpec.firstFailure;
+  const failedTest = tests.find((test) => !test.success);
+  if (failedTest?.firstFailure) {
+    return failedTest.firstFailure;
   }
-  if (failedSpec) {
+  if (failedTest) {
     return {
-      testId: failedSpec.testId,
-      testName: failedSpec.testName,
-      message: failedSpec.message,
-      screenshotPath: failedSpec.previewScreenshotPath,
+      testId: failedTest.testId,
+      testName: failedTest.testName,
+      message: failedTest.message,
+      screenshotPath: failedTest.previewScreenshotPath,
     };
   }
   if (diagnosticsSummary) {

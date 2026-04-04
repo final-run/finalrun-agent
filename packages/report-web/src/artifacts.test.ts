@@ -196,7 +196,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
         {
           runId: 'direct-run',
           displayName: 'Valid login +2 more',
-          displayKind: 'multi_spec',
+          displayKind: 'multi_test',
           triggeredFrom: 'Direct',
           selectedTestCount: 3,
         },
@@ -214,7 +214,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
   }
 });
 
-test('loadReportRunManifestViewModel inlines snapshot YAML text for spec detail rendering', async () => {
+test('loadReportRunManifestViewModel inlines snapshot YAML text for test detail rendering', async () => {
   const context = createWorkspaceContext();
 
   try {
@@ -297,7 +297,7 @@ async function writeRunManifest(
         label: 'repo app',
       },
       selectors: params.target.type === 'direct'
-        ? params.selectedTests.map((spec) => spec.relativePath)
+        ? params.selectedTests.map((t) => t.relativePath)
         : [],
       target: params.target,
       counts: {
@@ -320,11 +320,11 @@ async function writeRunManifest(
         secretReferences: [],
       },
       suite: params.suite,
-      tests: params.selectedTests.map((spec) => ({
-        ...spec,
-        workspaceSourcePath: `.finalrun/tests/${spec.relativePath}`,
-        snapshotYamlPath: `input/tests/${spec.testId}.yaml`,
-        snapshotJsonPath: `input/tests/${spec.testId}.json`,
+      tests: params.selectedTests.map((t) => ({
+        ...t,
+        workspaceSourcePath: `.finalrun/tests/${t.relativePath}`,
+        snapshotYamlPath: `input/tests/${t.testId}.yaml`,
+        snapshotJsonPath: `input/tests/${t.testId}.json`,
         bindingReferences: {
           variables: [],
           secrets: [],
@@ -336,9 +336,9 @@ async function writeRunManifest(
       cli: {
         command: params.target.type === 'suite'
           ? `finalrun test --suite ${params.target.suitePath || 'suite.yaml'}`
-          : `finalrun test ${params.selectedTests.map((spec) => spec.relativePath).join(' ')}`,
+          : `finalrun test ${params.selectedTests.map((t) => t.relativePath).join(' ')}`,
         selectors: params.target.type === 'direct'
-          ? params.selectedTests.map((spec) => spec.relativePath)
+          ? params.selectedTests.map((t) => t.relativePath)
           : [],
         suitePath: params.target.type === 'suite' ? params.target.suitePath : undefined,
         debug: false,

@@ -46,7 +46,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         displayName: 'login suite',
         displayKind: 'suite',
         triggeredFrom: 'Suite',
-        selectedSpecCount: 2,
+        selectedTestCount: 2,
       },
       {
         runId: '2026-03-24T19-00-00.000Z-dev-android',
@@ -71,9 +71,9 @@ function createRunIndexViewModel(): ReportIndexViewModel {
           log: '2026-03-24T19-00-00.000Z-dev-android/runner.log',
         },
         displayName: 'valid login +2 more',
-        displayKind: 'multi_spec',
+        displayKind: 'multi_test',
         triggeredFrom: 'Direct',
-        selectedSpecCount: 3,
+        selectedTestCount: 3,
       },
     ],
   };
@@ -284,7 +284,7 @@ function createSuiteRunManifest(): RunManifest {
   });
 }
 
-function createSingleSpecManifest(): RunManifest {
+function createSingleTestManifest(): RunManifest {
   const suiteManifest = createSuiteRunManifest();
   return withSnapshotYamlText({
     ...suiteManifest,
@@ -358,20 +358,20 @@ function withSnapshotYamlText(manifest: RunManifest): RunManifest {
     ].join('\n')],
   ]);
 
-  for (const spec of manifest.input.tests) {
-    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotByTestId.get(spec.testId!);
+  for (const t of manifest.input.tests) {
+    (t as { snapshotYamlText?: string }).snapshotYamlText = snapshotByTestId.get(t.testId!);
   }
-  for (const spec of manifest.tests) {
-    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotByTestId.get(spec.testId);
+  for (const t of manifest.tests) {
+    (t as { snapshotYamlText?: string }).snapshotYamlText = snapshotByTestId.get(t.testId);
   }
 
   return manifest;
 }
 
-function extractTestDetailPanel(html: string, specId: string): string {
-  const marker = `data-test-panel="${specId}"`;
+function extractTestDetailPanel(html: string, testId: string): string {
+  const marker = `data-test-panel="${testId}"`;
   const start = html.indexOf(marker);
-  assert.notEqual(start, -1, `Expected test detail panel for ${specId}.`);
+  assert.notEqual(start, -1, `Expected test detail panel for ${testId}.`);
   const sectionStart = html.lastIndexOf('<section', start);
   const sectionEnd = html.indexOf('</section>', start);
   assert.notEqual(sectionStart, -1);
@@ -379,8 +379,8 @@ function extractTestDetailPanel(html: string, specId: string): string {
   return html.slice(sectionStart, sectionEnd + '</section>'.length);
 }
 
-function assertTestDetailSectionOrder(html: string, specId: string): void {
-  const panel = extractTestDetailPanel(html, specId);
+function assertTestDetailSectionOrder(html: string, testId: string): void {
+  const panel = extractTestDetailPanel(html, testId);
   const testIndex = panel.indexOf('>Test<');
   const runContextIndex = panel.indexOf('>Run Context<');
   const analysisIndex = panel.indexOf('>Analysis<');
@@ -467,7 +467,7 @@ test('renderRunIndexHtml renders the Flutter-style history table with derived di
   assert.match(html, /\/runs\/2026-03-24T18-00-00\.000Z-dev-android/);
 });
 
-test('renderRunHtml renders suite overview, run context, spec detail panes, and rewritten artifact links', () => {
+test('renderRunHtml renders suite overview, run context, test detail panes, and rewritten artifact links', () => {
   const html = renderRunHtml(createSuiteRunManifest());
 
   assert.match(html, /<h1 class="report-title">login suite<\/h1>/);
@@ -477,7 +477,7 @@ test('renderRunHtml renders suite overview, run context, spec detail panes, and 
   assert.match(html, /Executed tests/);
   assert.match(html, /Tests passed/);
   assert.match(html, /Not Executed/);
-  assert.match(html, /selectSpec\('checkout'\)/);
+  assert.match(html, /selectTest\('checkout'\)/);
   assert.match(html, /data-test-panel="login"/);
   assert.match(html, /data-test-panel="checkout"/);
   assert.match(html, /id="primary-back-button"/);
@@ -506,8 +506,8 @@ test('renderRunHtml renders suite overview, run context, spec detail panes, and 
   assertAgentActionListHtml(html);
 });
 
-test('renderRunHtml opens directly into the single-spec layout for direct one-spec runs', () => {
-  const html = renderRunHtml(createSingleSpecManifest());
+test('renderRunHtml opens directly into the single-test layout for direct one-test runs', () => {
+  const html = renderRunHtml(createSingleTestManifest());
 
   assert.match(html, /<h1 class="report-title">valid login<\/h1>/);
   assert.doesNotMatch(html, /id="suite-overview"/);
@@ -524,30 +524,30 @@ test('renderRunHtml opens directly into the single-spec layout for direct one-sp
 });
 
 test('renderRunHtml renders compact recording empty states without reintroducing debug panels', () => {
-  const noRecordingManifest = createSingleSpecManifest();
+  const noRecordingManifest = createSingleTestManifest();
   noRecordingManifest.tests[0] = {
     ...noRecordingManifest.tests[0],
     recordingFile: undefined,
   };
 
   const noRecordingHtml = renderRunHtml(noRecordingManifest);
-  assert.match(noRecordingHtml, /No session recording was captured for this spec\./);
+  assert.match(noRecordingHtml, /No session recording was captured for this test\./);
   assertSimplifiedTestDetailHtml(noRecordingHtml);
 
-  const noActionsManifest = createSingleSpecManifest();
+  const noActionsManifest = createSingleTestManifest();
   noActionsManifest.tests[0] = {
     ...noActionsManifest.tests[0],
     steps: [],
   };
 
   const noActionsHtml = renderRunHtml(noActionsManifest);
-  assert.match(noActionsHtml, /No steps were recorded for this spec\./);
-  assert.match(noActionsHtml, /No recorded actions are available for this spec\./);
+  assert.match(noActionsHtml, /No steps were recorded for this test\./);
+  assert.match(noActionsHtml, /No recorded actions are available for this test\./);
   assertSimplifiedTestDetailHtml(noActionsHtml);
 });
 
 test('renderRunHtml surfaces the no-synced-timestamp caption when steps lack video offsets', () => {
-  const manifest = createSingleSpecManifest();
+  const manifest = createSingleTestManifest();
   manifest.tests[0] = {
     ...manifest.tests[0],
     steps: manifest.tests[0].steps.map((step) => ({

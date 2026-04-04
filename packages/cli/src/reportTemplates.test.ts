@@ -76,7 +76,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
           log: '/artifacts/2026-03-24T19-00-00.000Z-dev-android/runner.log',
         },
         displayName: 'valid login +2 more',
-        displayKind: 'multi_spec',
+        displayKind: 'multi_test',
         triggeredFrom: 'Direct',
         selectedTestCount: 3,
       },
@@ -289,7 +289,7 @@ function createSuiteRunManifest(): ReportRunManifest {
   });
 }
 
-function createSingleSpecManifest(): ReportRunManifest {
+function createSingleTestManifest(): ReportRunManifest {
   const suiteManifest = createSuiteRunManifest();
   return withSnapshotYamlText({
     ...suiteManifest,
@@ -359,7 +359,7 @@ function createSingleSpecManifest(): ReportRunManifest {
 }
 
 function withSnapshotYamlText(manifest: ReportRunManifest): ReportRunManifest {
-  const snapshotBySpecId = new Map<string, string>([
+  const snapshotByTestId = new Map<string, string>([
     ['login', [
       'name: valid login',
       'steps:',
@@ -376,11 +376,11 @@ function withSnapshotYamlText(manifest: ReportRunManifest): ReportRunManifest {
     ].join('\n')],
   ]);
 
-  for (const spec of manifest.input.tests) {
-    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.testId!);
+  for (const t of manifest.input.tests) {
+    (t as { snapshotYamlText?: string }).snapshotYamlText = snapshotByTestId.get(t.testId!);
   }
-  for (const spec of manifest.tests) {
-    (spec as { snapshotYamlText?: string }).snapshotYamlText = snapshotBySpecId.get(spec.testId);
+  for (const t of manifest.tests) {
+    (t as { snapshotYamlText?: string }).snapshotYamlText = snapshotByTestId.get(t.testId);
   }
 
   return manifest;
@@ -397,7 +397,7 @@ function extractTestDetailPanel(html: string, testId: string): string {
   return html.slice(sectionStart, sectionEnd + '</section>'.length);
 }
 
-function assertSpecDetailSectionOrder(html: string, testId: string): void {
+function assertTestDetailSectionOrder(html: string, testId: string): void {
   const panel = extractTestDetailPanel(html, testId);
   const testIndex = panel.indexOf('>Test<');
   const runContextIndex = panel.indexOf('>Run Context<');
@@ -412,7 +412,7 @@ function assertSpecDetailSectionOrder(html: string, testId: string): void {
   assert.ok(recordingIndex > actionsIndex);
 }
 
-function assertSimplifiedSpecDetailHtml(html: string): void {
+function assertSimplifiedTestDetailHtml(html: string): void {
   assert.match(html, />Test<\/h3>/);
   assert.match(html, /Open raw YAML/);
   assert.match(html, />Run Context<\/h3>/);
@@ -516,16 +516,16 @@ test('renderHtmlReport renders the new suite report layout on the live CLI serve
   assert.match(html, /class="context-summary-value">repo app<\/div>/);
   assert.match(html, /name: valid login/);
   assert.match(html, /name: guest checkout/);
-  assertSpecDetailSectionOrder(html, 'login');
-  assertSpecDetailSectionOrder(html, 'checkout');
+  assertTestDetailSectionOrder(html, 'login');
+  assertTestDetailSectionOrder(html, 'checkout');
   assertCompactRunContextHtml(html);
   assert.match(html, /class="tinted-png-icon"/);
-  assertSimplifiedSpecDetailHtml(html);
+  assertSimplifiedTestDetailHtml(html);
   assertAgentActionListHtml(html);
 });
 
-test('renderHtmlReport opens directly into the single-spec layout for one-spec direct runs', () => {
-  const html = renderHtmlReport(createSingleSpecManifest());
+test('renderHtmlReport opens directly into the single-test layout for one-test direct runs', () => {
+  const html = renderHtmlReport(createSingleTestManifest());
 
   assert.match(html, /<h1 class="report-title">valid login<\/h1>/);
   assert.doesNotMatch(html, /id="suite-overview"/);
@@ -534,38 +534,38 @@ test('renderHtmlReport opens directly into the single-spec layout for one-spec d
   assert.match(html, /name: valid login/);
   assert.match(html, /id="report-back-button"/);
   assert.match(html, /\/artifacts\/2026-03-24T20-00-00\.000Z-dev-android\/tests\/login\/recording\.mp4/);
-  assertSpecDetailSectionOrder(html, 'login');
+  assertTestDetailSectionOrder(html, 'login');
   assert.equal((html.match(/Run history/g) || []).length, 1);
   assertCompactRunContextHtml(html);
-  assertSimplifiedSpecDetailHtml(html);
+  assertSimplifiedTestDetailHtml(html);
   assertAgentActionListHtml(html);
 });
 
 test('renderHtmlReport renders compact recording empty states without reintroducing debug panels', () => {
-  const noRecordingManifest = createSingleSpecManifest();
+  const noRecordingManifest = createSingleTestManifest();
   noRecordingManifest.tests[0] = {
     ...noRecordingManifest.tests[0],
     recordingFile: undefined,
   };
 
   const noRecordingHtml = renderHtmlReport(noRecordingManifest);
-  assert.match(noRecordingHtml, /No session recording was captured for this spec\./);
-  assertSimplifiedSpecDetailHtml(noRecordingHtml);
+  assert.match(noRecordingHtml, /No session recording was captured for this test\./);
+  assertSimplifiedTestDetailHtml(noRecordingHtml);
 
-  const noActionsManifest = createSingleSpecManifest();
+  const noActionsManifest = createSingleTestManifest();
   noActionsManifest.tests[0] = {
     ...noActionsManifest.tests[0],
     steps: [],
   };
 
   const noActionsHtml = renderHtmlReport(noActionsManifest);
-  assert.match(noActionsHtml, /No steps were recorded for this spec\./);
-  assert.match(noActionsHtml, /No recorded actions are available for this spec\./);
-  assertSimplifiedSpecDetailHtml(noActionsHtml);
+  assert.match(noActionsHtml, /No steps were recorded for this test\./);
+  assert.match(noActionsHtml, /No recorded actions are available for this test\./);
+  assertSimplifiedTestDetailHtml(noActionsHtml);
 });
 
 test('renderHtmlReport surfaces the no-synced-timestamp caption when steps lack video offsets', () => {
-  const manifest = createSingleSpecManifest();
+  const manifest = createSingleTestManifest();
   manifest.tests[0] = {
     ...manifest.tests[0],
     steps: manifest.tests[0].steps.map((step) => ({
@@ -576,10 +576,10 @@ test('renderHtmlReport surfaces the no-synced-timestamp caption when steps lack 
 
   const html = renderHtmlReport(manifest);
   assert.match(html, /No synced recording timestamp is available for the selected step\./);
-  assertSimplifiedSpecDetailHtml(html);
+  assertSimplifiedTestDetailHtml(html);
 });
 
-test('report templates render aborted runs and specs with explicit aborted badges', () => {
+test('report templates render aborted runs and tests with explicit aborted badges', () => {
   const historyViewModel = createRunIndexViewModel();
   historyViewModel.runs[0] = {
     ...historyViewModel.runs[0],
@@ -748,7 +748,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
         {
           runId: 'direct-run',
           displayName: 'Valid login +2 more',
-          displayKind: 'multi_spec',
+          displayKind: 'multi_test',
           triggeredFrom: 'Direct',
           selectedTestCount: 3,
           runJson: '/artifacts/direct-run/run.json',
@@ -852,7 +852,7 @@ async function writeRunManifest(
           label: 'repo app',
         },
         selectors: params.target.type === 'direct'
-          ? params.selectedTests.map((spec) => spec.relativePath)
+          ? params.selectedTests.map((t) => t.relativePath)
           : [],
         target: params.target,
         counts: {
@@ -875,12 +875,12 @@ async function writeRunManifest(
           secretReferences: [],
         },
         suite: params.suite,
-        tests: params.selectedTests.map((spec) => ({
-          ...spec,
-          name: spec.testName,
-          workspaceSourcePath: `.finalrun/tests/${spec.relativePath}`,
-          snapshotYamlPath: `input/tests/${spec.testId}.yaml`,
-          snapshotJsonPath: `input/tests/${spec.testId}.json`,
+        tests: params.selectedTests.map((t) => ({
+          ...t,
+          name: t.testName,
+          workspaceSourcePath: `.finalrun/tests/${t.relativePath}`,
+          snapshotYamlPath: `input/tests/${t.testId}.yaml`,
+          snapshotJsonPath: `input/tests/${t.testId}.json`,
           bindingReferences: {
             variables: [],
             secrets: [],
@@ -889,9 +889,9 @@ async function writeRunManifest(
         cli: {
           command: params.target.type === 'suite'
             ? `finalrun test --suite ${params.target.suitePath || 'suite.yaml'}`
-            : `finalrun test ${params.selectedTests.map((spec) => spec.relativePath).join(' ')}`,
+            : `finalrun test ${params.selectedTests.map((t) => t.relativePath).join(' ')}`,
           selectors: params.target.type === 'direct'
-            ? params.selectedTests.map((spec) => spec.relativePath)
+            ? params.selectedTests.map((t) => t.relativePath)
             : [],
           suitePath: params.target.type === 'suite' ? params.target.suitePath : undefined,
           debug: false,
