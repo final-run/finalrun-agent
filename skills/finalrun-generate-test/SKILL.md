@@ -1,5 +1,5 @@
 ---
-name: generate-finalrun-test
+name: finalrun-generate-test
 description: Generate test and suite specifications in the strict FinalRun YAML format. Handles automated test planning, folder grouping by feature, repo app configuration, environment-specific overrides in .finalrun/env/*.yaml, and validation via finalrun check.
 ---
 
