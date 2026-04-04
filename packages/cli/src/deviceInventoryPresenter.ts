@@ -94,7 +94,15 @@ async function pipedSelection(
 }
 
 function readFirstLine(stream: NodeJS.ReadableStream): Promise<string | null> {
-  return new Promise<string | null>((resolve) => {
+  return new Promise<string | null>((resolve, reject) => {
+    const rs = stream as NodeJS.ReadableStream & {
+      readableEnded?: boolean;
+      readable?: boolean;
+    };
+    if (rs.readableEnded || rs.readable === false) {
+      return resolve(null);
+    }
+
     let buffer = '';
     let settled = false;
 
@@ -126,13 +134,13 @@ function readFirstLine(stream: NodeJS.ReadableStream): Promise<string | null> {
       resolve(buffer.trim().length > 0 ? buffer.trim() : null);
     };
 
-    const onError = (): void => {
+    const onError = (error: Error): void => {
       if (settled) {
         return;
       }
       settled = true;
       cleanup();
-      resolve(null);
+      reject(error);
     };
 
     stream.on('data', onData);
