@@ -227,7 +227,7 @@ export class ReportWriter {
         workspaceSourcePath: params.suite.sourcePath
           ? toDisplayPath(params.workspaceRoot, params.suite.sourcePath)
           : undefined,
-        snapshotYamlPath: suiteSnapshotYamlPath,
+        snapshotYamlPath: params.suite.sourcePath ? suiteSnapshotYamlPath : undefined,
         snapshotJsonPath: suiteSnapshotJsonPath,
         tests: params.suite.tests,
         resolvedTestIds: params.tests.map((test) => test.testId!),
@@ -296,7 +296,7 @@ export class ReportWriter {
         description: test.description,
         relativePath: test.relativePath,
         workspaceSourcePath,
-        snapshotYamlPath,
+        snapshotYamlPath: test.sourcePath ? snapshotYamlPath : undefined,
         snapshotJsonPath,
         bindingReferences,
         setup: test.setup,
