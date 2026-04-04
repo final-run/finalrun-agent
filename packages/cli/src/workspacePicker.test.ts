@@ -42,6 +42,37 @@ test('promptForWorkspaceSelection reprompts until a valid workspace number is en
   assert.match(outputText, /Invalid selection/);
 });
 
+test('promptForWorkspaceSelection rejects partially numeric answers and reprompts', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let outputText = '';
+  output.on('data', (chunk: Buffer | string) => {
+    outputText += String(chunk);
+  });
+  input.write('1foo\n');
+  setImmediate(() => {
+    input.end('1\n');
+  });
+
+  const selected = await promptForWorkspaceSelection({
+    heading: 'Select a workspace',
+    entries: [
+      {
+        label: 'alpha/mobile-app',
+        workspaceRoot: '/tmp/alpha-mobile-app',
+      },
+    ],
+    io: {
+      input,
+      output,
+      isTTY: true,
+    },
+  });
+
+  assert.equal(selected.label, 'alpha/mobile-app');
+  assert.match(outputText, /Invalid selection/);
+});
+
 test('promptForWorkspaceSelection cancels on q and empty input', async () => {
   await assert.rejects(
     () =>

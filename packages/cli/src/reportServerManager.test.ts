@@ -296,6 +296,39 @@ test('stopWorkspaceReportServer stops a healthy workspace server and removes sta
   }
 });
 
+test('stopWorkspaceReportServer refuses to kill a healthy server that does not report a live pid', async () => {
+  const workspace = createWorkspace();
+  const originalFetchJson = reportServerManagerDependencies.fetchJson;
+  const originalKillProcess = reportServerManagerDependencies.killProcess;
+  let killCalls = 0;
+
+  try {
+    await writeWorkspaceReportServerState(workspace, createServerState(workspace));
+    reportServerManagerDependencies.fetchJson = async () => ({
+      status: 200,
+      body: {
+        status: 'ok',
+        workspaceRoot: workspace.rootDir,
+        artifactsDir: workspace.artifactsDir,
+      },
+    });
+    reportServerManagerDependencies.killProcess = () => {
+      killCalls += 1;
+    };
+
+    await assert.rejects(
+      () => stopWorkspaceReportServer(workspace),
+      /live server did not report a pid/,
+    );
+    assert.equal(killCalls, 0);
+    assert.notEqual(await readWorkspaceReportServerState(workspace), undefined);
+  } finally {
+    reportServerManagerDependencies.fetchJson = originalFetchJson;
+    reportServerManagerDependencies.killProcess = originalKillProcess;
+    await fsp.rm(workspace.rootDir, { recursive: true, force: true });
+  }
+});
+
 test('stopWorkspaceReportServer is idempotent when the server is already down', async () => {
   const workspace = createWorkspace();
   const originalFetchJson = reportServerManagerDependencies.fetchJson;
@@ -312,6 +345,36 @@ test('stopWorkspaceReportServer is idempotent when the server is already down', 
     assert.equal(await readWorkspaceReportServerState(workspace), undefined);
   } finally {
     reportServerManagerDependencies.fetchJson = originalFetchJson;
+    await fsp.rm(workspace.rootDir, { recursive: true, force: true });
+  }
+});
+
+test('getWorkspaceReportServerStatus treats a timed-out health probe as stale state', async () => {
+  const workspace = createWorkspace();
+  const originalFetchJson = reportServerManagerDependencies.fetchJson;
+  const originalHealthProbeTimeoutMs = reportServerManagerDependencies.healthProbeTimeoutMs;
+
+  try {
+    await writeWorkspaceReportServerState(workspace, createServerState(workspace));
+    reportServerManagerDependencies.healthProbeTimeoutMs = 10;
+    reportServerManagerDependencies.fetchJson = async (_url, signal) => {
+      await new Promise<never>((_resolve, reject) => {
+        signal?.addEventListener(
+          'abort',
+          () => reject(new Error('aborted')),
+          { once: true },
+        );
+      });
+      throw new Error('unreachable');
+    };
+
+    const status = await getWorkspaceReportServerStatus(workspace);
+    assert.equal(status.running, false);
+    assert.equal(status.staleStateCleared, true);
+    assert.equal(await readWorkspaceReportServerState(workspace), undefined);
+  } finally {
+    reportServerManagerDependencies.fetchJson = originalFetchJson;
+    reportServerManagerDependencies.healthProbeTimeoutMs = originalHealthProbeTimeoutMs;
     await fsp.rm(workspace.rootDir, { recursive: true, force: true });
   }
 });

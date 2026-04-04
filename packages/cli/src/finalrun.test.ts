@@ -1079,8 +1079,39 @@ test('finalrun runs prints a console summary and suggests starting the local rep
     const result = runCli(['runs'], rootDir);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /PASS/);
-    assert.match(result.stdout, /finalrun start-server/);
+    assert.match(
+      result.stdout,
+      /finalrun start-server --workspace "/,
+    );
+    assert.match(
+      result.stdout,
+      new RegExp(`${path.basename(workspace.rootDir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\"`),
+    );
     assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun start-server rejects malformed and out-of-range --port values', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const malformedPortResult = runCli(
+      ['start-server', '--port', '4173foo'],
+      rootDir,
+      { FINALRUN_DISABLE_BROWSER: '1' },
+    );
+    assert.equal(malformedPortResult.status, 1);
+    assert.match(malformedPortResult.stderr, /Invalid --port value "4173foo"/);
+
+    const outOfRangePortResult = runCli(
+      ['start-server', '--port', '70000'],
+      rootDir,
+      { FINALRUN_DISABLE_BROWSER: '1' },
+    );
+    assert.equal(outOfRangePortResult.status, 1);
+    assert.match(outOfRangePortResult.stderr, /Invalid --port value "70000"/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }

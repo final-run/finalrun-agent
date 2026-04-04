@@ -8,6 +8,7 @@ import { resolveCliLaunchArgs } from './runtimePaths.js';
 
 const DEFAULT_REPORT_SERVER_PORT = 4173;
 const HEALTH_ROUTE = '/health';
+const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2000;
 
 interface ReportHealthPayload {
   status?: string;
@@ -43,6 +44,7 @@ export interface StopWorkspaceReportServerResult {
 }
 
 export const reportServerManagerDependencies = {
+  healthProbeTimeoutMs: DEFAULT_HEALTH_PROBE_TIMEOUT_MS,
   spawnProcess(
     command: string,
     args: string[],
@@ -55,11 +57,15 @@ export const reportServerManagerDependencies = {
   ): ChildProcess {
     return spawn(command, args, options);
   },
-  async fetchJson(url: string): Promise<{ status: number; body: unknown }> {
+  async fetchJson(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<{ status: number; body: unknown }> {
     const response = await fetch(url, {
       headers: {
         accept: 'application/json',
       },
+      signal,
     });
     let body: unknown = undefined;
     try {
@@ -224,12 +230,36 @@ export async function stopWorkspaceReportServer(
     };
   }
 
-  const pid = status.state.pid;
+  let livePid = status.livePid;
+  if (livePid === undefined) {
+    const health = await probeWorkspaceReportServerHealth(status.state, workspace);
+    if (!health.healthy) {
+      await clearWorkspaceReportServerState(workspace);
+      return {
+        stopped: false,
+        staleStateCleared: true,
+      };
+    }
+    livePid = health.livePid;
+  }
+
+  if (livePid === undefined) {
+    throw new Error(
+      `Could not safely stop the FinalRun report server for ${workspace.rootDir} because the live server did not report a pid.`,
+    );
+  }
+
+  const pid = livePid;
   if (!Number.isInteger(pid) || pid <= 0) {
     throw new Error(
       `Healthy FinalRun report server did not report a valid pid for ${workspace.rootDir}.`,
     );
   }
+
+  const stopState: ReportServerStateRecord = {
+    ...status.state,
+    pid,
+  };
 
   try {
     reportServerManagerDependencies.killProcess(pid, 'SIGTERM');
@@ -237,26 +267,18 @@ export async function stopWorkspaceReportServer(
     if (!isNodeErrorWithCode(error) || error.code !== 'ESRCH') {
       throw error;
     }
-    if (status.livePid === undefined) {
-      const health = await probeWorkspaceReportServerHealth(status.state, workspace);
-      if (health.healthy) {
-        throw new Error(
-          `Could not stop the FinalRun report server for ${workspace.rootDir} because the saved pid was stale and the live server did not report a pid.`,
-        );
-      }
-    }
   }
 
   await waitForWorkspaceReportServerShutdown({
     workspace,
-    state: status.state,
+    state: stopState,
   });
   await clearWorkspaceReportServerState(workspace);
 
   return {
     stopped: true,
     staleStateCleared: false,
-    state: status.state,
+    state: stopState,
   };
 }
 
@@ -361,9 +383,7 @@ async function probeWorkspaceReportServerHealth(
   workspace: FinalRunWorkspace,
 ): Promise<{ healthy: boolean; livePid?: number }> {
   try {
-    const health = await reportServerManagerDependencies.fetchJson(
-      `${state.url}${HEALTH_ROUTE}`,
-    );
+    const health = await fetchWorkspaceReportServerHealth(`${state.url}${HEALTH_ROUTE}`);
     if (health.status !== 200) {
       return { healthy: false };
     }
@@ -383,6 +403,30 @@ async function probeWorkspaceReportServerHealth(
     };
   } catch {
     return { healthy: false };
+  }
+}
+
+async function fetchWorkspaceReportServerHealth(
+  url: string,
+): Promise<{ status: number; body: unknown }> {
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1, reportServerManagerDependencies.healthProbeTimeoutMs);
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      reportServerManagerDependencies.fetchJson(url, controller.signal),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          reject(new Error('Health probe timed out.'));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

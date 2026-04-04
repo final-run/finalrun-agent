@@ -1055,6 +1055,7 @@ test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a
   await withTempHome(async () => {
     const rootDir = createTempWorkspace();
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-outside-workspace-'));
+    const existingLastUsedAt = '2020-01-01T00:00:00.000Z';
     fs.writeFileSync(
       path.join(rootDir, 'package.json'),
       JSON.stringify({ name: 'sample/mobile-app' }, null, 2),
@@ -1064,6 +1065,26 @@ test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a
     fs.mkdirSync(nestedWorkspacePath, { recursive: true });
 
     try {
+      const seededWorkspace = await resolveWorkspace(rootDir);
+      const metadataPath = path.join(seededWorkspace.artifactsDir, '..', 'workspace.json');
+      await fsp.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fsp.writeFile(
+        metadataPath,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            workspaceRoot: rootDir,
+            canonicalWorkspaceRoot: await fsp.realpath(rootDir),
+            workspaceHash: 'seeded-workspace-hash',
+            artifactsDir: seededWorkspace.artifactsDir,
+            lastUsedAt: existingLastUsedAt,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
       const workspace = await resolveWorkspaceForCommand({
         cwd: outsideDir,
         workspacePath: nestedWorkspacePath,
@@ -1075,13 +1096,13 @@ test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a
       });
 
       assert.equal(workspace.rootDir, rootDir);
-      const metadataPath = path.join(workspace.artifactsDir, '..', 'workspace.json');
       const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
         displayName?: string;
         lastUsedAt?: string;
       };
       assert.equal(metadata.displayName, 'sample/mobile-app');
       assert.match(metadata.lastUsedAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+      assert.ok(Date.parse(metadata.lastUsedAt ?? '') > Date.parse(existingLastUsedAt));
     } finally {
       await fsp.rm(rootDir, { recursive: true, force: true });
       await fsp.rm(outsideDir, { recursive: true, force: true });
@@ -1089,7 +1110,7 @@ test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a
   });
 });
 
-test('resolveWorkspaceForCommand shows the TTY picker, ignores stale registry entries, and persists runtime-derived labels', async () => {
+test('resolveWorkspaceForCommand shows the TTY picker, ignores stale and malformed registry entries, and persists runtime-derived labels', async () => {
   await withTempHome(async () => {
     const alphaRoot = createTempWorkspace();
     const bravoRoot = createTempWorkspace();
@@ -1126,6 +1147,20 @@ test('resolveWorkspaceForCommand shows the TTY picker, ignores stale registry en
           canonicalWorkspaceRoot: path.join(outsideDir, 'missing-workspace'),
           workspaceHash: 'stale-workspace',
           artifactsDir: path.join(staleMetadataDir, 'artifacts'),
+        }),
+        'utf-8',
+      );
+
+      const malformedMetadataDir = path.join(resolveWorkspaceArtifactsRootDir(), 'malformed-workspace');
+      await fsp.mkdir(malformedMetadataDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(malformedMetadataDir, 'workspace.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          workspaceRoot: 42,
+          canonicalWorkspaceRoot: bravoRoot,
+          workspaceHash: 'malformed-workspace',
+          artifactsDir: path.join(malformedMetadataDir, 'artifacts'),
         }),
         'utf-8',
       );

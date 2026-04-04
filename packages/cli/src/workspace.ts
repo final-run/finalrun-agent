@@ -537,7 +537,7 @@ async function readWorkspaceMetadataFromPath(
 ): Promise<WorkspaceMetadataRecord | undefined> {
   try {
     const raw = await fs.readFile(metadataPath, 'utf-8');
-    return JSON.parse(raw) as WorkspaceMetadataRecord;
+    return parseWorkspaceMetadataRecord(JSON.parse(raw));
   } catch {
     return undefined;
   }
@@ -655,6 +655,58 @@ function normalizeRepoSlugPath(value: string): string | undefined {
 function normalizeMetadataString(value: string | undefined): string | undefined {
   const normalizedValue = value?.trim();
   return normalizedValue && normalizedValue.length > 0 ? normalizedValue : undefined;
+}
+
+function parseWorkspaceMetadataRecord(value: unknown): WorkspaceMetadataRecord | undefined {
+  if (!isObjectRecord(value)) {
+    return undefined;
+  }
+
+  const workspaceRoot = readMetadataPathString(value.workspaceRoot);
+  const canonicalWorkspaceRoot = readMetadataPathString(value.canonicalWorkspaceRoot);
+  const workspaceHash = readMetadataString(value.workspaceHash);
+  const artifactsDir = readMetadataPathString(value.artifactsDir);
+  if (!workspaceRoot || !canonicalWorkspaceRoot || !workspaceHash || !artifactsDir) {
+    return undefined;
+  }
+
+  const schemaVersion = typeof value.schemaVersion === 'number' &&
+      Number.isInteger(value.schemaVersion) &&
+      value.schemaVersion > 0
+    ? value.schemaVersion
+    : 1;
+
+  const metadata: WorkspaceMetadataRecord = {
+    schemaVersion,
+    workspaceRoot,
+    canonicalWorkspaceRoot,
+    workspaceHash,
+    artifactsDir,
+  };
+
+  const displayName = readMetadataString(value.displayName);
+  const lastUsedAt = readMetadataString(value.lastUsedAt);
+  if (displayName) {
+    metadata.displayName = displayName;
+  }
+  if (lastUsedAt) {
+    metadata.lastUsedAt = lastUsedAt;
+  }
+
+  return metadata;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readMetadataString(value: unknown): string | undefined {
+  return typeof value === 'string' ? normalizeMetadataString(value) : undefined;
+}
+
+function readMetadataPathString(value: unknown): string | undefined {
+  const normalizedValue = readMetadataString(value);
+  return normalizedValue ? path.resolve(normalizedValue) : undefined;
 }
 
 async function listEnvironmentFiles(

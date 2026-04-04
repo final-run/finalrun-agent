@@ -50,6 +50,11 @@ export async function promptForWorkspaceSelection(params: {
         throw new WorkspaceSelectionCancelledError();
       }
 
+      if (!/^\d+$/.test(answer)) {
+        params.io.output.write('Invalid selection. Enter one of the listed numbers, or q to cancel.\n');
+        continue;
+      }
+
       const selection = Number.parseInt(answer, 10);
       const matched = rendered.numberedEntries.find((candidate) => candidate.index === selection);
       if (matched) {

@@ -100,7 +100,10 @@ program
   .option('--json', 'Print the runs index as JSON', false)
   .action(async (options: RunsCommandOptions) => {
     await runCommand(async () => {
-      const workspace = await resolveCommandWorkspace(options.workspace);
+      const workspace = await resolveCommandWorkspace(
+        options.workspace,
+        options.json ? process.stderr : process.stdout,
+      );
       const index = await loadRunIndex(workspace.artifactsDir);
       if (options.json) {
         console.log(JSON.stringify(index, null, 2));
@@ -112,7 +115,9 @@ program
         if (activeServer) {
           console.log(`\nReport server: ${buildWorkspaceReportUrl(activeServer.url)}`);
         } else {
-          console.log('\nRun `finalrun start-server` to browse reports in the local web UI.');
+          console.log(
+            `\nRun \`finalrun start-server --workspace ${JSON.stringify(workspace.rootDir)}\` to browse reports in the local web UI.`,
+          );
         }
       }
     });
@@ -416,20 +421,33 @@ async function printWorkspaceReportServerStatus(workspacePath?: string): Promise
   console.log(`Healthy: ${status.healthy ? 'yes' : 'no'}`);
 }
 
-async function resolveCommandWorkspace(workspacePath?: string) {
+async function resolveCommandWorkspace(
+  workspacePath?: string,
+  output: NodeJS.WriteStream = process.stdout,
+) {
   return resolveWorkspaceForCommand({
     workspacePath,
     io: {
       input: process.stdin,
-      output: process.stdout,
-      isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      output,
+      isTTY: Boolean(process.stdin.isTTY && output.isTTY),
     },
   });
 }
 
 function parsePortOption(value: string, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return fallback;
+  }
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`Invalid --port value "${value}". Expected an integer between 0 and 65535.`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 65535) {
+    throw new Error(`Invalid --port value "${value}". Expected an integer between 0 and 65535.`);
+  }
+  return parsed;
 }
 
 async function openUrlBestEffort(url: string): Promise<void> {
