@@ -163,6 +163,28 @@ function createDoctorDependencies(params: {
   };
 }
 
+async function findAvailablePort(): Promise<number> {
+  const net = await import('node:net');
+  return await new Promise<number>((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('No ephemeral port allocated.')));
+        return;
+      }
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+  });
+}
+
 test('finalrun check works without --env when dev.yaml exists', async () => {
   const rootDir = createTempWorkspace({
     envFiles: {
@@ -898,25 +920,66 @@ test('finalrun test prints device setup failures raw and does not create a run',
   }
 });
 
-test('finalrun start-server reports a workspace error outside a FinalRun repo', async () => {
+test('finalrun start-server reports guidance outside a FinalRun repo when --workspace is omitted', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-workspace-'));
 
   try {
     const result = runCli(['start-server'], rootDir);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Could not find a \.finalrun workspace/);
+    assert.match(result.stderr, /Pass --workspace <path> to target a FinalRun workspace explicitly/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('finalrun report serve remains available as a compatibility alias', async () => {
+test('finalrun start-server ignores a parent .finalrun home directory without tests', async () => {
+  const fakeHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-fake-home-'));
+  const outsideDir = path.join(fakeHomeDir, 'projects', 'outside');
+  fs.mkdirSync(path.join(fakeHomeDir, '.finalrun'), { recursive: true });
+  fs.mkdirSync(outsideDir, { recursive: true });
+
+  try {
+    const result = runCli(['start-server'], outsideDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Pass --workspace <path> to target a FinalRun workspace explicitly/);
+    assert.doesNotMatch(result.stderr, /Missing \.finalrun\/tests directory/);
+  } finally {
+    await fsp.rm(fakeHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun start-server --help shows --workspace and top-level stop/status commands are available', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const startHelp = runCli(['start-server', '--help'], rootDir);
+    const stopHelp = runCli(['stop-server', '--help'], rootDir);
+    const statusHelp = runCli(['server-status', '--help'], rootDir);
+
+    assert.equal(startHelp.status, 0);
+    assert.match(startHelp.stdout, /--workspace <path>/);
+    assert.equal(stopHelp.status, 0);
+    assert.match(stopHelp.stdout, /stop the local finalrun report server/i);
+    assert.match(stopHelp.stdout, /--workspace <path>/);
+    assert.equal(statusHelp.status, 0);
+    assert.match(statusHelp.stdout, /show the local finalrun report server status/i);
+    assert.match(statusHelp.stdout, /--workspace <path>/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun report serve is rejected after the breaking command removal', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-report-workspace-'));
 
   try {
     const result = runCli(['report', 'serve'], rootDir);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Could not find a \.finalrun workspace/);
+    assert.match(result.stderr, /unknown command 'report'/i);
+
+    const reportHelp = runCli(['report', '--help'], rootDir);
+    assert.equal(reportHelp.status, 0);
+    assert.doesNotMatch(reportHelp.stdout, /^\s+report\b/m);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -1020,5 +1083,191 @@ test('finalrun runs prints a console summary and suggests starting the local rep
     assert.equal(result.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs --workspace works from outside any workspace', async () => {
+  const workspaceRoot = createTempWorkspace();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-outside-runs-'));
+  const workspace = await resolveWorkspaceForHome(workspaceRoot, CLI_TEST_HOME);
+  await fsp.mkdir(workspace.artifactsDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(workspace.artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [
+          {
+            runId: '2026-03-23T18-00-00.000Z-dev-android',
+            success: true,
+            status: 'success',
+            startedAt: '2026-03-23T18:00:00.000Z',
+            completedAt: '2026-03-23T18:00:10.000Z',
+            durationMs: 10000,
+            envName: 'dev',
+            platform: 'android',
+            modelLabel: 'openai/gpt-4o',
+            appLabel: 'repo app',
+            specCount: 1,
+            passedCount: 1,
+            failedCount: 0,
+            stepCount: 1,
+            paths: {
+              runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
+              log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const result = runCli(['runs', '--workspace', workspaceRoot, '--json'], outsideDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /"runId": "2026-03-23T18-00-00.000Z-dev-android"/);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(workspaceRoot, { recursive: true, force: true });
+    await fsp.rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs --workspace overrides the current workspace', async () => {
+  const currentWorkspaceRoot = createTempWorkspace();
+  const targetWorkspaceRoot = createTempWorkspace();
+  const currentWorkspace = await resolveWorkspaceForHome(currentWorkspaceRoot, CLI_TEST_HOME);
+  const targetWorkspace = await resolveWorkspaceForHome(targetWorkspaceRoot, CLI_TEST_HOME);
+  await fsp.mkdir(currentWorkspace.artifactsDir, { recursive: true });
+  await fsp.mkdir(targetWorkspace.artifactsDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(currentWorkspace.artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+  await fsp.writeFile(
+    path.join(targetWorkspace.artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [
+          {
+            runId: '2026-03-23T19-00-00.000Z-dev-ios',
+            success: true,
+            status: 'success',
+            startedAt: '2026-03-23T19:00:00.000Z',
+            completedAt: '2026-03-23T19:00:20.000Z',
+            durationMs: 20000,
+            envName: 'dev',
+            platform: 'ios',
+            modelLabel: 'openai/gpt-4o',
+            appLabel: 'repo app',
+            specCount: 2,
+            passedCount: 2,
+            failedCount: 0,
+            stepCount: 2,
+            paths: {
+              runJson: '2026-03-23T19-00-00.000Z-dev-ios/run.json',
+              log: '2026-03-23T19-00-00.000Z-dev-ios/runner.log',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const result = runCli(
+      ['runs', '--workspace', targetWorkspaceRoot, '--json'],
+      currentWorkspaceRoot,
+    );
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /2026-03-23T19-00-00.000Z-dev-ios/);
+    assert.doesNotMatch(result.stdout, /"runs": \[\]/);
+  } finally {
+    await fsp.rm(currentWorkspaceRoot, { recursive: true, force: true });
+    await fsp.rm(targetWorkspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs reports a clear error for an invalid explicit workspace path', async () => {
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-invalid-workspace-'));
+
+  try {
+    const result = runCli(
+      ['runs', '--workspace', path.join(outsideDir, 'missing-workspace')],
+      outsideDir,
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Path is not inside a FinalRun workspace/);
+  } finally {
+    await fsp.rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun start-server, server-status, and stop-server work from outside a workspace with --workspace', async () => {
+  const workspaceRoot = createTempWorkspace();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-server-outside-'));
+  const port = await findAvailablePort();
+  const workspace = await resolveWorkspaceForHome(workspaceRoot, CLI_TEST_HOME);
+
+  try {
+    const startResult = runCli(
+      ['start-server', '--workspace', workspaceRoot, '--port', String(port)],
+      outsideDir,
+      {
+        FINALRUN_DISABLE_BROWSER: '1',
+      },
+    );
+    assert.equal(startResult.status, 0);
+    assert.match(startResult.stdout, new RegExp(`http://127\\.0\\.0\\.1:${port}`));
+
+    const statusResult = runCli(['server-status', '--workspace', workspaceRoot], outsideDir, {
+      FINALRUN_DISABLE_BROWSER: '1',
+    });
+    assert.equal(statusResult.status, 0);
+    assert.match(statusResult.stdout, /FinalRun report server status/);
+    assert.match(statusResult.stdout, new RegExp(`Workspace root: ${workspaceRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(statusResult.stdout, new RegExp(`URL: http://127\\.0\\.0\\.1:${port}`));
+    assert.match(statusResult.stdout, /Healthy: yes/);
+
+    const stopResult = runCli(['stop-server', '--workspace', workspaceRoot], outsideDir, {
+      FINALRUN_DISABLE_BROWSER: '1',
+    });
+    assert.equal(stopResult.status, 0);
+    assert.match(stopResult.stdout, /Stopped FinalRun report server/);
+    await assert.rejects(() => fsp.stat(path.join(workspace.artifactsDir, '.server.json')));
+
+    const stoppedStatusResult = runCli(
+      ['server-status', '--workspace', workspaceRoot],
+      outsideDir,
+      {
+        FINALRUN_DISABLE_BROWSER: '1',
+      },
+    );
+    assert.equal(stoppedStatusResult.status, 0);
+    assert.match(stoppedStatusResult.stdout, /is not running/);
+  } finally {
+    runCli(['stop-server', '--workspace', workspaceRoot], outsideDir, {
+      FINALRUN_DISABLE_BROWSER: '1',
+    });
+    await fsp.rm(workspaceRoot, { recursive: true, force: true });
+    await fsp.rm(outsideDir, { recursive: true, force: true });
   }
 });
