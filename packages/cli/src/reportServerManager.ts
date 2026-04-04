@@ -34,13 +34,13 @@ export interface WorkspaceReportServerStatus {
   healthy: boolean;
   staleStateCleared: boolean;
   livePid?: number;
-  state?: ReportServerStateRecord;
+  state?: ReportServerState;
 }
 
 export interface StopWorkspaceReportServerResult {
   stopped: boolean;
   staleStateCleared: boolean;
-  state?: ReportServerStateRecord;
+  state?: ReportServerState;
 }
 
 export const reportServerManagerDependencies = {
@@ -256,7 +256,7 @@ export async function stopWorkspaceReportServer(
     );
   }
 
-  const stopState: ReportServerStateRecord = {
+  const stopState: ReportServerState = {
     ...status.state,
     pid,
   };
@@ -361,7 +361,7 @@ async function waitForHealthyWorkspaceReportServer(params: {
 
 async function waitForWorkspaceReportServerShutdown(params: {
   workspace: FinalRunWorkspace;
-  state: ReportServerStateRecord;
+  state: ReportServerState;
 }): Promise<void> {
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
@@ -379,7 +379,7 @@ async function waitForWorkspaceReportServerShutdown(params: {
 }
 
 async function probeWorkspaceReportServerHealth(
-  state: ReportServerStateRecord,
+  state: ReportServerState,
   workspace: FinalRunWorkspace,
 ): Promise<{ healthy: boolean; livePid?: number }> {
   try {
