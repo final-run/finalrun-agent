@@ -23,6 +23,8 @@ export { RecordingRequest } from './models/RecordingRequest.js';
 export type {
   AppConfig,
   EnvironmentConfig,
+  WebConfig,
+  WebViewportConfig,
   VariableValue,
   RuntimeBindings,
   SecretReference,

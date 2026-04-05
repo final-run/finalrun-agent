@@ -5,20 +5,29 @@ import { promisify } from 'node:util';
 import {
   PLATFORM_ANDROID,
   PLATFORM_IOS,
+  PLATFORM_WEB,
   type AppConfig,
+  type WebConfig,
 } from '@finalrun/common';
 
 const execFileAsync = promisify(execFile);
 const APP_TOP_LEVEL_KEYS = new Set(['name', 'packageName', 'bundleId']);
+const WEB_TOP_LEVEL_KEYS = new Set(['baseUrl', 'browser', 'viewport']);
+const WEB_VIEWPORT_TOP_LEVEL_KEYS = new Set(['width', 'height']);
 
-type SupportedPlatform = typeof PLATFORM_ANDROID | typeof PLATFORM_IOS;
+type SupportedPlatform =
+  | typeof PLATFORM_ANDROID
+  | typeof PLATFORM_IOS
+  | typeof PLATFORM_WEB;
 
 export interface ResolvedAppConfig {
   platform: SupportedPlatform;
   identifier: string;
-  identifierKind: 'packageName' | 'bundleId';
+  identifierKind: 'packageName' | 'bundleId' | 'url';
   name?: string;
   sourceEnvName?: string;
+  browser?: 'chromium' | 'firefox' | 'webkit';
+  viewport?: { width: number; height: number };
 }
 
 export interface ValidatedAppOverrideLike {
@@ -56,30 +65,56 @@ export function readAppConfig(
   return app;
 }
 
+export function readWebConfig(
+  value: unknown,
+  label: string,
+): WebConfig | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  assertPlainObject(value, label);
+  assertAllowedKeys(value, WEB_TOP_LEVEL_KEYS, label);
+
+  const baseUrl = readRequiredTrimmedString(value['baseUrl'], `${label} baseUrl`);
+  assertValidUrl(baseUrl, `${label} baseUrl`);
+
+  return {
+    baseUrl,
+    browser: readOptionalBrowser(value['browser'], `${label} browser`),
+    viewport: readOptionalViewport(value['viewport'], `${label} viewport`),
+  };
+}
+
 export function resolveAppConfig(params: {
   workspaceApp: AppConfig | undefined;
+  workspaceWeb?: WebConfig;
   environmentApp?: AppConfig;
+  environmentWeb?: WebConfig;
   envName: string;
   requestedPlatform?: string;
   appOverride?: ValidatedAppOverrideLike;
 }): ResolvedAppConfig {
   const workspaceApp = params.workspaceApp;
-  if (!workspaceApp?.packageName && !workspaceApp?.bundleId) {
+  const workspaceWeb = params.workspaceWeb;
+  if (!workspaceApp?.packageName && !workspaceApp?.bundleId && !workspaceWeb?.baseUrl) {
     throw new Error(
-      '.finalrun/config.yaml must define app.packageName and/or app.bundleId. App config is required for FinalRun runs.',
+      '.finalrun/config.yaml must define app.packageName, app.bundleId, and/or web.baseUrl. Target config is required for FinalRun runs.',
     );
   }
 
   const effectiveApp = params.environmentApp ?? workspaceApp;
+  const effectiveWeb = params.environmentWeb ?? workspaceWeb;
 
   const platform = resolveSelectedPlatform({
     requestedPlatform: params.requestedPlatform,
     inferredPlatform: params.appOverride?.inferredPlatform,
     app: effectiveApp,
+    web: effectiveWeb,
   });
 
   if (platform === PLATFORM_ANDROID) {
-    if (!effectiveApp.packageName) {
+    if (!effectiveApp?.packageName) {
       throw new Error(
         'No app config found for platform "android". Add app.packageName to .finalrun/config.yaml or choose a different --platform.',
       );
@@ -88,14 +123,34 @@ export function resolveAppConfig(params: {
       platform,
       identifier: effectiveApp.packageName,
       identifierKind: 'packageName' as const,
-      name: effectiveApp.name,
+      name: effectiveApp?.name,
       sourceEnvName: params.environmentApp ? params.envName : undefined,
     };
     validateResolvedOverrideMatch(params.appOverride, resolved);
     return resolved;
   }
 
-  if (!effectiveApp.bundleId) {
+  if (platform === PLATFORM_WEB) {
+    if (!effectiveWeb?.baseUrl) {
+      throw new Error(
+        'No web config found for platform "web". Add web.baseUrl to .finalrun/config.yaml or choose a different --platform.',
+      );
+    }
+    const resolved = {
+      platform,
+      identifier: effectiveWeb.baseUrl,
+      identifierKind: 'url' as const,
+      name: effectiveApp?.name,
+      sourceEnvName:
+        params.environmentApp || params.environmentWeb ? params.envName : undefined,
+      browser: effectiveWeb.browser,
+      viewport: effectiveWeb.viewport,
+    };
+    validateResolvedOverrideMatch(params.appOverride, resolved);
+    return resolved;
+  }
+
+  if (!effectiveApp?.bundleId) {
     throw new Error(
       'No app config found for platform "ios". Add app.bundleId to .finalrun/config.yaml or choose a different --platform.',
     );
@@ -104,7 +159,7 @@ export function resolveAppConfig(params: {
     platform,
     identifier: effectiveApp.bundleId,
     identifierKind: 'bundleId' as const,
-    name: effectiveApp.name,
+    name: effectiveApp?.name,
     sourceEnvName: params.environmentApp ? params.envName : undefined,
   };
   validateResolvedOverrideMatch(params.appOverride, resolved);
@@ -112,9 +167,14 @@ export function resolveAppConfig(params: {
 }
 
 export function formatResolvedAppSummary(app: ResolvedAppConfig): string {
-  return app.platform === PLATFORM_ANDROID
-    ? `Using Android package: ${app.identifier}`
-    : `Using iOS bundle ID: ${app.identifier}`;
+  if (app.platform === PLATFORM_ANDROID) {
+    return `Using Android package: ${app.identifier}`;
+  }
+  if (app.platform === PLATFORM_IOS) {
+    return `Using iOS bundle ID: ${app.identifier}`;
+  }
+  const browserSuffix = app.browser ? ` in ${app.browser}` : '';
+  return `Using web target: ${app.identifier}${browserSuffix}`;
 }
 
 export async function resolveAppOverrideIdentifier(
@@ -130,7 +190,8 @@ export async function resolveAppOverrideIdentifier(
 function resolveSelectedPlatform(params: {
   requestedPlatform?: string;
   inferredPlatform?: string;
-  app: AppConfig;
+  app: AppConfig | undefined;
+  web?: WebConfig;
 }): SupportedPlatform {
   const requestedPlatform = normalizePlatform(
     params.requestedPlatform,
@@ -162,8 +223,9 @@ function resolveSelectedPlatform(params: {
   }
 
   const configuredPlatforms = [
-    params.app.packageName ? PLATFORM_ANDROID : null,
-    params.app.bundleId ? PLATFORM_IOS : null,
+    params.app?.packageName ? PLATFORM_ANDROID : null,
+    params.app?.bundleId ? PLATFORM_IOS : null,
+    params.web?.baseUrl ? PLATFORM_WEB : null,
   ].filter((platform): platform is SupportedPlatform => platform !== null);
 
   if (configuredPlatforms.length === 1) {
@@ -171,7 +233,7 @@ function resolveSelectedPlatform(params: {
   }
 
   throw new Error(
-    'Both Android and iOS app identifiers are configured. Pass --platform android or --platform ios.',
+    'Multiple targets are configured. Pass --platform android, --platform ios, or --platform web.',
   );
 }
 
@@ -207,6 +269,10 @@ function validateResolvedOverrideMatch(
     );
   }
 
+  if (resolvedApp.platform === PLATFORM_WEB) {
+    throw new Error('App overrides are not supported for platform "web".');
+  }
+
   throw new Error(
     `Configured iOS bundle ID is "${resolvedApp.identifier}", but the override app resolved to "${appOverride.resolvedIdentifier}".`,
   );
@@ -221,15 +287,19 @@ function normalizePlatform(
     if (options?.allowUndefined) {
       return undefined;
     }
-    throw new Error(`${label} must be android or ios.`);
+    throw new Error(`${label} must be android, ios, or web.`);
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === PLATFORM_ANDROID || normalized === PLATFORM_IOS) {
+  if (
+    normalized === PLATFORM_ANDROID ||
+    normalized === PLATFORM_IOS ||
+    normalized === PLATFORM_WEB
+  ) {
     return normalized;
   }
 
-  throw new Error(`${label} must be android or ios.`);
+  throw new Error(`${label} must be android, ios, or web.`);
 }
 
 async function resolveAndroidPackageName(appPath: string): Promise<string> {
@@ -445,4 +515,69 @@ function readOptionalTrimmedString(
   }
 
   return normalizedValue;
+}
+
+function readRequiredTrimmedString(value: unknown, label: string): string {
+  const normalizedValue = readOptionalTrimmedString(value, label);
+  if (!normalizedValue) {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  return normalizedValue;
+}
+
+function readOptionalBrowser(
+  value: unknown,
+  label: string,
+): 'chromium' | 'firefox' | 'webkit' | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a string.`);
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  if (
+    normalizedValue === 'chromium' ||
+    normalizedValue === 'firefox' ||
+    normalizedValue === 'webkit'
+  ) {
+    return normalizedValue;
+  }
+
+  throw new Error(`${label} must be chromium, firefox, or webkit.`);
+}
+
+function readOptionalViewport(
+  value: unknown,
+  label: string,
+): { width: number; height: number } | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  assertPlainObject(value, label);
+  assertAllowedKeys(value, WEB_VIEWPORT_TOP_LEVEL_KEYS, label);
+  return {
+    width: readPositiveInteger(value['width'], `${label} width`),
+    height: readPositiveInteger(value['height'], `${label} height`),
+  };
+}
+
+function readPositiveInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+  return value;
+}
+
+function assertValidUrl(value: string, label: string): void {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('unsupported protocol');
+    }
+  } catch {
+    throw new Error(`${label} must be a valid http or https URL.`);
+  }
 }

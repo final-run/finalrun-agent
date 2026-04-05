@@ -114,7 +114,7 @@ async function assertNoRunArtifacts(cwd: string): Promise<void> {
 test('selectExecutionPlatform requires an explicit platform when Android and iOS devices are both available', () => {
   assert.throws(
     () => selectExecutionPlatform([createDevice('android'), createDevice('ios')]),
-    /Choose --platform android or --platform ios/,
+    /Choose --platform android, --platform ios, or --platform web/,
   );
 });
 

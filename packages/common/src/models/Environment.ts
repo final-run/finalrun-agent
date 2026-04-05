@@ -6,8 +6,20 @@ export interface AppConfig {
   bundleId?: string;
 }
 
+export interface WebViewportConfig {
+  width: number;
+  height: number;
+}
+
+export interface WebConfig {
+  baseUrl: string;
+  browser?: 'chromium' | 'firefox' | 'webkit';
+  viewport?: WebViewportConfig;
+}
+
 export interface EnvironmentConfig {
   app?: AppConfig;
+  web?: WebConfig;
   secrets: Record<string, string>;
   variables: Record<string, VariableValue>;
 }

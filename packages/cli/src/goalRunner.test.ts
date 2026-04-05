@@ -3,12 +3,14 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import {
   DeviceActionRequest,
+  type DeviceAgent,
   DeviceInfo,
   DeviceNodeResponse,
   GetAppListAction,
   LaunchAppAction,
   Logger,
   PLATFORM_ANDROID,
+  PLATFORM_WEB,
   type DeviceInventoryDiagnostic,
   type DeviceInventoryEntry,
   type DeviceInventoryReport,
@@ -579,6 +581,78 @@ test('prepareTestSession starts a selected shutdown simulator before setup', asy
   } finally {
     await session.cleanup();
   }
+});
+
+test('prepareTestSession creates a browser-backed web session without device discovery', async () => {
+  let createWebAgentCalls = 0;
+  let cleanupCalls = 0;
+  const webAgent: DeviceAgent = {
+    async setUp() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async executeAction() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    isConnected() {
+      return true;
+    },
+    getDeviceInfo() {
+      return new DeviceInfo({
+        id: null,
+        deviceUUID: 'web:firefox',
+        isAndroid: false,
+        sdkVersion: 0,
+        name: 'firefox',
+        platform: PLATFORM_WEB,
+      });
+    },
+    async closeConnection() {
+      cleanupCalls += 1;
+    },
+    killDriver() {},
+    setApiKey() {},
+    getId() {
+      return 'web:firefox';
+    },
+    listenForDeviceDisconnection() {},
+    clearListener() {},
+    async startRecording() {
+      return new DeviceNodeResponse({ success: false });
+    },
+    async stopRecording() {
+      return new DeviceNodeResponse({ success: false });
+    },
+    async recordingCleanUp() {},
+    async abortRecording() {},
+    uninstallDriver() {},
+  };
+
+  const dependencies = createDependencies({
+    onDetectDevices: () => {
+      throw new Error('Device discovery should not run for web sessions.');
+    },
+  });
+  dependencies.createWebAgent = async ({ target }: { target: { platform: string; identifier: string } }) => {
+    createWebAgentCalls += 1;
+    assert.equal(target.platform, PLATFORM_WEB);
+    assert.equal(target.identifier, 'https://example.com');
+    return webAgent;
+  };
+
+  const session = await prepareTestSession({
+    app: {
+      platform: PLATFORM_WEB,
+      identifier: 'https://example.com',
+      identifierKind: 'url',
+      browser: 'firefox',
+    },
+  }, dependencies);
+
+  assert.equal(createWebAgentCalls, 1);
+  assert.equal(session.platform, PLATFORM_WEB);
+  assert.match(session.launchSummary ?? '', /already opened web URL "https:\/\/example\.com"/);
+  await session.cleanup();
+  assert.equal(cleanupCalls, 1);
 });
 
 test('prepareTestSession reports Android app override failure after driver connection', async () => {

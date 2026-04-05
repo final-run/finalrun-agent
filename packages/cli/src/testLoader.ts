@@ -9,11 +9,11 @@ import type {
   RuntimeBindings,
   SecretReference,
 } from '@finalrun/common';
-import { readAppConfig } from './appConfig.js';
+import { readAppConfig, readWebConfig } from './appConfig.js';
 import { sanitizeId } from './workspace.js';
 import { CliEnv } from './env.js';
 
-const ENV_TOP_LEVEL_KEYS = new Set(['app', 'secrets', 'variables']);
+const ENV_TOP_LEVEL_KEYS = new Set(['app', 'web', 'secrets', 'variables']);
 const TEST_TOP_LEVEL_KEYS = new Set([
   'name',
   'description',
@@ -43,6 +43,7 @@ export async function loadEnvironmentConfig(
       envName,
       config: {
         app: undefined,
+        web: undefined,
         secrets: {},
         variables: {},
       },
@@ -70,6 +71,7 @@ export async function loadEnvironmentConfig(
     envPath,
     config: {
       app: readAppConfig(parsed['app'], `${envPath} app`),
+      web: readWebConfig(parsed['web'], `${envPath} web`),
       secrets: Object.fromEntries(
         secrets.references.map((entry) => [entry.key, `\${${entry.envVar}}`]),
       ),

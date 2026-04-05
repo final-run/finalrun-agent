@@ -198,6 +198,7 @@ export class ReportWriter {
       snapshotYamlPath: envSnapshotYamlPath,
       snapshotJsonPath: envSnapshotJsonPath,
       app: params.environment.config.app,
+      web: params.environment.config.web,
       variables: params.environment.config.variables,
       secretReferences: params.environment.secretReferences,
     };
@@ -205,6 +206,7 @@ export class ReportWriter {
       path.join(this._runDir, envSnapshotYamlPath),
       YAML.stringify({
         app: params.environment.config.app,
+        web: params.environment.config.web,
         secrets: params.environment.config.secrets,
         variables: params.environment.config.variables,
       }),

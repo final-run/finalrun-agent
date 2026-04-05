@@ -5,10 +5,12 @@ import * as path from 'node:path';
 import {
   PLATFORM_ANDROID,
   PLATFORM_IOS,
+  PLATFORM_WEB,
   type AppConfig,
+  type WebConfig,
 } from '@finalrun/common';
 import YAML from 'yaml';
-import { readAppConfig } from './appConfig.js';
+import { readAppConfig, readWebConfig } from './appConfig.js';
 import { resolveFinalRunRootDir } from './runtimePaths.js';
 import { promptForWorkspaceSelection, type WorkspaceSelectionIO } from './workspacePicker.js';
 
@@ -31,6 +33,7 @@ export interface WorkspaceConfig {
   env?: string;
   model?: string;
   app?: AppConfig;
+  web?: WebConfig;
 }
 
 export interface ResolvedEnvironmentFile {
@@ -57,7 +60,7 @@ export interface RegisteredWorkspaceEntry {
   metadataPath: string;
 }
 
-const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app']);
+const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app', 'web']);
 const WORKSPACE_HASH_LENGTH = 16;
 
 export async function resolveWorkspace(
@@ -297,6 +300,10 @@ export async function validateAppOverride(
     };
   }
 
+  if (platform === PLATFORM_WEB) {
+    throw new Error('App overrides are not supported for --platform web.');
+  }
+
   throw new Error('Unsupported --app override. Expected an Android .apk or iOS simulator .app.');
 }
 
@@ -421,6 +428,7 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
       allowEmpty: true,
     }),
     app: readAppConfig(parsed['app'], `${configPath} app`),
+    web: readWebConfig(parsed['web'], `${configPath} web`),
   };
 }
 

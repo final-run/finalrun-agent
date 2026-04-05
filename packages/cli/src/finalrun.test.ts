@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
-import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
+import { PLATFORM_ANDROID, PLATFORM_IOS, PLATFORM_WEB } from '@finalrun/common';
 import { runDoctorCommand } from './doctorRunner.js';
 import { resolveWorkspace } from './workspace.js';
 
@@ -136,9 +136,11 @@ function assertNoRunOutput(result: ReturnType<typeof runCli>): void {
 }
 
 function createDoctorDependencies(params: {
-  requestedPlatforms?: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS>;
+  requestedPlatforms?: Array<
+    typeof PLATFORM_ANDROID | typeof PLATFORM_IOS | typeof PLATFORM_WEB
+  >;
   reportChecks: Array<{
-    platform: 'android' | 'ios' | 'common';
+    platform: 'android' | 'ios' | 'web' | 'common';
     status: 'ok' | 'error' | 'warning';
     id: string;
     title: string;
@@ -153,7 +155,9 @@ function createDoctorDependencies(params: {
       getPlatform: () => params.hostPlatform ?? 'darwin',
     },
     async runHostPreflight(options: {
-      requestedPlatforms: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS>;
+      requestedPlatforms: Array<
+        typeof PLATFORM_ANDROID | typeof PLATFORM_IOS | typeof PLATFORM_WEB
+      >;
     }) {
       return {
         requestedPlatforms: params.requestedPlatforms ?? options.requestedPlatforms,
@@ -327,7 +331,9 @@ test('runDoctorCommand defaults to both platforms on mac and prints warnings sep
     printed += chunk.toString();
   });
 
-  const observedPlatforms: Array<typeof PLATFORM_ANDROID | typeof PLATFORM_IOS> = [];
+  const observedPlatforms: Array<
+    typeof PLATFORM_ANDROID | typeof PLATFORM_IOS | typeof PLATFORM_WEB
+  > = [];
   const result = await runDoctorCommand(
     {
       output,
@@ -366,7 +372,7 @@ test('runDoctorCommand defaults to both platforms on mac and prints warnings sep
   );
 
   assert.equal(result.success, true);
-  assert.deepEqual(observedPlatforms, [PLATFORM_ANDROID, PLATFORM_IOS]);
+  assert.deepEqual(observedPlatforms, [PLATFORM_ANDROID, PLATFORM_IOS, PLATFORM_WEB]);
   assert.match(printed, /Ready/);
   assert.match(printed, /Setup Required\n- None/);
   assert.match(printed, /Warnings/);

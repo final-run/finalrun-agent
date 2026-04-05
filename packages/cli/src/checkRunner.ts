@@ -100,7 +100,9 @@ export async function runCheck(
     : undefined;
   const resolvedApp = resolveAppConfig({
     workspaceApp: workspaceConfig.app,
+    workspaceWeb: workspaceConfig.web,
     environmentApp: environment.config.app,
+    environmentWeb: environment.config.web,
     envName: environment.envName,
     requestedPlatform: options.platform,
     appOverride,

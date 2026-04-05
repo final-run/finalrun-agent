@@ -1,7 +1,7 @@
 import type { TestResult, TestStatus, FirstFailure } from './TestResult.js';
 import type { TestDefinition } from './TestDefinition.js';
 import type { SuiteDefinition } from './SuiteDefinition.js';
-import type { AppConfig, VariableValue, SecretReference } from './Environment.js';
+import type { AppConfig, VariableValue, SecretReference, WebConfig } from './Environment.js';
 
 export type RunStatus = 'success' | 'failure' | 'aborted';
 export type FailurePhase = 'validation' | 'setup' | 'execution' | 'finalization';
@@ -19,6 +19,7 @@ export interface EnvironmentRecord {
   snapshotYamlPath?: string;
   snapshotJsonPath?: string;
   app?: AppConfig;
+  web?: WebConfig;
   variables: Record<string, VariableValue>;
   secretReferences: SecretReference[];
 }
@@ -27,7 +28,7 @@ export interface RunManifestAppRecord {
   source: 'repo' | 'override' | 'config';
   label: string;
   identifier?: string;
-  identifierKind?: 'packageName' | 'bundleId';
+  identifierKind?: 'packageName' | 'bundleId' | 'url';
   name?: string;
   sourceEnvName?: string;
   overridePath?: string;

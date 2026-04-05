@@ -399,7 +399,7 @@ export function selectExecutionPlatform(
 
   if (availablePlatforms.size > 1) {
     throw new Error(
-      'Multiple platforms are available. Choose --platform android or --platform ios.',
+      'Multiple platforms are available. Choose --platform android, --platform ios, or --platform web.',
     );
   }
 
@@ -491,7 +491,7 @@ function buildAppContext(
   source: 'config';
   label: string;
   identifier: string;
-  identifierKind: 'packageName' | 'bundleId';
+  identifierKind: 'packageName' | 'bundleId' | 'url';
   name?: string;
   sourceEnvName?: string;
   overridePath?: string;

@@ -1,7 +1,7 @@
 // Port of common/model/DeviceInfo.dart
 // Only the fields used by the CLI / goal-executor
 
-import { PLATFORM_ANDROID, PLATFORM_IOS } from '../constants.js';
+import { PLATFORM_ANDROID, PLATFORM_IOS, PLATFORM_WEB } from '../constants.js';
 
 /**
  * Information about a connected device (Android or iOS).
@@ -21,6 +21,8 @@ export class DeviceInfo {
   // Dart: int sdkVersion
   readonly sdkVersion: number;
 
+  readonly platform: string | null;
+
   // Dart: String? name
   readonly name: string | null;
 
@@ -30,16 +32,21 @@ export class DeviceInfo {
     isAndroid: boolean;
     sdkVersion: number;
     name?: string | null;
+    platform?: string | null;
   }) {
     this.id = params.id;
     this.deviceUUID = params.deviceUUID;
     this.isAndroid = params.isAndroid;
     this.sdkVersion = params.sdkVersion;
     this.name = params.name ?? null;
+    this.platform = params.platform ?? null;
   }
 
   // Dart: String getPlatform()
   getPlatform(): string {
+    if (this.platform === PLATFORM_ANDROID || this.platform === PLATFORM_IOS || this.platform === PLATFORM_WEB) {
+      return this.platform;
+    }
     return this.isAndroid ? PLATFORM_ANDROID : PLATFORM_IOS;
   }
 
@@ -51,6 +58,7 @@ export class DeviceInfo {
       isAndroid: json['isAndroid'] as boolean,
       sdkVersion: json['sdkVersion'] as number,
       name: (json['name'] as string) ?? null,
+      platform: (json['platform'] as string) ?? null,
     });
   }
 
@@ -61,6 +69,7 @@ export class DeviceInfo {
       isAndroid: this.isAndroid,
       sdkVersion: this.sdkVersion,
       name: this.name,
+      platform: this.platform,
     };
   }
 }

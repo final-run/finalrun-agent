@@ -38,14 +38,14 @@ initializeCliRuntimeEnvironment();
 
 const program = new Command()
   .name('finalrun')
-  .description('AI-driven mobile app testing from the terminal')
+  .description('AI-driven app and web testing from the terminal')
   .version(resolveCliPackageVersion());
 
 program
   .command('check')
   .description('Validate the .finalrun workspace, env config, and test files')
   .option('--env <name>', 'Environment name (for example dev or staging)')
-  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--platform <platform>', 'Target platform (android, ios, or web)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
   .option('--suite <path>', 'Suite manifest under .finalrun/suites')
   .argument('[selectors...]', 'Optional YAML files, directories, or globs under .finalrun/tests/')
@@ -77,8 +77,8 @@ program
 
 program
   .command('doctor')
-  .description('Check mac host readiness for local FinalRun device runs')
-  .option('--platform <platform>', 'Target platform (android, ios, or all)')
+  .description('Check host readiness for local FinalRun runs')
+  .option('--platform <platform>', 'Target platform (android, ios, web, or all)')
   .action(async (options: DoctorCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
@@ -126,7 +126,7 @@ program
   .command('test')
   .description('Run repo-local FinalRun YAML tests from .finalrun/tests')
   .option('--env <name>', 'Environment name (for example dev or staging)')
-  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--platform <platform>', 'Target platform (android, ios, or web)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
   .option('--suite <path>', 'Suite manifest under .finalrun/suites')
   .option('--api-key <key>', 'API key for the LLM provider')
@@ -152,7 +152,7 @@ program
   .command('suite')
   .description('Run repo-local FinalRun suite manifests from .finalrun/suites')
   .option('--env <name>', 'Environment name (for example dev or staging)')
-  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--platform <platform>', 'Target platform (android, ios, or web)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
   .option('--api-key <key>', 'API key for the LLM provider')
   .option(

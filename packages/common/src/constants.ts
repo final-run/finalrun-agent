@@ -6,6 +6,7 @@
 // ============================================================================
 export const PLATFORM_ANDROID = 'android';
 export const PLATFORM_IOS = 'ios';
+export const PLATFORM_WEB = 'web';
 
 // ============================================================================
 // Action types — used by HeadlessActionExecutor to route actions

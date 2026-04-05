@@ -2,7 +2,12 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
-import { PLATFORM_ANDROID, PLATFORM_IOS, type DeviceNodeResponse } from '@finalrun/common';
+import {
+  PLATFORM_ANDROID,
+  PLATFORM_IOS,
+  PLATFORM_WEB,
+  DeviceNodeResponse,
+} from '@finalrun/common';
 import { AndroidRecordingProvider, IOSRecordingProvider } from '@finalrun/device-node';
 import { CliFilePathUtil } from './filePathUtil.js';
 
@@ -16,11 +21,13 @@ type ExecFileFn = (
 export type HostPreflightRequestedPlatform =
   | typeof PLATFORM_ANDROID
   | typeof PLATFORM_IOS
+  | typeof PLATFORM_WEB
   | 'all';
 
 export type HostPreflightCheckedPlatform =
   | typeof PLATFORM_ANDROID
-  | typeof PLATFORM_IOS;
+  | typeof PLATFORM_IOS
+  | typeof PLATFORM_WEB;
 
 export type HostPreflightPlatform =
   | HostPreflightCheckedPlatform
@@ -61,6 +68,7 @@ export interface HostPreflightDependencies {
   getPlatform(): NodeJS.Platform;
   checkAndroidRecordingAvailability(): Promise<DeviceNodeResponse>;
   checkIOSRecordingAvailability(): Promise<DeviceNodeResponse>;
+  checkWebRuntimeAvailability(): Promise<DeviceNodeResponse>;
 }
 
 export const hostPreflightDependencies: HostPreflightDependencies = {
@@ -92,6 +100,23 @@ export const hostPreflightDependencies: HostPreflightDependencies = {
     await new AndroidRecordingProvider().checkAvailability(),
   checkIOSRecordingAvailability: async () =>
     await new IOSRecordingProvider().checkAvailability(),
+  checkWebRuntimeAvailability: async () => {
+    try {
+      const { chromium } = await import('playwright');
+      const browser = await chromium.launch({ headless: true });
+      await browser.close();
+      return new DeviceNodeResponse({
+        success: true,
+        message: 'Playwright Chromium launched successfully.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new DeviceNodeResponse({
+        success: false,
+        message: `Playwright Chromium launch failed: ${message}`,
+      });
+    }
+  },
 };
 
 export interface RunHostPreflightOptions {
@@ -116,6 +141,10 @@ export async function runHostPreflight(
     checks.push(...await runIOSChecks(filePathUtil, dependencies));
   }
 
+  if (requestedPlatforms.includes(PLATFORM_WEB)) {
+    checks.push(...await runWebChecks(dependencies));
+  }
+
   return {
     requestedPlatforms,
     checks,
@@ -133,12 +162,15 @@ export function resolveDoctorRequestedPlatforms(
   if (normalized === PLATFORM_IOS) {
     return [PLATFORM_IOS];
   }
+  if (normalized === PLATFORM_WEB) {
+    return [PLATFORM_WEB];
+  }
   if (normalized === 'all') {
-    return [PLATFORM_ANDROID, PLATFORM_IOS];
+    return [PLATFORM_ANDROID, PLATFORM_IOS, PLATFORM_WEB];
   }
   return hostPlatform === 'darwin'
-    ? [PLATFORM_ANDROID, PLATFORM_IOS]
-    : [PLATFORM_ANDROID];
+    ? [PLATFORM_ANDROID, PLATFORM_IOS, PLATFORM_WEB]
+    : [PLATFORM_ANDROID, PLATFORM_WEB];
 }
 
 export function resolveTestRequestedPlatforms(
@@ -151,7 +183,10 @@ export function resolveTestRequestedPlatforms(
   if (normalized === PLATFORM_IOS) {
     return [PLATFORM_IOS];
   }
-  return [PLATFORM_ANDROID, PLATFORM_IOS];
+  if (normalized === PLATFORM_WEB) {
+    return [PLATFORM_WEB];
+  }
+  return [PLATFORM_ANDROID, PLATFORM_IOS, PLATFORM_WEB];
 }
 
 export function hasBlockingPreflightFailures(result: HostPreflightResult): boolean {
@@ -494,6 +529,21 @@ async function runIOSChecks(
   return checks;
 }
 
+async function runWebChecks(
+  dependencies: HostPreflightDependencies,
+): Promise<HostPreflightCheck[]> {
+  return [
+    await checkProviderAvailability({
+      platform: PLATFORM_WEB,
+      id: 'playwright',
+      title: 'Playwright runtime',
+      summary: 'Required for local browser automation.',
+      response: await dependencies.checkWebRuntimeAvailability(),
+      blocking: true,
+    }),
+  ];
+}
+
 async function checkProviderAvailability(params: {
   platform: HostPreflightPlatform;
   id: string;
@@ -722,6 +772,7 @@ function normalizeRequestedPlatform(
   if (
     normalized === PLATFORM_ANDROID ||
     normalized === PLATFORM_IOS ||
+    normalized === PLATFORM_WEB ||
     normalized === 'all'
   ) {
     return normalized;
@@ -745,5 +796,11 @@ function dedupePlatforms(
 }
 
 function formatPlatformLabel(platform: HostPreflightCheckedPlatform): string {
-  return platform === PLATFORM_ANDROID ? 'Android' : 'iOS';
+  if (platform === PLATFORM_ANDROID) {
+    return 'Android';
+  }
+  if (platform === PLATFORM_IOS) {
+    return 'iOS';
+  }
+  return 'Web';
 }

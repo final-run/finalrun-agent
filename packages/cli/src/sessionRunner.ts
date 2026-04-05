@@ -3,11 +3,13 @@
 import {
   AppUpload,
   DeviceActionRequest,
+  type DeviceAgent,
   DeviceInfo,
   GetAppListAction,
   LaunchAppAction,
   Logger,
   PLATFORM_ANDROID,
+  PLATFORM_WEB,
   RecordingRequest,
   type DeviceInventoryDiagnostic,
   type DeviceInventoryEntry,
@@ -21,6 +23,7 @@ import {
 } from '@finalrun/goal-executor';
 import type { TestExecutionResult } from '@finalrun/goal-executor';
 import type { ResolvedAppConfig } from './appConfig.js';
+import { createBrowserAgent } from './browserAgent.js';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
   type DeviceSelectionIO,
@@ -41,7 +44,7 @@ type GoalRunnerDeviceNode = Pick<
   | 'installIOSApp'
 >;
 
-type GoalRunnerDevice = Awaited<ReturnType<DeviceNode['setUpDevice']>>;
+type SessionAgent = DeviceAgent;
 
 type GoalRunnerRenderer = Pick<
   TerminalRenderer,
@@ -82,6 +85,7 @@ export interface GoalSessionConfig {
 export interface TestSessionDeps {
   createFilePathUtil(): CliFilePathUtil;
   getDeviceNode(): GoalRunnerDeviceNode;
+  createWebAgent?(params: { target: ResolvedAppConfig }): Promise<SessionAgent>;
   createSelectionIO(): DeviceSelectionIO;
   createAiAgent(params: ConstructorParameters<typeof AIAgent>[0]): AIAgent;
   createExecutor(
@@ -91,8 +95,8 @@ export interface TestSessionDeps {
 }
 
 export interface TestSession {
-  deviceNode: GoalRunnerDeviceNode;
-  device: GoalRunnerDevice;
+  deviceNode?: GoalRunnerDeviceNode;
+  device: SessionAgent;
   deviceInfo: DeviceInfo;
   platform: string;
   app?: ResolvedAppConfig;
@@ -117,6 +121,7 @@ export function isDevicePreparationError(error: unknown): error is DevicePrepara
 export const testSessionDeps: TestSessionDeps = {
   createFilePathUtil: () => new CliFilePathUtil(undefined, undefined, { downloadAssets: true }),
   getDeviceNode: () => DeviceNode.getInstance(),
+  createWebAgent: createBrowserAgent,
   createSelectionIO: () => ({
     input: process.stdin,
     output: process.stdout,
@@ -131,6 +136,23 @@ export async function prepareTestSession(
   config: GoalSessionConfig,
   dependencies: TestSessionDeps = testSessionDeps,
 ): Promise<TestSession> {
+  if (config.app?.platform === PLATFORM_WEB) {
+    if (!dependencies.createWebAgent) {
+      throw new Error('Web session creation is not configured.');
+    }
+    const device = await dependencies.createWebAgent({ target: config.app });
+    return {
+      device,
+      deviceInfo: device.getDeviceInfo(),
+      platform: PLATFORM_WEB,
+      app: config.app,
+      launchSummary: buildWebLaunchSummary(config.app),
+      cleanup: async () => {
+        await device.closeConnection();
+      },
+    };
+  }
+
   const filePathUtil = dependencies.createFilePathUtil();
   Logger.i('Detecting local devices...');
   const adbPath = await filePathUtil.getADBPath();
@@ -475,9 +497,36 @@ export async function runGoal(
 }
 
 async function ensureAppReady(
-  device: GoalRunnerDevice,
+  device: SessionAgent,
   app: ResolvedAppConfig,
 ): Promise<string> {
+  if (app.platform === PLATFORM_WEB) {
+    const launchResponse = await device.executeAction(
+      new DeviceActionRequest({
+        requestId: `prelaunch-launch-${app.platform}`,
+        action: new LaunchAppAction({
+          appUpload: new AppUpload({
+            id: '',
+            platform: app.platform,
+            packageName: app.identifier,
+          }),
+          allowAllPermissions: true,
+          shouldUninstallBeforeLaunch: false,
+          clearState: false,
+          stopAppBeforeLaunch: false,
+        }),
+        timeout: 30,
+      }),
+    );
+    if (!launchResponse.success) {
+      throw new Error(
+        `Failed to open ${formatAppReference(app)} before execution: ${launchResponse.message ?? 'unknown launch error'}`,
+      );
+    }
+
+    return buildWebLaunchSummary(app);
+  }
+
   const appListResponse = await device.executeAction(
     new DeviceActionRequest({
       requestId: `prelaunch-app-list-${app.platform}`,
@@ -533,9 +582,17 @@ async function ensureAppReady(
 }
 
 function formatAppReference(app: ResolvedAppConfig): string {
-  return app.platform === PLATFORM_ANDROID
-    ? `Android package "${app.identifier}"`
-    : `iOS bundle ID "${app.identifier}"`;
+  if (app.platform === PLATFORM_ANDROID) {
+    return `Android package "${app.identifier}"`;
+  }
+  if (app.platform === PLATFORM_WEB) {
+    return `web URL "${app.identifier}"`;
+  }
+  return `iOS bundle ID "${app.identifier}"`;
+}
+
+function buildWebLaunchSummary(app: ResolvedAppConfig): string {
+  return `The CLI already opened ${formatAppReference(app)} before the goal started.`;
 }
 
 function createRecordingFailureResult(params: {

@@ -99,6 +99,37 @@ test('resolveAppConfig treats env app config as a full replacement', () => {
   });
 });
 
+test('resolveAppConfig resolves web targets from workspace web config', () => {
+  const resolved = resolveAppConfig({
+    workspaceApp: {
+      name: 'Marketing Site',
+    },
+    workspaceWeb: {
+      baseUrl: 'https://example.com',
+      browser: 'firefox',
+      viewport: {
+        width: 1280,
+        height: 720,
+      },
+    },
+    envName: 'none',
+    requestedPlatform: 'web',
+  });
+
+  assert.deepEqual(resolved, {
+    platform: 'web',
+    identifier: 'https://example.com',
+    identifierKind: 'url',
+    name: 'Marketing Site',
+    sourceEnvName: undefined,
+    browser: 'firefox',
+    viewport: {
+      width: 1280,
+      height: 720,
+    },
+  });
+});
+
 test('resolveAppOverrideIdentifier falls back to ANDROID_SDK_ROOT when ANDROID_HOME has no tools', async () => {
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'finalrun-app-config-'));
   const staleSdkRoot = path.join(tempDir, 'stale-sdk');

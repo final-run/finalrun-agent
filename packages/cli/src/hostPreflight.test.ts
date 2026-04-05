@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DeviceNodeResponse, PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
+import {
+  DeviceNodeResponse,
+  PLATFORM_ANDROID,
+  PLATFORM_IOS,
+  PLATFORM_WEB,
+} from '@finalrun/common';
 import {
   formatHostPreflightReport,
   hasBlockingPreflightFailures,
@@ -35,6 +40,7 @@ function createDependencies(params?: {
   platform?: NodeJS.Platform;
   androidRecordingResponse?: DeviceNodeResponse;
   iosRecordingResponse?: DeviceNodeResponse;
+  webRuntimeResponse?: DeviceNodeResponse;
 }): HostPreflightDependencies {
   return {
     createFilePathUtil: () => params?.filePathUtil ?? createFilePathUtil(),
@@ -65,6 +71,12 @@ function createDependencies(params?: {
       return params?.iosRecordingResponse ?? new DeviceNodeResponse({
         success: true,
         message: 'xcrun simctl ready',
+      });
+    },
+    async checkWebRuntimeAvailability() {
+      return params?.webRuntimeResponse ?? new DeviceNodeResponse({
+        success: true,
+        message: 'Playwright Chromium launched successfully.',
       });
     },
   };
@@ -180,4 +192,21 @@ test('runHostPreflight only evaluates the requested platform scope', async () =>
   }));
 
   assert.equal(result.checks.some((check) => check.platform === PLATFORM_IOS), false);
+  assert.equal(result.checks.some((check) => check.platform === PLATFORM_WEB), false);
+});
+
+test('runHostPreflight checks Playwright when web is requested', async () => {
+  const result = await runHostPreflight({
+    requestedPlatforms: [PLATFORM_WEB],
+  }, createDependencies({
+    webRuntimeResponse: new DeviceNodeResponse({
+      success: true,
+      message: 'Playwright Chromium launched successfully.',
+    }),
+  }));
+
+  assert.equal(result.checks.length, 1);
+  assert.equal(result.checks[0]?.platform, PLATFORM_WEB);
+  assert.equal(result.checks[0]?.status, 'ok');
+  assert.equal(result.checks[0]?.id, 'playwright');
 });
