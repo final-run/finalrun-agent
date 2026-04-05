@@ -34,10 +34,28 @@ finalrun doctor
 1. Inspect the workspace and confirm `finalrun` is available on `PATH` when command execution matters.
 2. Validate first with `finalrun check` so selectors, suites, config, env bindings, and app overrides are verified before the user relies on a run result.
 3. Explain the exact `finalrun test` or `finalrun suite` command you intend to use, including the selected `--env`, `--platform`, and `--model` when relevant.
-4. Treat validation failures as blockers. Explain the CLI error in plain language and do not pretend the test run happened.
-5. Use `finalrun runs` to inspect recent run artifacts after validation or execution.
-6. Ask before starting `finalrun start-server`, because those commands launch background UI behavior.
-7. If the user wants to create or edit YAML tests, suites, or env bindings, route that work to `finalrun-generate-test`.
+4. **Do not gate execution on device connectivity.** Never run `adb devices`, `xcrun simctl list`, or similar commands to check whether a device is connected before running `finalrun test` or `finalrun suite`. FinalRun discovers available devices and simulators itself and prompts the user to select and boot one when needed.
+5. Treat validation failures as blockers. Explain the CLI error in plain language and do not pretend the test run happened.
+6. Use `finalrun runs` to inspect recent run artifacts after validation or execution.
+7. Ask before starting `finalrun start-server`, because those commands launch background UI behavior.
+8. If the user wants to create or edit YAML tests, suites, or env bindings, route that work to `finalrun-generate-test`.
+
+## Device Management
+
+FinalRun handles device discovery, selection, and boot internally. When `finalrun test` or `finalrun suite` runs and no device or emulator is currently connected, the CLI lists available Android AVDs or iOS simulators and lets the user choose one to boot and use immediately.
+
+**Do not pre-check device connectivity.** Never run `adb devices`, `xcrun simctl list`, `emulator -list-avds`, or any other external device-detection command to decide whether to proceed. These checks are the single most common reason agents refuse to run a test that would have succeeded.
+
+**Anti-pattern — never do this:**
+
+- Checking `adb devices` → seeing an empty list → telling the user "no device connected, cannot run"
+- Checking `xcrun simctl list` → seeing no booted simulators → refusing to execute
+- Adding a "prerequisite: boot an emulator first" step before `finalrun test`
+
+**Correct behavior:**
+
+- Run `finalrun test` or `finalrun suite` as requested. The CLI will handle the rest.
+- If the CLI itself reports a device error, relay that error. Do not anticipate it.
 
 ## Missing Workspace
 
@@ -254,6 +272,11 @@ Diagnose from the actual CLI output first. Do not guess.
   - `.apk` overrides require Android
   - `.app` overrides require iOS
   - tell the user to fix the path or `--platform` mismatch instead of ignoring it
+- No connected device or emulator
+  - this is **not a blocker** for `finalrun test` or `finalrun suite`
+  - FinalRun lists available AVDs and simulators at runtime and lets the user choose one to boot
+  - never refuse to run because `adb devices` is empty or no simulator is booted
+  - if the CLI itself reports a device error after execution, relay that error verbatim
 - Host readiness issues
   - use `finalrun doctor` as the default local environment diagnostic
 
