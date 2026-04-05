@@ -41,9 +41,6 @@
 Install the npm package globally:
 
 ```sh
-npm install -g @finalrun/finalrun-agent
-
-# update to the latest release
 npm install -g @finalrun/finalrun-agent@latest
 finalrun --version     # verify
 ```
