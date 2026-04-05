@@ -1,0 +1,6 @@
+name: wikipedia_search
+description: Verify that Wikipedia search can open the OpenAI article.
+steps:
+  - On wikipedia.org, enter "OpenAI" in the search field.
+  - Press Enter to submit the search.
+  - Verify that the article page for OpenAI is visible.

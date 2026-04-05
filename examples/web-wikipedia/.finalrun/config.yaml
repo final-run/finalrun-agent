@@ -1,0 +1,7 @@
+model: openai/gpt-4.1
+web:
+  baseUrl: https://www.wikipedia.org
+  browser: chromium
+  viewport:
+    width: 1440
+    height: 900
