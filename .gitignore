@@ -44,3 +44,17 @@ pnpm-debug.log*
 .claude/
 .codex/
 .cursor/
+
+.fab-*
+
+/.agents
+
+/.claude
+
+/.cursor
+
+/.opencode
+
+/.codex
+
+/.gemini
