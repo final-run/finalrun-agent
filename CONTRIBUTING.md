@@ -68,7 +68,7 @@ If your change touches driver setup, installation, or host checks, include the r
 
 Contributions authored with AI coding agents must follow the [Fab Kit](https://github.com/sahil87/fab-kit) workflow (intake → spec → tasks → apply → review → hydrate → ship → review-PR).
 
-Before opening a PR, the change should clear all four SRAD dimensions — Scope, Reversibility, Alternatives, and Disambiguation — reaching a **Confident** or **Certain** grade with no Unresolved dimension. Surface any remaining Tentative assumptions in the PR description so reviewers can validate them.
+Before opening a PR, the change must clear all four SRAD dimensions — Scope, Reversibility, Alternatives, and Disambiguation — and must reach a **Confident** or **Certain** grade with no Unresolved dimension; any remaining Tentative assumptions must be surfaced in the PR description.
 
 ## Pull Requests
 
