@@ -275,7 +275,12 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
           const goal =
             effectiveGoals.get(test.testId!) ??
             compileTestObjective(test, checked.environment.bindings);
-          const recordingExtension = goalSession.platform === 'android' ? '.mp4' : '.mov';
+          const recordingExtension =
+            goalSession.platform === 'android'
+              ? '.mp4'
+              : goalSession.platform === 'web'
+                ? '.webm'
+                : '.mov';
           const recordingOutputPath = path.join(
             runDir,
             'tests',

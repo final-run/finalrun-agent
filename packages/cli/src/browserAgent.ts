@@ -30,6 +30,9 @@ import {
   TapPercentAction,
   type RecordingRequest,
 } from '@finalrun/common';
+import * as fsp from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { ResolvedAppConfig } from './appConfig.js';
 import {
   chromium,
@@ -68,10 +71,24 @@ export async function createBrowserAgent(params: {
 
 class BrowserAgent implements DeviceAgent {
   private readonly _browser: Browser;
-  private readonly _context: BrowserContext;
-  private readonly _page: Page;
+  private _context: BrowserContext;
+  private _page: Page;
   private readonly _target: ResolvedAppConfig;
   private readonly _deviceInfo: DeviceInfo;
+  private readonly _grantedPermissions = new Set<string>();
+  private _geolocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  private _activeRecording?:
+    | {
+        runId: string;
+        testId: string;
+        startedAt: string;
+        outputFilePath?: string;
+        tempDir: string;
+      }
+    | undefined;
 
   constructor(params: {
     browser: Browser;
@@ -140,22 +157,117 @@ class BrowserAgent implements DeviceAgent {
   clearListener(): void {}
 
   async startRecording(_recordingRequest: RecordingRequest): Promise<DeviceNodeResponse> {
-    return new DeviceNodeResponse({
-      success: false,
-      message: 'Browser recording is not supported yet.',
-    });
+    if (this._activeRecording) {
+      return new DeviceNodeResponse({
+        success: false,
+        message: `Browser recording is already active for test ${this._activeRecording.testId}.`,
+      });
+    }
+
+    const startedAt = new Date().toISOString();
+    const tempDir = await fsp.mkdtemp(
+      path.join(os.tmpdir(), `finalrun-browser-recording-${_recordingRequest.runId}-`),
+    );
+
+    try {
+      const sessionState = await this._captureSessionState();
+      const recordingContext = await this._createContext({
+        storageState: sessionState.storageState,
+        recordVideoDir: tempDir,
+      });
+      const recordingPage = await recordingContext.newPage();
+      await this._restorePageState(recordingPage, sessionState.url);
+      await this._replaceSession(recordingContext, recordingPage);
+
+      this._activeRecording = {
+        runId: _recordingRequest.runId,
+        testId: _recordingRequest.testId,
+        startedAt,
+        outputFilePath: _recordingRequest.outputFilePath,
+        tempDir,
+      };
+
+      return new DeviceNodeResponse({
+        success: true,
+        data: { startedAt },
+      });
+    } catch (error) {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+      return new DeviceNodeResponse({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to start browser recording.',
+      });
+    }
   }
 
-  async stopRecording(_runId: string, _testId: string): Promise<DeviceNodeResponse> {
-    return new DeviceNodeResponse({
-      success: false,
-      message: 'Browser recording is not supported yet.',
-    });
+  async stopRecording(runId: string, testId: string): Promise<DeviceNodeResponse> {
+    if (!this._activeRecording) {
+      return new DeviceNodeResponse({
+        success: false,
+        message: 'No active browser recording to stop.',
+      });
+    }
+    if (this._activeRecording.runId !== runId || this._activeRecording.testId !== testId) {
+      return new DeviceNodeResponse({
+        success: false,
+        message:
+          `Active browser recording belongs to ${this._activeRecording.runId}/${this._activeRecording.testId}, ` +
+          `not ${runId}/${testId}.`,
+      });
+    }
+
+    try {
+      const filePath = await this._finalizeActiveRecording({ keepOutput: true });
+      if (!filePath) {
+        return new DeviceNodeResponse({
+          success: false,
+          message: 'Browser recording completed but no video file was produced.',
+        });
+      }
+
+      return new DeviceNodeResponse({
+        success: true,
+        data: {
+          filePath,
+          startedAt: this._activeRecording.startedAt,
+          completedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      return new DeviceNodeResponse({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to stop browser recording.',
+      });
+    } finally {
+      this._activeRecording = undefined;
+    }
   }
 
-  async recordingCleanUp(): Promise<void> {}
+  async recordingCleanUp(): Promise<void> {
+    if (!this._activeRecording) {
+      return;
+    }
+    await fsp.rm(this._activeRecording.tempDir, { recursive: true, force: true }).catch(
+      () => undefined,
+    );
+  }
 
-  async abortRecording(_runId: string, _keepOutput?: boolean): Promise<void> {}
+  async abortRecording(runId: string, keepOutput?: boolean): Promise<void> {
+    if (!this._activeRecording || this._activeRecording.runId !== runId) {
+      return;
+    }
+    try {
+      await this._finalizeActiveRecording({ keepOutput: keepOutput ?? false });
+    } finally {
+      this._activeRecording = undefined;
+    }
+  }
 
   uninstallDriver(): void {}
 
@@ -296,11 +408,13 @@ class BrowserAgent implements DeviceAgent {
   }
 
   private async _setLocation(action: SetLocationAction): Promise<DeviceNodeResponse> {
-    await this._context.grantPermissions(['geolocation']);
-    await this._context.setGeolocation({
+    this._grantedPermissions.add('geolocation');
+    this._geolocation = {
       latitude: Number(action.lat),
       longitude: Number(action.long),
-    });
+    };
+    await this._context.grantPermissions(['geolocation']);
+    await this._context.setGeolocation(this._geolocation);
     return this._success(`Geolocation set to ${action.lat}, ${action.long}`);
   }
 
@@ -475,6 +589,96 @@ class BrowserAgent implements DeviceAgent {
   private _success(message?: string): DeviceNodeResponse {
     return new DeviceNodeResponse({ success: true, message });
   }
+
+  private async _createContext(params?: {
+    storageState?: Awaited<ReturnType<BrowserContext['storageState']>>;
+    recordVideoDir?: string;
+  }): Promise<BrowserContext> {
+    const context = await this._browser.newContext({
+      viewport: this._target.viewport ?? { width: 1440, height: 900 },
+      ignoreHTTPSErrors: true,
+      storageState: params?.storageState,
+      recordVideo: params?.recordVideoDir
+        ? { dir: params.recordVideoDir }
+        : undefined,
+    });
+
+    if (this._grantedPermissions.size > 0) {
+      await context.grantPermissions(Array.from(this._grantedPermissions));
+    }
+    if (this._geolocation) {
+      await context.setGeolocation(this._geolocation);
+    }
+    return context;
+  }
+
+  private async _replaceSession(nextContext: BrowserContext, nextPage: Page): Promise<void> {
+    const previousContext = this._context;
+    this._context = nextContext;
+    this._page = nextPage;
+    await previousContext.close().catch(() => undefined);
+  }
+
+  private async _captureSessionState(): Promise<{
+    storageState: Awaited<ReturnType<BrowserContext['storageState']>>;
+    url: string;
+  }> {
+    return {
+      storageState: await this._context.storageState(),
+      url: this._page.url(),
+    };
+  }
+
+  private async _restorePageState(page: Page, url: string): Promise<void> {
+    if (!url || url === 'about:blank') {
+      return;
+    }
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+  }
+
+  private async _finalizeActiveRecording(params: {
+    keepOutput: boolean;
+  }): Promise<string | undefined> {
+    const recording = this._activeRecording;
+    if (!recording) {
+      return undefined;
+    }
+
+    const recordedContext = this._context;
+    const recordedPage = this._page;
+    const recordedVideo = recordedPage.video();
+    const sessionState = await this._captureSessionState();
+
+    const restoredContext = await this._createContext({
+      storageState: sessionState.storageState,
+    });
+    const restoredPage = await restoredContext.newPage();
+    await this._restorePageState(restoredPage, sessionState.url);
+    this._context = restoredContext;
+    this._page = restoredPage;
+
+    await recordedContext.close();
+
+    const rawVideoPath = recordedVideo ? await recordedVideo.path() : undefined;
+    if (!rawVideoPath) {
+      await fsp.rm(recording.tempDir, { recursive: true, force: true }).catch(() => undefined);
+      return undefined;
+    }
+
+    if (!params.keepOutput) {
+      await fsp.rm(recording.tempDir, { recursive: true, force: true }).catch(() => undefined);
+      return undefined;
+    }
+
+    const outputExtension = path.extname(rawVideoPath) || '.webm';
+    const requestedOutputPath = recording.outputFilePath
+      ? replaceExtension(recording.outputFilePath, outputExtension)
+      : path.join(recording.tempDir, `${recording.testId}${outputExtension}`);
+    await fsp.mkdir(path.dirname(requestedOutputPath), { recursive: true });
+    await moveFile(rawVideoPath, requestedOutputPath);
+    await fsp.rm(recording.tempDir, { recursive: true, force: true }).catch(() => undefined);
+    return requestedOutputPath;
+  }
 }
 
 function resolveBrowserType(
@@ -532,5 +736,26 @@ async function withTimeout<T>(
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
+  }
+}
+
+function replaceExtension(filePath: string, extension: string): string {
+  const existingExtension = path.extname(filePath);
+  if (!existingExtension) {
+    return `${filePath}${extension}`;
+  }
+  return `${filePath.slice(0, -existingExtension.length)}${extension}`;
+}
+
+async function moveFile(sourcePath: string, targetPath: string): Promise<void> {
+  if (sourcePath === targetPath) {
+    return;
+  }
+  try {
+    await fsp.rm(targetPath, { force: true });
+    await fsp.rename(sourcePath, targetPath);
+  } catch {
+    await fsp.copyFile(sourcePath, targetPath);
+    await fsp.rm(sourcePath, { force: true }).catch(() => undefined);
   }
 }

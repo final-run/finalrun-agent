@@ -36,6 +36,7 @@ pnpm-debug.log*
 
 # FinalRun run artifacts
 .finalrun/artifacts/
+examples/web-investor-mfapis/
 
 # OS/editor noise
 .DS_Store

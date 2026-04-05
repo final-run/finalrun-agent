@@ -92,7 +92,7 @@ function createTestSession(params?: { platform?: string; cleanup?: () => Promise
 
 function writeWorkspaceConfig(
   rootDir: string,
-  platforms: 'android' | 'ios' | 'both' = 'android',
+  platforms: 'android' | 'ios' | 'web' | 'both' = 'android',
 ): void {
   const lines = ['app:'];
   if (platforms === 'android' || platforms === 'both') {
@@ -100,6 +100,10 @@ function writeWorkspaceConfig(
   }
   if (platforms === 'ios' || platforms === 'both') {
     lines.push('  bundleId: org.wikipedia');
+  }
+  if (platforms === 'web' || platforms === 'both') {
+    lines.push('web:');
+    lines.push('  baseUrl: https://example.com');
   }
   fs.mkdirSync(path.join(rootDir, '.finalrun'), { recursive: true });
   fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), `${lines.join('\n')}\n`, 'utf-8');
@@ -811,7 +815,7 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
   }
 });
 
-test('runTests prepares one shared session for multiple tests and cleans it up once', async () => {
+test('runTests prepares one shared Android session and forwards mp4 recording output paths', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-shared-session-'));
   writeWorkspaceConfig(rootDir);
   const testsDir = path.join(rootDir, '.finalrun', 'tests');
@@ -932,6 +936,66 @@ test('runTests uses mov artifact recording output paths for iOS tests', async ()
       {
         testId: 'login',
         outputFilePath: path.join(result.runDir, 'tests', 'login', 'recording.mov'),
+        keepPartialOnFailure: true,
+      },
+    ]);
+  } finally {
+    testRunnerDependencies.prepareTestSession = originalPrepareTestSession;
+    testRunnerDependencies.executeTestOnSession = originalExecuteTestOnSession;
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runTests uses webm artifact recording output paths for web tests', async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-web-recording-output-'));
+  writeWorkspaceConfig(rootDir, 'web');
+  const testsDir = path.join(rootDir, '.finalrun', 'tests');
+  const envDir = path.join(rootDir, '.finalrun', 'env');
+  fs.mkdirSync(testsDir, { recursive: true });
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.writeFileSync(path.join(envDir, 'dev.yaml'), '{}\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(testsDir, 'login.yaml'),
+    ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
+    'utf-8',
+  );
+
+  const originalPrepareTestSession = testRunnerDependencies.prepareTestSession;
+  const originalExecuteTestOnSession = testRunnerDependencies.executeTestOnSession;
+  const recordingConfigs: Array<{
+    testId: string;
+    outputFilePath?: string;
+    keepPartialOnFailure?: boolean;
+  }> = [];
+
+  testRunnerDependencies.prepareTestSession = async () => createTestSession({ platform: 'web' });
+  testRunnerDependencies.executeTestOnSession = async (_session, config) => {
+    if (config.recording) {
+      recordingConfigs.push({
+        testId: config.recording.testId,
+        outputFilePath: config.recording.outputFilePath,
+        keepPartialOnFailure: config.recording.keepPartialOnFailure,
+      });
+    }
+    return createTestExecutionResult({ platform: 'web' });
+  };
+
+  try {
+    const result = await runTests({
+      envName: 'dev',
+      cwd: rootDir,
+      selectors: ['login.yaml'],
+      platform: 'web',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4o',
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(recordingConfigs, [
+      {
+        testId: 'login',
+        outputFilePath: path.join(result.runDir, 'tests', 'login', 'recording.webm'),
         keepPartialOnFailure: true,
       },
     ]);

@@ -31,6 +31,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.mov': 'video/quicktime',
   '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.yaml': 'text/yaml; charset=utf-8',
   '.yml': 'text/yaml; charset=utf-8',
 };

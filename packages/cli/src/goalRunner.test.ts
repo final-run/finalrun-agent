@@ -38,6 +38,19 @@ function createAndroidTestExecutionResult(): TestExecutionResult {
   };
 }
 
+function createWebTestExecutionResult(): TestExecutionResult {
+  return {
+    success: true,
+    status: 'success',
+    message: 'Goal completed successfully.',
+    platform: PLATFORM_WEB,
+    startedAt: '2026-03-20T10:00:00.000Z',
+    completedAt: '2026-03-20T10:00:05.000Z',
+    steps: [],
+    totalIterations: 1,
+  };
+}
+
 function createAndroidDeviceInfo(): DeviceInfo {
   return new DeviceInfo({
     id: 'emulator-5554',
@@ -305,6 +318,102 @@ test('runGoal starts and stops Android recording when recording is configured', 
   assert.equal(recordingRequests[0]?.testId, 'case-1');
   assert.equal(recordingRequests[0]?.outputFilePath, undefined);
   assert.equal(result.recording?.filePath, '/tmp/run_case.mp4');
+});
+
+test('runGoal attaches a web recording when the browser agent returns one', async () => {
+  const recordingRequests: RecordingRequest[] = [];
+  const stopCalls: Array<[string, string]> = [];
+  const webAgent: DeviceAgent = {
+    async setUp() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    async executeAction() {
+      return new DeviceNodeResponse({ success: true });
+    },
+    isConnected() {
+      return true;
+    },
+    getDeviceInfo() {
+      return new DeviceInfo({
+        id: null,
+        deviceUUID: 'web:chromium',
+        isAndroid: false,
+        sdkVersion: 0,
+        name: 'chromium',
+        platform: PLATFORM_WEB,
+      });
+    },
+    async closeConnection() {},
+    killDriver() {},
+    setApiKey() {},
+    getId() {
+      return 'web:chromium';
+    },
+    listenForDeviceDisconnection() {},
+    clearListener() {},
+    async startRecording(request: RecordingRequest) {
+      return await dependenciesStartRecording(request);
+    },
+    async stopRecording(runId: string, testId: string) {
+      return await dependenciesStopRecording(runId, testId);
+    },
+    async recordingCleanUp() {},
+    async abortRecording() {},
+    uninstallDriver() {},
+  };
+  const dependenciesStartRecording = async (request: RecordingRequest) => {
+    recordingRequests.push(request);
+    return new DeviceNodeResponse({
+      success: true,
+      data: {
+        startedAt: '2026-03-20T10:00:00.000Z',
+      },
+    });
+  };
+  const dependenciesStopRecording = async (runId: string, testId: string) => {
+    stopCalls.push([runId, testId]);
+    return new DeviceNodeResponse({
+      success: true,
+      data: {
+        filePath: '/tmp/run_case.webm',
+        startedAt: '2026-03-20T10:00:00.000Z',
+        completedAt: '2026-03-20T10:00:05.000Z',
+      },
+    });
+  };
+  const dependencies = createDependencies({
+    async executeGoal() {
+      return createWebTestExecutionResult();
+    },
+  });
+  dependencies.createWebAgent = async () => webAgent;
+
+  const result = await runGoal(
+    {
+      goal: 'Log in',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4.1',
+      platform: PLATFORM_WEB,
+      app: {
+        platform: PLATFORM_WEB,
+        identifier: 'https://example.com',
+        identifierKind: 'url',
+      },
+      recording: {
+        runId: 'run-1',
+        testId: 'case-1',
+      },
+    },
+    dependencies,
+  );
+
+  assert.equal(result.success, true);
+  assert.deepEqual(stopCalls, [['run-1', 'case-1']]);
+  assert.equal(recordingRequests.length, 1);
+  assert.equal(recordingRequests[0]?.runId, 'run-1');
+  assert.equal(recordingRequests[0]?.testId, 'case-1');
+  assert.equal(result.recording?.filePath, '/tmp/run_case.webm');
 });
 
 test('executeTestOnSession forwards explicit recording output paths and preserves partials when execution aborts', async () => {
