@@ -417,7 +417,7 @@ export class AIAgent {
         return {
           google: {
             thinkingConfig: {
-              thinkingLevel: phase === 'planner' ? 'medium' : 'minimal',
+              thinkingLevel: phase === 'planner' ? 'high' : 'medium',
               includeThoughts: false,
             },
           } satisfies GoogleLanguageModelOptions,

@@ -256,6 +256,7 @@ Perform these:-
     - For ex. if it's an action i.e. tap, long_press to locate the UI element. Be precise about position, container, and visual characteristics.
     - When two elements look identical, describe the target by **position, container, or visual context**. Example: "Tap on the search input field at the top" or "Tap on the 'Search' text in the results list below."
     - **Visibility Gate:** If your target came from hierarchy, visually confirm in the screenshot that the target's bounds region is not covered by keyboard, popup, or overlay. If covered → find another way.
+    - **Screenshot-First Validation (mandatory for tap/long_press/input_text):** Before committing to any target, you MUST visually locate it in the `post_action_screenshot`. If you identified the target from the hierarchy, look at the screenshot region where its bounds would place it — can you actually **see** the element there? If the region is blank, shows different content, or falls under system chrome (status bar, navigation bar), the element is a ghost. **Do NOT emit an action targeting an element you cannot see.** Instead, look for a visible alternative or `swipe` to reveal it.
 
 ## Notes
 - Use `status` Failure only when the anomaly persists after the stabilization attempts.
@@ -274,6 +275,7 @@ Perform these:-
 * **Post-Action Hierarchy (`{post_action_hierarchy}`):** Structured metadata of UI elements on the current screen. Use this hierarchy **ONLY when there is ambiguity in selecting an icon or image** from the screenshot. It contains a filtered set of nodes (icons and elements with content descriptions).
 Each element includes `index`, `class`, `contentDesc`, `bounds`.
 **Do NOT include hierarchy fields (index, contentDesc) in your `act` text.** Keep `act` as a visual/positional description.
+**CRITICAL — Hierarchy Ghost Elements:** The hierarchy may contain elements that are **not visually present** on screen. Elements can exist in the view tree while being invisible — hidden behind the status bar, rendered with zero opacity, belonging to an off-screen fragment, or obscured by system chrome. **NEVER assume an element exists solely because it appears in the hierarchy.** Before targeting any element found in the hierarchy, you MUST visually locate it in the `post_action_screenshot`. If you cannot see it in the screenshot → it does not exist for your purposes. Find a visible alternative or report it absent.
 * **Platform (`{platform}`):** The device OS (`Android` or `IOS`).
 
 **Tip for Verification Steps:**
