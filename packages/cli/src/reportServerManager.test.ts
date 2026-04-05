@@ -99,6 +99,11 @@ async function findAvailablePort(): Promise<number> {
   });
 }
 
+function isPortBindingPermissionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /EPERM|operation not permitted/i.test(message);
+}
+
 test('resolveHealthyWorkspaceReportServer returns the persisted state for a healthy workspace server', async () => {
   const workspace = createWorkspace();
   const originalFetchJson = reportServerManagerDependencies.fetchJson;
@@ -178,16 +183,26 @@ test('startOrReuseWorkspaceReportServer reuses an already healthy server without
   }
 });
 
-test('startOrReuseWorkspaceReportServer starts a new server, waits for health, and persists .server.json', async () => {
+test('startOrReuseWorkspaceReportServer starts a new server, waits for health, and persists .server.json', async (t) => {
   const workspace = createWorkspace();
   const originalFetchJson = reportServerManagerDependencies.fetchJson;
   const originalSpawnProcess = reportServerManagerDependencies.spawnProcess;
   const originalSleep = reportServerManagerDependencies.sleep;
   let healthChecks = 0;
   let spawnArgs: string[] = [];
-  const requestedPort = await findAvailablePort();
+  let requestedPort: number;
 
   try {
+    try {
+      requestedPort = await findAvailablePort();
+    } catch (error) {
+      if (isPortBindingPermissionError(error)) {
+        t.skip('Loopback port binding is not available in this environment.');
+        return;
+      }
+      throw error;
+    }
+
     reportServerManagerDependencies.spawnProcess = (_command, args) => {
       spawnArgs = args;
       return createSpawnedChild(7331);

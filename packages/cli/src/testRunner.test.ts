@@ -21,6 +21,20 @@ import {
 } from './testRunner.js';
 import { resolveWorkspace } from './workspace.js';
 
+const TEST_RUNNER_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-test-runner-home-'));
+const PREVIOUS_HOME = process.env.HOME;
+
+process.env.HOME = TEST_RUNNER_HOME;
+
+test.after(async () => {
+  if (PREVIOUS_HOME === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = PREVIOUS_HOME;
+  }
+  await fsp.rm(TEST_RUNNER_HOME, { recursive: true, force: true });
+});
+
 function createDevice(platform: string): { getPlatform(): string } {
   return {
     getPlatform() {
@@ -1319,7 +1333,7 @@ test('runTests requires base app config even when the env file contains an app o
         assert.equal(error.phase, 'validation');
         assert.match(
           error.message,
-          /\.finalrun\/config\.yaml must define app\.packageName and\/or app\.bundleId/,
+          /\.finalrun\/config\.yaml must define app\.packageName, app\.bundleId, and\/or web\.baseUrl/,
         );
         return true;
       },
@@ -1683,7 +1697,7 @@ test('runTests requires --platform when both Android and iOS apps are configured
         assert.equal(error.phase, 'validation');
         assert.match(
           error.message,
-          /Both Android and iOS app identifiers are configured\. Pass --platform android or --platform ios\./,
+          /Multiple targets are configured\. Pass --platform android, --platform ios, or --platform web\./,
         );
         return true;
       },

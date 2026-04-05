@@ -189,6 +189,11 @@ async function findAvailablePort(): Promise<number> {
   });
 }
 
+function isPortBindingPermissionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /EPERM|operation not permitted/i.test(message);
+}
+
 test('finalrun check works without --env when dev.yaml exists', async () => {
   const rootDir = createTempWorkspace({
     envFiles: {
@@ -1258,13 +1263,23 @@ test('finalrun runs reports a clear error for an invalid explicit workspace path
   }
 });
 
-test('finalrun start-server, server-status, and stop-server work from outside a workspace with --workspace', async () => {
+test('finalrun start-server, server-status, and stop-server work from outside a workspace with --workspace', async (t) => {
   const workspaceRoot = createTempWorkspace();
   const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-server-outside-'));
-  const port = await findAvailablePort();
   const workspace = await resolveWorkspaceForHome(workspaceRoot, CLI_TEST_HOME);
+  let port: number;
 
   try {
+    try {
+      port = await findAvailablePort();
+    } catch (error) {
+      if (isPortBindingPermissionError(error)) {
+        t.skip('Loopback port binding is not available in this environment.');
+        return;
+      }
+      throw error;
+    }
+
     const startResult = runCli(
       ['start-server', '--workspace', workspaceRoot, '--port', String(port)],
       outsideDir,
@@ -1272,6 +1287,13 @@ test('finalrun start-server, server-status, and stop-server work from outside a 
         FINALRUN_DISABLE_BROWSER: '1',
       },
     );
+    if (
+      startResult.status !== 0 &&
+      isPortBindingPermissionError(`${startResult.stderr}\n${startResult.stdout}`)
+    ) {
+      t.skip('Loopback port binding is not available in this environment.');
+      return;
+    }
     assert.equal(startResult.status, 0);
     assert.match(startResult.stdout, new RegExp(`http://127\\.0\\.0\\.1:${port}`));
 

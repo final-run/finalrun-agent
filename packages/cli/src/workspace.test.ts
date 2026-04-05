@@ -16,6 +16,20 @@ import {
   validateAppOverride,
 } from './workspace.js';
 
+const WORKSPACE_TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-workspace-home-'));
+const PREVIOUS_HOME = process.env.HOME;
+
+process.env.HOME = WORKSPACE_TEST_HOME;
+
+test.after(async () => {
+  if (PREVIOUS_HOME === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = PREVIOUS_HOME;
+  }
+  await fsp.rm(WORKSPACE_TEST_HOME, { recursive: true, force: true });
+});
+
 function createTempWorkspace(params?: {
   envYaml?: string;
   envFiles?: Record<string, string>;
@@ -368,7 +382,7 @@ test('runCheck requires app config in .finalrun/config.yaml', async () => {
   try {
     await assert.rejects(
       () => runCheck({ cwd: rootDir }),
-      /\.finalrun\/config\.yaml must define app\.packageName and\/or app\.bundleId/,
+      /\.finalrun\/config\.yaml must define app\.packageName, app\.bundleId, and\/or web\.baseUrl/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -405,7 +419,7 @@ test('runCheck fails when both Android and iOS apps are configured without an ex
   try {
     await assert.rejects(
       () => runCheck({ cwd: rootDir }),
-      /Both Android and iOS app identifiers are configured\. Pass --platform android or --platform ios\./,
+      /Multiple targets are configured\. Pass --platform android, --platform ios, or --platform web\./,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -581,7 +595,7 @@ test('runCheck rejects unknown keys in .finalrun/config.yaml', async () => {
   try {
     await assert.rejects(
       () => runCheck({ cwd: rootDir }),
-      /config\.yaml contains unsupported key "region"\. Supported keys: env, model, app\./,
+      /config\.yaml contains unsupported key "region"\. Supported keys: env, model, app, web\./,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
