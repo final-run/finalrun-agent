@@ -64,6 +64,12 @@ npm run build:drivers:ios
 
 If your change touches driver setup, installation, or host checks, include the relevant native build and local verification steps in your PR notes.
 
+## Agent-Assisted Contributions
+
+Contributions authored with AI coding agents must follow the [Fab Kit](https://github.com/sahil87/fab-kit) workflow (intake → spec → tasks → apply → review → hydrate → ship → review-PR).
+
+Before opening a PR, the change should clear all four SRAD dimensions — Scope, Reversibility, Alternatives, and Disambiguation — reaching a **Confident** or **Certain** grade with no Unresolved dimension. Surface any remaining Tentative assumptions in the PR description so reviewers can validate them.
+
 ## Pull Requests
 
 - Keep PRs focused and scoped to a single change or release task.
