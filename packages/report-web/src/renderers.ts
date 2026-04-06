@@ -2010,7 +2010,7 @@ function buildTestListItems(manifest: ReportRunManifest): ReportTestListItem[] {
         bindingReferences: test.bindingReferences,
         setup: [],
         steps: [],
-        assertions: [],
+        expected_state: [],
       },
       executed: test,
       status: classifyTestStatus(test),

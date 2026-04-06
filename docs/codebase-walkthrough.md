@@ -95,15 +95,15 @@ steps:                              # Main test actions (required, non-empty)
   - Enter ${secrets.password} in the password field
   - Tap the Login button
 
-assertions:                         # Expected outcomes (verified after steps)
+expected_state:                     # Expected outcomes (verified after steps)
   - Dashboard screen is visible
   - Welcome message shows user name
 ```
 
-**Why this structure?** The `setup → steps → assertions` pattern mirrors how QA engineers think:
+**Why this structure?** The `setup → steps → expected_state` pattern mirrors how QA engineers think:
 - **setup**: Get the app into the right state
 - **steps**: Perform the user actions being tested
-- **assertions**: Verify the outcome
+- **expected_state**: Verify the outcome
 
 `${secrets.email}` and `${variables.language}` are **binding references** — they get resolved from the environment config at runtime. This lets the same test run against different environments.
 
@@ -902,7 +902,7 @@ This is the most important artifact. It contains everything about a run.
         },
         "setup": ["Launch the app"],
         "steps": ["Enter ${secrets.email} in email field", "Tap Login"],
-        "assertions": ["Dashboard is visible"]
+        "expected_state": ["Dashboard is visible"]
       }
     ],
     "cli": {

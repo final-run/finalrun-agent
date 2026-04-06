@@ -32,7 +32,7 @@ interface TestSnapshotState {
     description?: string;
     setup: string[];
     steps: string[];
-    assertions: string[];
+    expected_state: string[];
   };
   bindingReferences: BindingReference;
   snapshotYamlPath: string;
@@ -257,7 +257,7 @@ export class ReportWriter {
         description: test.description,
         setup: test.setup,
         steps: test.steps,
-        assertions: test.assertions,
+        expected_state: test.expected_state,
       };
       const workspaceSourcePath = test.sourcePath
         ? toDisplayPath(params.workspaceRoot, test.sourcePath)
@@ -301,7 +301,7 @@ export class ReportWriter {
         bindingReferences,
         setup: test.setup,
         steps: test.steps,
-        assertions: test.assertions,
+        expected_state: test.expected_state,
       });
     }
 
@@ -642,13 +642,13 @@ export class ReportWriter {
             description: snapshot.authored.description,
             setup: snapshot.authored.setup,
             steps: snapshot.authored.steps,
-            assertions: snapshot.authored.assertions,
+            expected_state: snapshot.authored.expected_state,
           }
         : {
             name: test.testName,
             setup: [],
             steps: [],
-            assertions: [],
+            expected_state: [],
           },
       effectiveGoal: snapshot?.effectiveGoal ?? '',
       counts: {
@@ -707,7 +707,7 @@ function collectBindingReferences(test: TestDefinition): BindingReference {
     test.description,
     ...test.setup,
     ...test.steps,
-    ...test.assertions,
+    ...test.expected_state,
   ].filter((value): value is string => typeof value === 'string');
 
   for (const value of values) {

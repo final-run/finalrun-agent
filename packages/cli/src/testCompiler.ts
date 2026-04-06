@@ -31,11 +31,11 @@ export function compileTestObjective(
     ),
   );
 
-  if (test.assertions.length > 0) {
+  if (test.expected_state.length > 0) {
     sections.push(
       formatBulletSection(
-        'Assertions',
-        test.assertions.map((item) => interpolateVariables(item, bindings)),
+        'Expected State (verify after all steps are complete)',
+        test.expected_state.map((item) => interpolateVariables(item, bindings)),
       ),
     );
   }

@@ -163,7 +163,7 @@ function createSuiteRunManifest(): RunManifest {
           },
           setup: [],
           steps: ['Tap login'],
-          assertions: ['Dashboard is visible'],
+          expected_state: ['Dashboard is visible'],
         },
         {
           testId: 'checkout',
@@ -178,7 +178,7 @@ function createSuiteRunManifest(): RunManifest {
           },
           setup: [],
           steps: ['Open checkout'],
-          assertions: ['Checkout page is visible'],
+          expected_state: ['Checkout page is visible'],
         },
       ],
       cli: {
@@ -254,7 +254,7 @@ function createSuiteRunManifest(): RunManifest {
           name: 'valid login',
           setup: [],
           steps: ['Tap login'],
-          assertions: ['Dashboard is visible'],
+          expected_state: ['Dashboard is visible'],
         },
         effectiveGoal: 'Tap login',
         counts: {
@@ -346,14 +346,14 @@ function withSnapshotYamlText(manifest: RunManifest): RunManifest {
       'name: valid login',
       'steps:',
       '  - Tap login',
-      'assertions:',
+      'expected_state:',
       '  - Dashboard is visible',
     ].join('\n')],
     ['checkout', [
       'name: guest checkout',
       'steps:',
       '  - Open checkout',
-      'assertions:',
+      'expected_state:',
       '  - Checkout page is visible',
     ].join('\n')],
   ]);

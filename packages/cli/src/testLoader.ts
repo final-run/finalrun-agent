@@ -19,7 +19,7 @@ const TEST_TOP_LEVEL_KEYS = new Set([
   'description',
   'setup',
   'steps',
-  'assertions',
+  'expected_state',
 ]);
 const SUITE_TOP_LEVEL_KEYS = new Set(['name', 'description', 'tests']);
 const SECRET_PLACEHOLDER = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
@@ -96,7 +96,7 @@ export async function loadTest(
   const description = readOptionalString(parsed['description'], `${filePath} description`);
   const setup = readStringArray(parsed['setup'], `${filePath} setup`);
   const steps = readStringArray(parsed['steps'], `${filePath} steps`);
-  const assertions = readStringArray(parsed['assertions'], `${filePath} assertions`);
+  const expected_state = readStringArray(parsed['expected_state'], `${filePath} expected_state`);
 
   if (steps.length === 0) {
     throw new Error(`Test file ${filePath} must define a non-empty steps array.`);
@@ -108,7 +108,7 @@ export async function loadTest(
     description,
     setup,
     steps,
-    assertions,
+    expected_state,
     sourcePath: filePath,
     relativePath,
     testId: sanitizeId(relativePath),
@@ -153,7 +153,7 @@ export function validateTestBindings(
     test.description,
     ...test.setup,
     ...test.steps,
-    ...test.assertions,
+    ...test.expected_state,
   ].filter((value): value is string => typeof value === 'string');
 
   for (const value of values) {

@@ -5,7 +5,7 @@ export interface TestDefinition {
   description?: string;
   setup: string[];
   steps: string[];
-  assertions: string[];
+  expected_state: string[];
 
   // --- Populated after loading from disk ---
   /** Absolute path to the source YAML file. Set by the test loader. */

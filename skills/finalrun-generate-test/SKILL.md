@@ -129,6 +129,28 @@ Once approved, generate or update tests and suites using strict FinalRun YAML sy
 
 ## Technical Specifications: Testing
 
+## Allowed Action Vocabulary
+
+Every step you write in `setup` or `steps` must map to one of the actions the runtime agent can perform. Use the natural-language verbs below; do not invent actions outside this list.
+
+| Verb to use in steps | Runtime action | Needs a UI target? |
+|---|---|---|
+| **Tap** / Click | `tap` | Yes (which element) |
+| **Long press** | `long_press` | Yes |
+| **Type** / Enter text | `input_text` | Yes (which field) |
+| **Swipe** / Scroll | `swipe` | Yes (area + direction) |
+| **Navigate back** | `navigate_back` | No |
+| **Go to home screen** | `navigate_home` | No |
+| **Rotate device** | `rotate` | No |
+| **Hide keyboard** | `hide_keyboard` | No |
+| **Launch app** | `launch_app` | Yes (which app) |
+| **Open URL / deeplink** | `deep_link` | No |
+| **Set location** | `set_location` | Yes (coordinates) |
+| **Wait** | `wait` | No |
+| **Verify** / Check | Visual assertion (agent inspects the screen) | Yes (what to verify) |
+
+> **"Verify" steps** are the one exception that is not a device action. They instruct the agent to visually inspect the current screen and confirm a condition. Use them in `setup` to confirm cleanup worked, and in `steps` to confirm intermediate states during the flow.
+
 ## Setup & Idempotent Cleanup Rule
 
 > [!IMPORTANT]
@@ -144,11 +166,25 @@ Once approved, generate or update tests and suites using strict FinalRun YAML sy
 | **Enabling** a toggle | **Disable** the toggle first if it's already on. |
 | **Moving/Reordering** | Ensure the list is in a **known default state** first. |
 
+**Setup steps MUST include verification.** After performing a cleanup action, add a "Verify" step to confirm the cleanup succeeded before proceeding. If the cleanup fails, the test should fail early in setup rather than produce a misleading failure in the main steps.
+
+**Example — setup with verification:**
+```yaml
+setup:
+  - "Launch the app"
+  - "Navigate to the Shopping List screen"
+  - "If the item 'Milk' is visible, swipe left on it and tap Delete"
+  - "Verify that 'Milk' is no longer visible on the Shopping List screen"
+```
+
 ## Writing Good Test Flows
 - **Be specific**: Reference actual UI labels and recognizable controls (e.g. Settings screen, Settings button).
 - **Name visible controls clearly**: Use plain language like Save button and Home screen.
 - **Variables**: Use syntax like "Type `${variables.search_term}` into the search field".
 - **Idempotency is the priority**: Assume the test has already run and failed once; the setup flow must fix it.
+- **Only use allowed actions**: Every step must map to an action from the **Allowed Action Vocabulary** table above. Do not write steps that require actions outside that list.
+- **Verify intermediate states in steps**: When a multi-step flow depends on an earlier action succeeding (e.g. a form submission before checking a confirmation screen), add a "Verify" step between them to confirm the intermediate state.
+- **Reserve `expected_state` for the final screen**: Do not put intermediate checks in `expected_state`. Use inline "Verify" steps in `steps` for intermediate validation instead.
 
 ### Strict YAML Formatting
 - Use exact 2-space indentation depth.
@@ -166,16 +202,18 @@ setup:
   - <string>
 steps:
   - <string>
-assertions:
+expected_state:
   - <string>
 ```
+
+**The three-phase execution model:** At runtime, the agent executes the test in three sequential phases: **Setup** (prepare clean state) → **Steps** (perform the user journey) → **Expected State** (verify the final screen). The test succeeds only if all three phases pass.
 
 **Instruction Guidelines for the specific keys:**
 - **name:** Short unique identifier.
 - **description:** High level summary of the user journey.
-- **setup:** Actionable steps to guarantee a clean starting state, honoring the Idempotency rule. Ensure you navigate and perform the cleanup visually if prior failure polluted the app state.
-- **steps:** Chronological list of user interactions. Name the target screen, button, field, or control directly in each step.
-- **assertions:** Specific boolean checks of UI labels, elements, or visibility to prove test passage.
+- **setup:** Actionable steps to guarantee a clean starting state, honoring the Idempotency rule. Include "Verify" steps after cleanup actions to confirm the app is in the expected starting state. Each step must use an action from the Allowed Action Vocabulary.
+- **steps:** Chronological list of user interactions. Name the target screen, button, field, or control directly in each step. Each step must use an action from the Allowed Action Vocabulary. You may include inline "Verify" steps to confirm intermediate UI states during the flow.
+- **expected_state:** The expected state of the UI **after all steps are complete**. These are **not actions to perform** — they are boolean conditions the agent checks against the final screen. If all conditions are met the test passes; if any fail the test fails. Do not include navigation or interaction instructions here.
 
 ### Suite File Template (`.finalrun/suites/<feature-name>.yaml`)
 Suites group test specs logically. If you define tests for a feature, there must be a suite encompassing them. Every suite file must strictly follow this exact schema:
