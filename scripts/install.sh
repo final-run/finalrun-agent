@@ -206,25 +206,13 @@ run_doctor() {
 # Step 5: Install FinalRun skills (interactive, last step)
 # ---------------------------------------------------------------------------
 
-prompt_install_skills() {
+install_skills() {
   echo ""
   info "── FinalRun Skills ──"
   echo ""
-  info "FinalRun skills add test generation and execution capabilities"
-  info "to Claude Code, Codex, and other tools that support skills."
-  echo ""
-
-  prompt "Would you like to install FinalRun skills? (Y/n): "
-  case "$REPLY" in
-    [nN]|[nN][oO])
-      warn "Skipped. You can install later with: npx skills add final-run/finalrun-agent"
-      ;;
-    *)
-      info "Installing FinalRun skills..."
-      npx skills add final-run/finalrun-agent
-      ok "FinalRun skills installed."
-      ;;
-  esac
+  info "Installing FinalRun skills..."
+  npx skills add final-run/finalrun-agent
+  ok "FinalRun skills installed."
 }
 
 # ---------------------------------------------------------------------------
@@ -299,8 +287,8 @@ main() {
     fi
   fi
 
-  # Step 5: Skills (interactive, last)
-  prompt_install_skills
+  # Step 5: Skills (last)
+  install_skills
 
   echo ""
 }
