@@ -40,7 +40,11 @@ install_node() {
   export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     info "  Installing nvm..."
-    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    if command -v curl &>/dev/null; then
+      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    else
+      wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    fi
   fi
 
   # shellcheck source=/dev/null
@@ -139,6 +143,7 @@ setup_android() {
   else
     fail "scrcpy not found and Homebrew is not available."
     info "  Please install Homebrew (https://brew.sh) then run: brew install scrcpy"
+    return 1
   fi
 
   return 0
@@ -184,6 +189,7 @@ setup_ios() {
     fail "applesimutils not found and Homebrew is not available."
     info "  Please install Homebrew (https://brew.sh) then run:"
     info "    brew tap wix/brew && brew install applesimutils"
+    return 1
   fi
 
   return 0
