@@ -281,7 +281,10 @@ The section labeled **"Expected State (verify after all steps are complete):"** 
 - `output` is REQUIRED and should be at top most level. `action` MUST be a sibling of `thought` and `remember` inside `output`. Never return `action_type` at the top level. Responses must be JSON only, no prose/markdown.
 
 Perform these:-
-1. **Completion check**: If all Steps have been executed and every Expected State condition is met on screen, return `status` Success immediately. Follow `<test_execution_phases>` to determine which phase you are in.
+1. **Completion check** (Phase 3 is terminal — no further planning or actions):
+   - If all Steps have been executed and every Expected State condition is met on screen, return `status` **Success** immediately.
+   - If all Steps have been executed and **any** Expected State condition is NOT met, return `status` **Failure** immediately with an "Expected vs Actual" breakdown for each failing condition.
+   - In both cases, Phase 3 ends the test. Do NOT continue planning, retrying, or taking corrective actions. Follow `<test_execution_phases>` Phase 3 rules for success/failure determination.
 
 2. Please update or copy the existing plan according to the current page and progress. Please pay close attention to the historical operations. Please do not repeat the plan of completed content unless you can judge from the screen status that a subgoal is indeed not completed.
    - Compare `pre_action_screenshot` vs `post_action_screenshot`: did the last action register?
