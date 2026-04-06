@@ -6,14 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-05
+
+### Added
+
+- Top-level `finalrun start-server`, `finalrun stop-server`, and `finalrun server-status` workspace-aware server commands, plus `--workspace <path>` support for `runs`
+- Interactive workspace selection for `start-server`, `stop-server`, `server-status`, and `runs` when the current shell is outside a FinalRun workspace
+- Codebase walkthrough documentation
+
 ### Changed
 
-- Added top-level `finalrun start-server`, `finalrun stop-server`, and `finalrun server-status` workspace-aware server commands, plus `--workspace <path>` support for `runs`
-- Added interactive workspace selection for `start-server`, `stop-server`, `server-status`, and `runs` when the current shell is outside a FinalRun workspace
+- Renamed all internal spec/goal terminology to "test" across the codebase
+- Renamed agent skills for a consistent `finalrun-` prefix
+- Required repo app config and prelaunch primary app; flattened repo app config schema and hardened validation
+- Simplified app naming across CLI and executor
+- Updated planner to verify screenshot first; raised thinking level for planner to high and grounder to medium
+- Increased default max iterations
+- Clarified FinalRun prerequisites in docs
+- Expanded Slack community link text in READMEs
+
+### Fixed
+
+- Fixed TTY issues when running from Claude Code and Cursor
+- Fixed `readFirstLine` hanging on ended streams; propagated I/O errors
+- Fixed `globToRegExp` to require directory boundary before `**` segments
+- Cleaned up stale Android driver processes before setup
+- Guarded optional artifact paths instead of force-unwrapping with non-null assertions
+- Omitted YAML snapshot paths when no source file exists
 
 ### Removed
 
 - Removed `finalrun report serve` as a breaking CLI change; use `finalrun start-server` instead
+- Removed internal Dart references
 
 ## [0.1.2] - 2026-04-01
 
