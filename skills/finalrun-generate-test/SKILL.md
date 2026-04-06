@@ -170,7 +170,6 @@ Every step you write in `setup` or `steps` must map to one of the actions the ru
 **Example — setup with verification:**
 ```yaml
 setup:
-  - "Launch the app"
   - "Navigate to the Shopping List screen"
   - "If the item 'Milk' is visible, swipe left on it and tap Delete"
   - "Verify that 'Milk' is no longer visible on the Shopping List screen"
