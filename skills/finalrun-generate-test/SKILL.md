@@ -143,7 +143,6 @@ Every step you write in `setup` or `steps` must map to one of the actions the ru
 | **Go to home screen** | `navigate_home` | No |
 | **Rotate device** | `rotate` | No |
 | **Hide keyboard** | `hide_keyboard` | No |
-| **Launch app** | `launch_app` | Yes (which app) |
 | **Open URL / deeplink** | `deep_link` | No |
 | **Set location** | `set_location` | Yes (coordinates) |
 | **Wait** | `wait` | No |
