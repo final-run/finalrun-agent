@@ -18,10 +18,9 @@ ok()    { printf "${GREEN}  ✓ %s${RESET}\n" "$*"; }
 warn()  { printf "${YELLOW}  ⚠ %s${RESET}\n" "$*"; }
 fail()  { printf "${RED}  ✗ %s${RESET}\n" "$*"; }
 
-# Read from /dev/tty so prompts work even when piped via curl | bash
 prompt() {
   printf "%s" "$1"
-  read -r REPLY </dev/tty
+  read -r REPLY
 }
 
 REQUIRED_NODE_MAJOR=20
@@ -220,6 +219,10 @@ install_skills() {
 # ---------------------------------------------------------------------------
 
 main() {
+  # Reclaim stdin from the terminal so interactive prompts and child
+  # processes (npx, brew, nvm, etc.) work when piped via curl | bash.
+  exec </dev/tty
+
   echo ""
   info "FinalRun Installer"
   info "────────────────────"
