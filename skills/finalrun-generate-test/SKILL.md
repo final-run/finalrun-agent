@@ -186,6 +186,54 @@ setup:
 - **Verify intermediate states in steps**: When a multi-step flow depends on an earlier action succeeding (e.g. a form submission before checking a confirmation screen), add a "Verify" step between them to confirm the intermediate state.
 - **Reserve `expected_state` for the final screen**: Do not put intermediate checks in `expected_state`. Use inline "Verify" steps in `steps` for intermediate validation instead.
 
+### Positional Context & Verification
+
+The runtime agent enforces **positional strictness**: when a step specifies the location of a UI element, the agent treats the location as a strict assertion. If the element is not found at the described position, the test fails — the agent will not search elsewhere or substitute a different element.
+
+**Use positional context when the element's location is part of the test:**
+Include the position when the test verifies that a specific UI element exists at a specific place in the layout. Positional qualifiers include screen regions (top-left, bottom-right), container references (in the toolbar, in the header, in the navigation bar), relative positions (left of, right of, below, near the bottom), and ordinal positions (first, last).
+
+```yaml
+# Position matters — the test is verifying layout
+steps:
+  - Tap the hamburger menu icon in the top-left corner of the toolbar
+expected_state:
+  - The navigation drawer is open and visible on the left side of the screen
+```
+
+**Omit position when you only care that the element exists:**
+When the test doesn't need to assert where an element appears, keep the step generic. The agent will scroll to find it.
+
+```yaml
+# Position doesn't matter — just find and tap it
+steps:
+  - Tap the Delete button
+```
+
+**Add explicit "Verify" steps before critical actions:**
+When an action depends on a specific UI element being present (especially one with a positional qualifier), add a "Verify" step before it. This makes failures precise — a missing element is caught at verification rather than producing a confusing grounding error at the action step.
+
+```yaml
+steps:
+  - Verify the hamburger menu icon is visible in the top-left corner of the toolbar
+  - Tap the hamburger menu icon in the top-left corner of the toolbar
+```
+
+**Use positional descriptors in `expected_state` when layout matters:**
+The agent matches spatial descriptions literally. "Visible on the left side" will NOT match a bottom sheet. "At the top of the drawer" will NOT match an item at the bottom.
+
+```yaml
+# Good — spatially precise
+expected_state:
+  - The navigation drawer is open and visible on the left side of the screen
+  - The profile avatar is visible at the top of the drawer
+
+# Bad — vague, could match unintended elements
+expected_state:
+  - The navigation drawer is open
+  - The profile avatar is visible
+```
+
 ### Strict YAML Formatting
 - Use exact 2-space indentation depth.
 - Quote string values if they contain special characters (e.g., `:`, `#`).
