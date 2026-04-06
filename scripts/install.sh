@@ -18,6 +18,12 @@ ok()    { printf "${GREEN}  ✓ %s${RESET}\n" "$*"; }
 warn()  { printf "${YELLOW}  ⚠ %s${RESET}\n" "$*"; }
 fail()  { printf "${RED}  ✗ %s${RESET}\n" "$*"; }
 
+# Read from /dev/tty so prompts work even when piped via curl | bash
+prompt() {
+  printf "%s" "$1"
+  read -r REPLY </dev/tty
+}
+
 REQUIRED_NODE_MAJOR=20
 
 # ---------------------------------------------------------------------------
@@ -72,17 +78,7 @@ install_finalrun() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3: Install FinalRun skills
-# ---------------------------------------------------------------------------
-
-install_skills() {
-  info "Installing FinalRun skills..."
-  npx skills add final-run/finalrun-agent
-  ok "FinalRun skills installed."
-}
-
-# ---------------------------------------------------------------------------
-# Step 4: Platform setup
+# Step 3: Platform setup
 # ---------------------------------------------------------------------------
 
 prompt_platform() {
@@ -95,9 +91,8 @@ prompt_platform() {
   echo ""
 
   while true; do
-    printf "Enter your choice (1/2/3): "
-    read -r choice
-    case "$choice" in
+    prompt "Enter your choice (1/2/3): "
+    case "$REPLY" in
       1) PLATFORM="android"; return ;;
       2) PLATFORM="ios"; return ;;
       3) PLATFORM="both"; return ;;
@@ -107,13 +102,11 @@ prompt_platform() {
 }
 
 detect_android_studio() {
-  # Check ANDROID_HOME or ANDROID_SDK_ROOT
   local android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
   if [ -n "$android_home" ] && [ -d "$android_home" ]; then
     return 0
   fi
 
-  # Check macOS application path
   if [ -d "/Applications/Android Studio.app" ]; then
     return 0
   fi
@@ -138,7 +131,6 @@ setup_android() {
   fi
   ok "Android Studio detected."
 
-  # Install scrcpy
   if command -v scrcpy &>/dev/null; then
     ok "scrcpy already installed."
   elif command -v brew &>/dev/null; then
@@ -171,7 +163,6 @@ setup_ios() {
   fi
   ok "Xcode detected."
 
-  # Xcode Command Line Tools
   if xcrun --version &>/dev/null; then
     ok "Xcode Command Line Tools already installed."
   else
@@ -182,7 +173,6 @@ setup_ios() {
     info "  Note: Installation may continue in the background. Re-run this script when done."
   fi
 
-  # applesimutils (requires wix/brew tap)
   if command -v applesimutils &>/dev/null; then
     ok "applesimutils already installed."
   elif command -v brew &>/dev/null; then
@@ -201,7 +191,7 @@ setup_ios() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 5: Verify with doctor
+# Step 4: Verify with doctor
 # ---------------------------------------------------------------------------
 
 run_doctor() {
@@ -210,6 +200,31 @@ run_doctor() {
   info "── Verifying Setup ──"
   echo ""
   finalrun doctor --platform "$doctor_platform" || true
+}
+
+# ---------------------------------------------------------------------------
+# Step 5: Install FinalRun skills (interactive, last step)
+# ---------------------------------------------------------------------------
+
+prompt_install_skills() {
+  echo ""
+  info "── FinalRun Skills ──"
+  echo ""
+  info "FinalRun skills add test generation and execution capabilities"
+  info "to Claude Code, Codex, and other tools that support skills."
+  echo ""
+
+  prompt "Would you like to install FinalRun skills? (Y/n): "
+  case "$REPLY" in
+    [nN]|[nN][oO])
+      warn "Skipped. You can install later with: npx skills add final-run/finalrun-agent"
+      ;;
+    *)
+      info "Installing FinalRun skills..."
+      npx skills add final-run/finalrun-agent
+      ok "FinalRun skills installed."
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -242,11 +257,7 @@ main() {
   fi
   ok "npx available."
 
-  # Step 3: Skills
-  echo ""
-  install_skills
-
-  # Step 4: Platform setup
+  # Step 3: Platform setup
   prompt_platform
 
   android_ok=true
@@ -260,7 +271,7 @@ main() {
     setup_ios || ios_ok=false
   fi
 
-  # Step 5: Doctor verification
+  # Step 4: Doctor verification
   if [ "$PLATFORM" = "both" ]; then
     run_doctor all
   elif [ "$PLATFORM" = "android" ] && [ "$android_ok" = true ]; then
@@ -287,6 +298,10 @@ main() {
       warn "iOS: Install Xcode first, then re-run this script."
     fi
   fi
+
+  # Step 5: Skills (interactive, last)
+  prompt_install_skills
+
   echo ""
 }
 
