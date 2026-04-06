@@ -294,6 +294,10 @@ main() {
   install_skills
 
   echo ""
+
+  # Close stdin and exit cleanly so the script doesn't hang
+  exec <&-
+  exit 0
 }
 
 main
