@@ -1,0 +1,5 @@
+.claude/**
+!.claude/worktrees/
+!.claude/worktrees/**
+.env
+.env.*
