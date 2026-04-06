@@ -35,11 +35,76 @@ You are an expert QA Automation Engineer. Generate FinalRun YAML artifacts with 
 - If the identifier differs by environment, keep the default app identity in `.finalrun/config.yaml` and replace it with a full env-specific `app` block under `.finalrun/env/<env>.yaml`.
 ## Workflow Steps
 
-### Step 1 — Deep Dive & Analysis
-Read the user's request. Read relevant application source code to thoroughly understand the user-facing functionality, UI elements, and validation points that need to be tested.
+### Step 1 — Deep Feature Search
 
-### Step 1A — Infer app identity (name, bundle ID, package name) from the repo
-Inspect the code base files and infer them when possible. take decision on whether the repo of for android, ios or cross-platform. If you find multiple identifiers, propose the best candidate and ask the user to confirm which one is correct. If the repo structure makes it clear that different environments use different app identifiers, propose the inferred values for each env and ask the user to confirm.
+Before generating any tests you **must** systematically explore the codebase to discover every conditional UI path the feature can take. A surface-level read of one or two files is not enough — most features render different screens or elements depending on user state, permissions, feature flags, or platform. Skipping this step leads to tests that only cover the happy path.
+
+Execute sub-steps 1A through 1D in order. **Do not proceed to Step 2 until the Scenario Tree (1D) is complete.**
+
+#### Step 1A — Feature Discovery (broad search)
+
+Cast a wide net to find **all** files related to the feature. Do not stop at the first match.
+
+1. **Glob** for filenames matching the feature keyword and common synonyms. For example, if the user says "onboarding", search for `*onboarding*`, `*welcome*`, `*walkthrough*`, `*intro*`, `*first-run*`, `*signup-flow*`, and similar.
+2. **Grep** the feature keyword in navigation and routing files to find how the feature is wired into the app's screen graph.
+3. **Grep** the feature keyword in state management files (stores, reducers, contexts, providers, view-models) to find what state drives the feature.
+4. Use **Semantic Search** when you are unsure where relevant logic lives (e.g., "Where does the app decide which onboarding flow to show?").
+
+**Output:** a **file manifest** — a flat list of every file that participates in this feature. List it explicitly before moving on.
+
+#### Step 1B — Component / Screen Tree Walk
+
+Read each file in the manifest and trace the dependency tree:
+
+1. For each screen or component, list the child components it imports or renders.
+2. For each navigation point, list where it can navigate and under what conditions.
+3. Identify the **flow graph** — the sequence of screens the user moves through, including branches. State it plainly, e.g. "Onboarding has 5 screens; Screen 2 branches based on user type; Screen 4 is conditionally skipped when notifications are denied."
+
+#### Step 1C — Conditional Path Extraction
+
+For every file in the manifest, answer the questions in the **Conditional Path Checklist** below. Extract every condition that causes a **different user-visible experience**. Ignore conditions that only affect business logic with no UI impact.
+
+**Conditional Path Checklist:**
+
+| Category | What to look for |
+|---|---|
+| **Rendering conditions** | Ternary operators, `&&` guards, `if/else` or `switch` blocks that render different UI; dynamic component selection based on a variable or config value. |
+| **Feature flags / remote config** | Checks against a feature-flag service, remote config, or experiment framework that toggle UI on or off. |
+| **User properties** | Checks on role, subscription tier, `isNewUser`, `hasCompletedOnboarding`, account age, or any user attribute that changes what is shown. |
+| **Permissions** | Camera, notifications, location, contacts — UI that differs when permission is granted vs denied vs undetermined. |
+| **A/B tests / experiments** | Variant assignments that swap components, copy, or entire flows. |
+| **Platform checks** | `Platform.OS`, `#if os(iOS)`, or build-flavor logic that produces different UI on iOS vs Android. |
+| **Navigation guards** | Route guards, interceptors, or conditional `navigate()` / `push()` / `replace()` calls that redirect certain users. |
+| **Skip logic** | Conditions that bypass one or more screens in a multi-step flow. |
+| **Error states** | Network failure, server error, or timeout screens the user may see. |
+| **Empty states** | "No data yet" or "Get started" screens shown when a list or resource is empty. |
+| **Loading states** | Skeleton screens, spinners, or placeholder UI shown during data fetches (test only if the loading state is a distinct, designed screen). |
+
+#### Step 1D — Scenario Tree (required gate artifact)
+
+Synthesize your findings into a **Scenario Tree**. This artifact is mandatory — you may not proceed to test planning without it.
+
+Format:
+
+```
+Feature: [feature name]
+Entry condition: [when/how the user enters this feature]
+
+Scenario 1: [short descriptive name]
+  Path: Screen A -> Screen B -> Screen C -> …
+  Conditions: [what must be true for this path]
+
+Scenario 2: [short descriptive name]
+  Path: Screen A -> Screen B (variant) -> Screen D -> …
+  Conditions: [what must be true for this path]
+
+…
+```
+
+Each scenario represents a distinct user-visible experience through the feature. Every scenario will map to one or more test specs. Present this tree to the user in Step 5 for confirmation before writing any YAML.
+
+### Step 2 — Infer app identity (name, bundle ID, package name) from the repo
+Inspect the code base files and infer them when possible. Take a decision on whether the repo is for Android, iOS, or cross-platform. If you find multiple identifiers, propose the best candidate and ask the user to confirm which one is correct. If the repo structure makes it clear that different environments use different app identifiers, propose the inferred values for each env and ask the user to confirm.
 
 - **Inference rules:**
   - If one identifier is clearly the repo default, write it to `.finalrun/config.yaml`.
@@ -51,7 +116,7 @@ Inspect the code base files and infer them when possible. take decision on wheth
   - Do **not** silently overwrite an existing `.finalrun/config.yaml` app block. Show the proposed change first.
   - Ask the user only when multiple app modules/targets are plausible or the identifiers cannot be resolved confidently.
 
-### Step 2 — Environment profiles (required when tests use `${variables.*}` or `${secrets.*}`, or when app identity differs by environment)
+### Step 3 — Environment profiles (required when tests use `${variables.*}` or `${secrets.*}`, or when app identity differs by environment)
 - **Inspect:** Read `.finalrun/config.yaml` and `.finalrun/env/*.yaml` if present so you reuse the existing app config and binding keys.
 - **Scaffold:** If the folder is missing or empty, create the env files the user needs (ask which names: `dev`, `staging`, `prod`, …) only when the tests need env-specific bindings or env-specific app overrides.
 - **App setup:**
@@ -92,7 +157,7 @@ app:
   bundleId: com.example.app.staging
 ```
 
-### Step 3 — Planning & Folder Discovery
+### Step 4 — Planning & Folder Discovery
 Before creating any test code, you **must** look into the existing test directories to avoid duplicates and adhere to feature-based grouping.
 1. Inspect the `.finalrun/tests/` directory. Tests are grouped into sub-folders matching feature names (e.g., `.finalrun/tests/<feature-name>/`).
 2. Search for a feature folder relevant to the current request.
@@ -104,8 +169,9 @@ Before creating any test code, you **must** look into the existing test director
 
 3. Repeat a similar process for test suites under `.finalrun/suites/`. Suite files should match the feature folder conceptually, typically `.finalrun/suites/<feature-name>.yaml`. Update an existing suite to include the new test(s) or create a new suite if none exists.
 
-### Step 4 — Propose Plan & Review
+### Step 5 — Propose Plan & Review
 Present the proposed testing modifications to the user for validation.
+- **Scenario tree:** Present the full Scenario Tree from Step 1D. The user confirms which scenarios to generate tests for — they may prune edge cases, flag missing paths, or re-prioritize. Each proposed test file must map back to a specific scenario.
 - State explicitly if you are UPDATING or CREATING files.
 - List the exact target paths you intend to touch.
 - Detail the **Setup & Idempotent Cleanup** strategy (as described below) you intend to use.
@@ -116,11 +182,11 @@ Present the proposed testing modifications to the user for validation.
 > [!CAUTION]  
 > **Do NOT write final test/suite `.yaml` until the user explicitly approves the proposed plan and answers your questions.**
 
-### Step 5 — Generate FinalRun artifacts
+### Step 6 — Generate FinalRun artifacts
 Once approved, generate or update tests and suites using strict FinalRun YAML syntax.
 - **Variable and secret declarations:** Whenever the tests reference `${variables.*}` or `${secrets.*}`, create or update the corresponding `.finalrun/env/*.yaml` files in the same change set (per user choice: all env files or a subset).
 
-### Step 6 — Validation
+### Step 7 — Validation
 **Source of truth:** run **`finalrun check`** (with `--suite` or the right selectors and `--env` when multiple env files exist). That command validates the workspace, resolves bindings, and surfaces missing env vars or unknown keys.
 - Do not rely on ad-hoc greps alone for binding correctness; use `finalrun check` outcomes as the acceptance bar.
 - For the full verify-and-fix loop after edits, follow **Next steps** at the end of this skill.
@@ -277,7 +343,7 @@ After creating or updating test specs, suite manifests, and (when needed) env fi
 
 1. **Run `finalrun check`** on the same scope you changed. Use **`--suite <path>`** under `.finalrun/suites` when validating a suite, **or** pass **positional selectors** (YAML paths, directories, or globs under `.finalrun/tests/`). Pass **`--env <name>`** when the workspace has multiple `.finalrun/env/*.yaml` files and the CLI requires a choice, or when validating a specific named profile.
 2. **If `finalrun check` fails,** treat the command output as the source of truth. Typical fixes: missing or mistyped **`variables.*`** / **`secrets.*`** in `.finalrun/env/<env>.yaml` (one file per environment name, e.g. `dev.yaml`, not named after a shell variable), references in specs that do not match declared keys, or required **`secrets.*`** values not exported in the shell/CI environment (placeholders in YAML must stay as `"${SHELL_ENV_VAR}"`; never commit plaintext secrets).
-3. **Apply this skill’s rules** when editing env files: follow **Variables & secrets** and **Step 2 — Environment bindings** (reuse keys, add placeholders for secrets, align keys across env files if the user wants consistency).
+3. **Apply this skill’s rules** when editing env files: follow **Variables & secrets** and **Step 3 — Environment profiles** (reuse keys, add placeholders for secrets, align keys across env files if the user wants consistency).
 4. **Re-run `finalrun check`** until it succeeds. If errors point at spec structure or paths, fix those YAML files and check again.
 
 If `finalrun` is not on `PATH`, resolve the install or invoke it by absolute path before relying on check output.
