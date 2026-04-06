@@ -270,6 +270,74 @@ export function formatStepTraceSummary(stepTrace: StepTrace): string {
   return `[trace step=${stepTrace.step}] ${parts.join(' ')}`;
 }
 
+const BLUE = '\x1b[34m';
+const MAGENTA = '\x1b[35m';
+const YELLOW = '\x1b[33m';
+const GREEN = '\x1b[32m';
+const RED = '\x1b[31m';
+const RESET = '\x1b[0m';
+
+export function formatPlannerReasoning(params: {
+  step: number;
+  thought?: { plan?: string; think?: string; act?: string };
+  action: string;
+  reason: string;
+}): string {
+  const lines: string[] = [
+    `[step ${params.step}] ${BLUE}Planner${RESET} → ${params.action}`,
+  ];
+
+  if (params.thought?.plan) {
+    lines.push(`  Plan: ${params.thought.plan}`);
+  }
+  if (params.thought?.think) {
+    lines.push(`  ${BLUE}Think${RESET}: ${params.thought.think}`);
+  }
+
+  if (!params.thought) {
+    lines.push(`  Reason: ${params.reason}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatGrounderRequest(params: {
+  step: number;
+  feature: string;
+  act: string;
+}): string {
+  return `[step ${params.step}] ${YELLOW}Grounding${RESET} → feature=${params.feature} act="${params.act}"`;
+}
+
+export function formatGrounderResult(params: {
+  step: number;
+  output: Record<string, unknown>;
+  bounds?: [number, number, number, number] | null;
+}): string {
+  const { output } = params;
+
+  if (output['isError']) {
+    return `[step ${params.step}] ${RED}Grounded${RESET} → ${RED}error: ${output['reason'] ?? 'unknown'}${RESET}`;
+  }
+
+  if (output['needsVisualGrounding']) {
+    return `[step ${params.step}] ${YELLOW}Grounded${RESET} → needsVisualGrounding`;
+  }
+
+  if (typeof output['index'] === 'number') {
+    const boundsStr = params.bounds
+      ? ` bounds=[${params.bounds.join(',')}]`
+      : '';
+    return `[step ${params.step}] ${GREEN}Grounded${RESET} → index=${output['index']}${boundsStr} reason="${output['reason'] ?? ''}"`;
+  }
+
+  if (typeof output['x'] === 'number' && typeof output['y'] === 'number') {
+    return `[step ${params.step}] ${GREEN}Grounded${RESET} → x=${output['x']} y=${output['y']}`;
+  }
+
+  return `[step ${params.step}] ${GREEN}Grounded${RESET} → ${JSON.stringify(output)}`;
+}
+
 function formatDetail(detail: string | undefined): string {
   if (!detail) {
     return '';
