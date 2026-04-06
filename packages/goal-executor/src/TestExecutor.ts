@@ -385,7 +385,7 @@ export class TestExecutor {
       const reason = plannerResponse.reason;
       const naturalLanguageAction = plannerResponse.thought?.act ?? reason;
 
-      Logger.i(`[${iteration}/${maxIterations}] Action: ${action} — ${reason}`);
+      Logger.i(`[${iteration}/${maxIterations}] \x1b[35mAction\x1b[0m: ${action} — ${reason}`);
 
       stepTrace.setAction(action);
       remember = plannerResponse.remember;
