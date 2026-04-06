@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-06
+
+### Added
+
+- Three-phase test execution model with `expected_state` (renamed from assertions)
+- `.worktreeinclude` for auto-copying `.claude` and env files into worktrees
+- Scaffolded `fab-kit` workspace
+
+### Changed
+
+- Updated planner prompts to handle popups and allowed recovery states
+- Updated planner and skills with positional strictness rule
+- Improved logging for better visibility across the executor
+- Updated completion check logic
+- Simplified README install blocks to a single `@latest` command
+- Required Fab Kit workflow for agent-assisted PRs in contributing docs
+- Tightened SRAD gate wording to mandatory in contributing docs
+
+### Removed
+
+- Removed openspec workspace
+
 ## [0.1.3] - 2026-04-05
 
 ### Added
