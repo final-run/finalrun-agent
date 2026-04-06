@@ -331,7 +331,7 @@ async function writeRunManifest(
         },
         setup: [],
         steps: [],
-        assertions: [],
+        expected_state: [],
       })),
       cli: {
         command: params.target.type === 'suite'
