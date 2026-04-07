@@ -321,17 +321,6 @@ async function runAndroidChecks(
     dependencies,
   }));
 
-  checks.push(await checkCommandOnPath({
-    platform: PLATFORM_ANDROID,
-    id: 'avdmanager',
-    title: 'avdmanager',
-    summary: 'Used to enrich Android Virtual Device metadata.',
-    detailWhenMissing: 'avdmanager was not found in PATH.',
-    smokeArgs: ['list', 'avd'],
-    blocking: false,
-    dependencies,
-  }));
-
   return checks;
 }
 
