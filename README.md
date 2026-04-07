@@ -65,17 +65,11 @@ The installer checks for Node.js (installs via nvm if missing), installs the `fi
 - A built app binary (`.apk` for Android, `.app` for iOS) to test against
 
 **Android:**
-```sh
-# macOS
-brew install android-platform-tools scrcpy
-# Also need: emulator on PATH (from Android Studio)
-```
+- [Android Studio](https://developer.android.com/studio) (provides `adb`, `emulator`, and SDK tools)
+- `scrcpy` — install via `brew install scrcpy` (macOS) or see [scrcpy docs](https://github.com/Genymobile/scrcpy)
 
 **iOS (macOS only):**
-```sh
-# Xcode command line tools (usually already installed)
-xcode-select --install
-```
+- [Xcode](https://developer.apple.com/xcode/) with Command Line Tools (`xcode-select --install`)
 
 Run `finalrun doctor` to verify your host is ready:
 
