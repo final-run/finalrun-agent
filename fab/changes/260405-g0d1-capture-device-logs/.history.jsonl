@@ -17,3 +17,6 @@
 {"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"tasks","ts":"2026-04-06T00:26:50Z"}
 {"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"apply","ts":"2026-04-06T00:30:49Z"}
 {"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"review","ts":"2026-04-06T00:44:07Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"hydrate","ts":"2026-04-06T00:50:57Z"}
+{"event":"review","result":"passed","ts":"2026-04-06T00:50:57Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"ship","ts":"2026-04-06T00:53:16Z"}

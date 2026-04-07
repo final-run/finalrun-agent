@@ -133,6 +133,8 @@ export class GrpcDriverSetup {
       commonDriverActions,
       simctlClient: this._simctlClient,
       deviceId: prepared.deviceId,
+      driverProcess: prepared.driverProcess,
+      restartDriver: prepared.restartDriver,
     });
   }
 

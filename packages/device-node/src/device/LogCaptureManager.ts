@@ -18,6 +18,7 @@ export interface LogCaptureSessionStartParams {
   runId: string;
   testId: string;
   platform: string;
+  appIdentifier?: string;
 }
 
 export interface LogCaptureStopOptions {
@@ -113,6 +114,7 @@ export class LogCaptureManager implements DeviceLogCaptureController {
       const providerResult = await provider.startLogCapture({
         deviceId: params.deviceId,
         outputFilePath: filePath,
+        appIdentifier: params.appIdentifier,
       });
 
       if (!providerResult.response.success) {

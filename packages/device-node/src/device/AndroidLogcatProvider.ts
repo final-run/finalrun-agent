@@ -39,6 +39,7 @@ export class AndroidLogcatProvider implements LogCaptureProvider {
   async startLogCapture(params: {
     deviceId: string;
     outputFilePath: string;
+    appIdentifier?: string;
   }): Promise<{ process: ChildProcess; response: DeviceNodeResponse }> {
     try {
       // Clear the logcat ring buffer before capture
@@ -49,6 +50,32 @@ export class AndroidLogcatProvider implements LogCaptureProvider {
 
       const writeStream = fs.createWriteStream(params.outputFilePath);
       const args = ['-s', params.deviceId, 'logcat', '-v', 'threadtime'];
+
+      if (params.appIdentifier) {
+        try {
+          const { stdout } = await this._execFileFn('adb', [
+            '-s', params.deviceId, 'shell', 'pidof', params.appIdentifier,
+          ]);
+          const pids = String(stdout).trim().split(/\s+/).filter(Boolean);
+          for (const pid of pids) {
+            args.push('--pid', pid);
+          }
+          if (pids.length > 0) {
+            Logger.i(
+              `AndroidLogcatProvider: Filtering by PID(s) ${pids.join(', ')} for package ${params.appIdentifier}`,
+            );
+          } else {
+            Logger.w(
+              `AndroidLogcatProvider: pidof returned no PIDs for ${params.appIdentifier}, capturing all logs`,
+            );
+          }
+        } catch {
+          Logger.w(
+            `AndroidLogcatProvider: Failed to resolve PID for ${params.appIdentifier}, capturing all logs`,
+          );
+        }
+      }
+
       Logger.i(
         `AndroidLogcatProvider: Starting log capture for device ${params.deviceId} with command: adb ${args.join(' ')}`,
       );

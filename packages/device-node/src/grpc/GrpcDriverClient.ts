@@ -279,12 +279,18 @@ export class GrpcDriverClient {
     quality?: number,
     options?: UnaryCallOptions,
   ): Promise<GrpcScreenshotResponse> {
-    return this._unaryCall('getScreenshot', { quality: quality ?? 5 }, options) as Promise<GrpcScreenshotResponse>;
+    return this._unaryCall('getScreenshot', { quality: quality ?? 5 }, {
+      ...options,
+      maxRetries: 0,  // ScreenshotCapture has its own retry
+    }) as Promise<GrpcScreenshotResponse>;
   }
 
   /** Get the UI hierarchy. */
   async getHierarchy(options?: UnaryCallOptions): Promise<GrpcScreenshotResponse> {
-    return this._unaryCall('getHierarchy', {}, options) as Promise<GrpcScreenshotResponse>;
+    return this._unaryCall('getHierarchy', {}, {
+      ...options,
+      maxRetries: 0,  // ScreenshotCapture has its own retry
+    }) as Promise<GrpcScreenshotResponse>;
   }
 
   /** Get screenshot AND hierarchy in one call (most commonly used). */
@@ -297,6 +303,7 @@ export class GrpcDriverClient {
     }, {
       timeoutMs: options?.timeoutMs ?? 60000,
       errorLogLevel: options?.errorLogLevel,
+      maxRetries: 0,  // ScreenshotCapture has its own retry
     }) as Promise<GrpcScreenshotResponse>; // 60s timeout like Dart
   }
 
@@ -307,7 +314,10 @@ export class GrpcDriverClient {
   ): Promise<GrpcRawScreenshotResponse> {
     return this._unaryCall('getRawScreenshot', {
       quality: quality ?? 5,
-    }, options) as Promise<GrpcRawScreenshotResponse>;
+    }, {
+      ...options,
+      maxRetries: 0,  // ScreenshotCapture has its own retry
+    }) as Promise<GrpcRawScreenshotResponse>;
   }
 
   /** Stop execution on device. */
@@ -320,11 +330,41 @@ export class GrpcDriverClient {
   // ==========================================================================
 
   /**
-   * Make a unary gRPC call converting callback style → Promise.
+   * Make a unary gRPC call with optional retry.
+   * Retries up to `maxRetries` times on any error, with linear backoff.
+   * Screenshot RPCs should pass `maxRetries: 0` since ScreenshotCapture has its own retry.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async _unaryCall(
+    method: string,
+    request: Record<string, any>,
+    options?: UnaryCallOptions,
+  ): Promise<any> {
+    const maxRetries = options?.maxRetries ?? 2;
+    const retryDelayMs = options?.retryDelayMs ?? 500;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this._singleCall(method, request, options);
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt === maxRetries) throw error;
+        Logger.d(
+          `gRPC ${method}: error on attempt ${attempt + 1}/${maxRetries + 1}, retrying in ${retryDelayMs * (attempt + 1)}ms...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+      }
+    }
+    throw lastError!;
+  }
+
+  /**
+   * Single unary gRPC call converting callback style → Promise.
    * @param timeoutMs — RPC timeout in milliseconds (default 30s, matches Dart _callOptions)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _unaryCall(
+  private _singleCall(
     method: string,
     request: Record<string, any>,
     options?: UnaryCallOptions,
@@ -406,4 +446,8 @@ export interface GrpcScreenDimensionResponse extends GrpcResponse {
 export interface UnaryCallOptions {
   timeoutMs?: number;
   errorLogLevel?: 'error' | 'debug' | 'silent';
+  /** Max retries on error (default 2, total 3 attempts). Set to 0 for no retry. */
+  maxRetries?: number;
+  /** Base delay between retries in ms (default 500). Scales linearly: delay * (attempt + 1). */
+  retryDelayMs?: number;
 }

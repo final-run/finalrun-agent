@@ -5,6 +5,7 @@ export interface LogCaptureProvider {
   startLogCapture(params: {
     deviceId: string;
     outputFilePath: string;
+    appIdentifier?: string;
   }): Promise<{ process: ChildProcess; response: DeviceNodeResponse }>;
 
   stopLogCapture(params: {

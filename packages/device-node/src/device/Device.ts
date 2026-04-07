@@ -268,6 +268,7 @@ export class Device implements DeviceAgent {
   async startLogCapture(request: {
     runId: string;
     testId: string;
+    appIdentifier?: string;
   }): Promise<DeviceNodeResponse> {
     if (!this._deviceInfo.id) {
       return new DeviceNodeResponse({
@@ -276,11 +277,18 @@ export class Device implements DeviceAgent {
       });
     }
 
+    let logIdentifier = request.appIdentifier;
+    if (logIdentifier && this._runtime.resolveLogFilterIdentifier) {
+      const resolved = await this._runtime.resolveLogFilterIdentifier(logIdentifier);
+      if (resolved) logIdentifier = resolved;
+    }
+
     return await this._logCaptureController.startLogCapture({
       deviceId: this._deviceInfo.id,
       runId: request.runId,
       testId: request.testId,
       platform: this._deviceInfo.getPlatform(),
+      appIdentifier: logIdentifier,
     });
   }
 

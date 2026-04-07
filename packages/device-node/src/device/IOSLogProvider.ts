@@ -38,10 +38,18 @@ export class IOSLogProvider implements LogCaptureProvider {
   async startLogCapture(params: {
     deviceId: string;
     outputFilePath: string;
+    appIdentifier?: string;
   }): Promise<{ process: ChildProcess; response: DeviceNodeResponse }> {
     try {
       const writeStream = fs.createWriteStream(params.outputFilePath);
       const args = ['simctl', 'spawn', params.deviceId, 'log', 'stream', '--style', 'compact'];
+
+      if (params.appIdentifier) {
+        args.push('--predicate', `process == "${params.appIdentifier}"`);
+        Logger.i(
+          `IOSLogProvider: Filtering logs by process "${params.appIdentifier}"`,
+        );
+      }
       Logger.i(
         `IOSLogProvider: Starting log capture for device ${params.deviceId} with command: xcrun ${args.join(' ')}`,
       );

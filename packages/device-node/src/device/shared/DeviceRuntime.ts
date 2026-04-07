@@ -57,6 +57,7 @@ export interface DeviceRuntime {
   getScreenshot(action: GetScreenshotAction): Promise<DeviceNodeResponse>;
   getHierarchy(action: GetHierarchyAction): Promise<DeviceNodeResponse>;
   getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy>;
+  resolveLogFilterIdentifier?(appIdentifier: string): Promise<string | null>;
   close(): Promise<void>;
   killDriver(): void;
 }

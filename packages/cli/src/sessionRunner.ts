@@ -382,6 +382,7 @@ export async function executeTestOnSession(
         const logResponse = await session.device.startLogCapture({
           runId: config.deviceLog.runId,
           testId: config.deviceLog.testId,
+          appIdentifier: session.app?.identifier,
         });
 
         if (logResponse.success) {
