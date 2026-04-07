@@ -88,22 +88,34 @@ See [docs/environment.md](docs/environment.md#platform-prerequisites-detailed) f
 
 ## Writing Your First Test in Claude Code
 
-FinalRun ships two skills for AI coding assistants (Claude Code, Codex):
+FinalRun ships skills for Claude Code that let your AI agent generate tests, validate workspaces, and run tests — all from chat. These skills also work with any AI coding agent supported by the [skills registry](https://github.com/vercel-labs/skills).
 
-- **`finalrun-generate-test`** — generates and maintains YAML test specs by reading your app's source code and screens. Handles test planning, folder grouping by feature, environment bindings, and validation via `finalrun check`.
-- **`finalrun-use-cli`** — operates the FinalRun CLI within your repo: install, configure, validate, run tests, troubleshoot errors, and inspect reports.
-
-The install script adds these automatically. To install manually:
+The install script adds skills automatically. To install manually:
 
 ```sh
 npx skills add final-run/finalrun-agent
 ```
 
-Example prompts for your AI agent:
+### Generate tests with `/finalrun-generate-test`
 
-- *"Write FinalRun tests for my login and signup flows"*
-- *"Run the smoke tests on Android"*
-- *"Why is finalrun check failing?"*
+This skill reads your app's source code, infers the app identity, and generates complete test specs with setup, steps, and expected state — organized by feature folder.
+
+> `/finalrun-generate-test` Generate tests for the authentication feature — cover login with valid credentials, login with wrong password, and logout
+
+The agent will:
+1. Read your source code to understand the UI and infer the app's package name / bundle ID
+2. Set up `.finalrun/config.yaml` and environment bindings in `.finalrun/env/`
+3. Propose a test plan with file paths and cleanup strategy for your approval
+4. Generate YAML specs under `.finalrun/tests/auth/` and a suite under `.finalrun/suites/`
+5. Run `finalrun check` to validate everything
+
+> `/finalrun-generate-test` Add a smoke test that verifies the app launches and the home screen is visible
+
+### Run tests with `/finalrun-use-cli`
+
+Once your tests are generated, use this skill to validate and run them.
+
+> `/finalrun-use-cli` Run the auth tests on Android
 
 ## API Keys
 
