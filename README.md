@@ -86,6 +86,25 @@ finalrun doctor --platform ios
 
 See [docs/environment.md](docs/environment.md#platform-prerequisites-detailed) for the full list of required and optional tools.
 
+## Using with AI Coding Agents
+
+FinalRun ships two skills for AI coding assistants (Claude Code, Codex):
+
+- **`finalrun-generate-test`** — generates and maintains YAML test specs by reading your app's source code and screens. Handles test planning, folder grouping by feature, environment bindings, and validation via `finalrun check`.
+- **`finalrun-use-cli`** — operates the FinalRun CLI within your repo: install, configure, validate, run tests, troubleshoot errors, and inspect reports.
+
+The install script adds these automatically. To install manually:
+
+```sh
+npx skills add final-run/finalrun-agent
+```
+
+Example prompts for your AI agent:
+
+- *"Write FinalRun tests for my login and signup flows"*
+- *"Run the smoke tests on Android"*
+- *"Why is finalrun check failing?"*
+
 ## Zero to First Test
 
 ```sh
@@ -235,25 +254,6 @@ FinalRun supports `openai`, `google`, and `anthropic` as provider prefixes:
 Keys are read from `process.env` and from workspace-root `.env` / `.env.<name>`. You can also pass `--api-key` to override.
 
 > Test runs consume API tokens from your configured provider — standard API billing applies.
-
-## Using with AI Coding Agents
-
-FinalRun ships two skills for AI coding assistants (Claude Code, Codex):
-
-- **`finalrun-generate-test`** — generates and maintains YAML test specs by reading your app's source code and screens. Handles test planning, folder grouping by feature, environment bindings, and validation via `finalrun check`.
-- **`finalrun-use-cli`** — operates the FinalRun CLI within your repo: install, configure, validate, run tests, troubleshoot errors, and inspect reports.
-
-The install script adds these automatically. To install manually:
-
-```sh
-npx skills add final-run/finalrun-agent
-```
-
-Example prompts for your AI agent:
-
-- *"Write FinalRun tests for my login and signup flows"*
-- *"Run the smoke tests on Android"*
-- *"Why is finalrun check failing?"*
 
 ## Environment & Secrets
 
