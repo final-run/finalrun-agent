@@ -1,5 +1,5 @@
 ---
-name: finalrun-enforcer
+name: finalrun-agent
 description: Enforces FinalRun test coverage as the definition of done for every user-facing feature. Automatically transitions to testing after implementation.
 ---
 

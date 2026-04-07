@@ -10,5 +10,6 @@
   "keywords": ["testing", "mobile", "e2e", "finalrun"],
   "skills": "skills/",
   "rules": ".cursor-plugin/rules/",
-  "agents": ".cursor-plugin/agents/"
+  "agents": ".cursor-plugin/agents/",
+  "hooks": ".cursor-plugin/hooks/hooks.json"
 }
