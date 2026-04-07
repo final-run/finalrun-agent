@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scrip
 
 Sets up Node.js, the CLI, AI coding agent skills, and platform tools. Run `finalrun doctor` to verify host readiness.
 
-## Writing Your First Test
+## Write and Run Your First Test Using AI Agents
 
 FinalRun ships [skills](https://github.com/vercel-labs/skills) that let your AI coding agent generate tests, validate workspaces, and run tests — all from chat.
 
