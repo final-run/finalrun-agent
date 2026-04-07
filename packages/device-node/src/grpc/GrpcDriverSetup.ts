@@ -8,6 +8,7 @@ import { DeviceInfo, Logger } from '@finalrun/common';
 import type { FilePathUtil } from '@finalrun/common';
 import { AndroidDevice } from '../device/android/AndroidDevice.js';
 import { Device } from '../device/Device.js';
+import { LogCaptureManager } from '../device/LogCaptureManager.js';
 import { IOSSimulator } from '../device/ios/IOSSimulator.js';
 import { CommonDriverActions } from '../device/shared/CommonDriverActions.js';
 import type { DeviceRuntime } from '../device/shared/DeviceRuntime.js';
@@ -103,6 +104,7 @@ export class GrpcDriverSetup {
       return new Device({
         deviceInfo,
         runtime,
+        logCaptureController: new LogCaptureManager(),
       });
     } catch (error) {
       grpcClient.close();

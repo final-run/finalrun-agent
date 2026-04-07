@@ -42,6 +42,7 @@ export interface ReportManifestSelectedTestRecord extends TestDefinition {
 
 export interface ReportManifestTestRecord extends TestResult {
   snapshotYamlText?: string;
+  deviceLogTailText?: string;
 }
 
 export interface ReportRunManifest extends Omit<RunManifest, 'input' | 'tests'> {
@@ -117,7 +118,7 @@ export async function loadRunManifestRecord(
   const runJsonPath = path.join(context.artifactsDir, runId, 'run.json');
   const raw = await fsp.readFile(runJsonPath, 'utf-8');
   const parsed = JSON.parse(raw) as RunManifest;
-  if (parsed.schemaVersion !== 2) {
+  if (parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3) {
     throw new Error(`Unsupported schema version: ${parsed.schemaVersion}`);
   }
   return parsed;
@@ -286,6 +287,17 @@ async function enrichRunManifestRecord(
     return await cached;
   };
 
+  const readDeviceLogTail = async (deviceLogPath: string | undefined): Promise<string | undefined> => {
+    if (!deviceLogPath) {
+      return undefined;
+    }
+    const content = await readRunArtifactText(context, runId, deviceLogPath);
+    if (!content) {
+      return undefined;
+    }
+    return content;
+  };
+
   return {
     ...manifest,
     input: {
@@ -301,6 +313,7 @@ async function enrichRunManifestRecord(
       manifest.tests.map(async (t) => ({
         ...t,
         snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
+        deviceLogTailText: await readDeviceLogTail(t.deviceLogFile),
       })),
     ),
   };

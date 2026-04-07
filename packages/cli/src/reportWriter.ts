@@ -24,6 +24,7 @@ import {
   redactResolvedValue,
 } from '@finalrun/common';
 import type { TestExecutionResult, AgentActionResult } from '@finalrun/goal-executor';
+import type { DeviceLogCaptureResult } from '@finalrun/common';
 import type { LoadedEnvironmentConfig } from './testLoader.js';
 
 interface TestSnapshotState {
@@ -323,6 +324,10 @@ export class ReportWriter {
     const recordingStartedAt = result.recording?.startedAt;
     const recordingCompletedAt = result.recording?.completedAt;
 
+    const deviceLogRelative = await this._copyLogArtifact(test.testId!, result.deviceLog, bindings);
+    const deviceLogStartedAt = result.deviceLog?.startedAt;
+    const deviceLogCompletedAt = result.deviceLog?.completedAt;
+
     const steps: AgentAction[] = [];
     for (const [index, step] of result.steps.entries()) {
       const stepNumber = index + 1;
@@ -371,6 +376,9 @@ export class ReportWriter {
       recordingFile: recordingRelative,
       recordingStartedAt,
       recordingCompletedAt,
+      deviceLogFile: deviceLogRelative,
+      deviceLogStartedAt,
+      deviceLogCompletedAt,
       steps,
     };
 
@@ -561,7 +569,7 @@ export class ReportWriter {
     );
     const firstFailure = findRunFirstFailure(testRecords, params.diagnosticsSummary);
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       run: {
         runId: this._runId,
         success: params.success,
@@ -689,6 +697,53 @@ export class ReportWriter {
 
     await fsp.copyFile(sourcePath, targetPath);
     return recordingRelative;
+  }
+
+  private async _copyLogArtifact(
+    testId: string,
+    deviceLog: DeviceLogCaptureResult | undefined,
+    bindings: RuntimeBindings,
+  ): Promise<string | undefined> {
+    if (!deviceLog?.filePath) {
+      return undefined;
+    }
+
+    const logRelative = path.posix.join('tests', testId, 'device.log');
+    const sourcePath = path.resolve(deviceLog.filePath);
+    const targetPath = path.resolve(path.join(this._runDir, logRelative));
+
+    try {
+      await fsp.access(sourcePath);
+    } catch {
+      Logger.w(`Device log file not found for report copy: ${deviceLog.filePath}`);
+      return undefined;
+    }
+
+    const stats = await fsp.stat(sourcePath);
+    if (stats.size > 50 * 1024 * 1024) {
+      Logger.w(
+        `Device log file is large (${(stats.size / 1024 / 1024).toFixed(1)} MB): ${sourcePath}. Redaction will hold the entire file in memory.`,
+      );
+    }
+
+    await fsp.copyFile(sourcePath, targetPath);
+
+    // Read, redact secrets, and write back
+    try {
+      const raw = await fsp.readFile(targetPath, 'utf-8');
+      const redacted = redactResolvedValue(raw, bindings);
+      if (redacted !== undefined && redacted !== raw) {
+        await fsp.writeFile(targetPath, redacted, 'utf-8');
+      }
+    } catch (error) {
+      Logger.w(`Failed to redact device log file: ${this._formatError(error)}`);
+    }
+
+    return logRelative;
+  }
+
+  private _formatError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }
 

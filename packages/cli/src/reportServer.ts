@@ -134,7 +134,7 @@ async function loadRunManifest(
   try {
     const raw = await fsp.readFile(path.join(artifactsDir, runId, 'run.json'), 'utf-8');
     const parsed = JSON.parse(raw) as RunManifest;
-    if (parsed.schemaVersion !== 2) {
+    if (parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3) {
       return undefined;
     }
     return parsed;
@@ -302,6 +302,13 @@ export async function buildReportRunManifestViewModel(
     }
     return await cached;
   };
+  const readDeviceLogTail = async (deviceLogPath: string): Promise<string | undefined> => {
+    const content = await readRunArtifactText(artifactsDir, runId, deviceLogPath);
+    if (!content) {
+      return undefined;
+    }
+    return content;
+  };
 
   const { tests: _tests, input: _input, ...rest } = manifest;
   const { tests: _inputTests, ...inputRest } = manifest.input;
@@ -325,7 +332,7 @@ export async function buildReportRunManifestViewModel(
       ),
     },
     tests: await Promise.all(
-      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText)),
+      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText, readDeviceLogTail)),
     ),
     paths: {
       ...manifest.paths,
@@ -362,6 +369,7 @@ async function toTestViewModel(
   runId: string,
   test: TestResult,
   readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
+  readDeviceLogTail: (deviceLogPath: string) => Promise<string | undefined>,
 ): Promise<ReportManifestTestRecord> {
   return {
     ...test,
@@ -373,6 +381,12 @@ async function toTestViewModel(
       : undefined,
     snapshotYamlText: test.snapshotYamlPath
       ? await readSnapshotYamlText(test.snapshotYamlPath)
+      : undefined,
+    deviceLogFile: test.deviceLogFile
+      ? buildRunScopedArtifactPath(runId, test.deviceLogFile)
+      : undefined,
+    deviceLogTailText: test.deviceLogFile
+      ? await readDeviceLogTail(test.deviceLogFile)
       : undefined,
     previewScreenshotPath: test.previewScreenshotPath
       ? buildRunScopedArtifactPath(runId, test.previewScreenshotPath)

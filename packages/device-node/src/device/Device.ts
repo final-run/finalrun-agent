@@ -34,6 +34,10 @@ import {
   defaultRecordingManager,
   type DeviceRecordingController,
 } from './RecordingManager.js';
+import {
+  defaultLogCaptureManager,
+  type DeviceLogCaptureController,
+} from './LogCaptureManager.js';
 import type {
   DeviceRuntime,
   DeviceScreenshotAndHierarchy,
@@ -51,15 +55,18 @@ export class Device implements DeviceAgent {
   private _apiKey: string = '';
   private _disconnectionCallback: ((deviceUUID: string, reason: string) => void) | null = null;
   private _recordingController: DeviceRecordingController;
+  private _logCaptureController: DeviceLogCaptureController;
 
   constructor(params: {
     deviceInfo: DeviceInfo;
     runtime: DeviceRuntime;
     recordingController?: DeviceRecordingController;
+    logCaptureController?: DeviceLogCaptureController;
   }) {
     this._deviceInfo = params.deviceInfo;
     this._runtime = params.runtime;
     this._recordingController = params.recordingController ?? defaultRecordingManager;
+    this._logCaptureController = params.logCaptureController ?? defaultLogCaptureManager;
   }
 
   async setUp(_options?: { reuseAddress?: boolean }): Promise<DeviceNodeResponse> {
@@ -181,6 +188,11 @@ export class Device implements DeviceAgent {
     } catch (error) {
       Logger.w('Failed to clean up recording resources:', error);
     }
+    try {
+      await this.logCaptureCleanUp();
+    } catch (error) {
+      Logger.w('Failed to clean up log capture resources:', error);
+    }
     await this._runtime.close();
   }
 
@@ -250,6 +262,55 @@ export class Device implements DeviceAgent {
       deviceId: this._deviceInfo.id,
       platform: this._deviceInfo.getPlatform(),
       keepOutput,
+    });
+  }
+
+  async startLogCapture(request: {
+    runId: string;
+    testId: string;
+  }): Promise<DeviceNodeResponse> {
+    if (!this._deviceInfo.id) {
+      return new DeviceNodeResponse({
+        success: false,
+        message: 'Device ID is required to start log capture.',
+      });
+    }
+
+    return await this._logCaptureController.startLogCapture({
+      deviceId: this._deviceInfo.id,
+      runId: request.runId,
+      testId: request.testId,
+      platform: this._deviceInfo.getPlatform(),
+    });
+  }
+
+  async stopLogCapture(runId: string, testId: string): Promise<DeviceNodeResponse> {
+    return await this._logCaptureController.stopLogCapture(runId, testId, {
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput: true,
+    });
+  }
+
+  async abortLogCapture(runId: string, keepOutput: boolean = false): Promise<void> {
+    if (!this._deviceInfo.id) {
+      return;
+    }
+
+    await this._logCaptureController.abortLogCapture(runId, {
+      deviceId: this._deviceInfo.id,
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput,
+    });
+  }
+
+  async logCaptureCleanUp(): Promise<void> {
+    if (!this._deviceInfo.id) {
+      return;
+    }
+
+    await this._logCaptureController.cleanupDevice(this._deviceInfo.id, {
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput: false,
     });
   }
 
