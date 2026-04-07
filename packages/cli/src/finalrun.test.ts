@@ -781,7 +781,7 @@ test('finalrun test prints blocked Android preflight failures raw and does not c
 
   try {
     const result = runCli(
-      ['test', 'login.yaml', '--platform', 'android', '--model', 'openai/gpt-4o'],
+      ['test', 'login.yaml', '--platform', 'android', '--model', 'openai/gpt-5.4-mini'],
       rootDir,
       {
         OPENAI_API_KEY: 'test-key',
@@ -804,7 +804,7 @@ test('finalrun test prints missing test selector failures raw and does not creat
   const rootDir = createTempWorkspace();
 
   try {
-    const result = runCli(['test', 'missing.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['test', 'missing.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -822,7 +822,7 @@ test('finalrun suite prints missing manifest failures raw and does not create a 
   });
 
   try {
-    const result = runCli(['suite', 'missing_suite.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['suite', 'missing_suite.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -842,7 +842,7 @@ test('finalrun test prints invalid YAML failures raw and does not create a run',
   });
 
   try {
-    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -861,7 +861,7 @@ test('finalrun test prints unresolved env binding failures raw and does not crea
   });
 
   try {
-    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -880,7 +880,7 @@ test('finalrun test prints unsupported app override failures raw and does not cr
 
   try {
     const result = runCli(
-      ['test', 'login.yaml', '--model', 'openai/gpt-4o', '--app', badAppPath],
+      ['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini', '--app', badAppPath],
       rootDir,
       {
         OPENAI_API_KEY: 'test-key',
@@ -900,7 +900,7 @@ test('finalrun test prints device setup failures raw and does not create a run',
 
   try {
     const result = runCli(
-      ['test', 'login.yaml', '--model', 'openai/gpt-4o', '--platform', 'android'],
+      ['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini', '--platform', 'android'],
       rootDir,
       {
         OPENAI_API_KEY: 'test-key',
@@ -1006,7 +1006,7 @@ test('finalrun runs --json prints the saved runs index', async () => {
             durationMs: 10000,
             envName: 'dev',
             platform: 'android',
-            modelLabel: 'openai/gpt-4o',
+            modelLabel: 'openai/gpt-5.4-mini',
             appLabel: 'repo app',
             testCount: 1,
             passedCount: 0,
@@ -1056,7 +1056,7 @@ test('finalrun runs prints a console summary and suggests starting the local rep
             durationMs: 10000,
             envName: 'dev',
             platform: 'android',
-            modelLabel: 'openai/gpt-4o',
+            modelLabel: 'openai/gpt-5.4-mini',
             appLabel: 'repo app',
             testCount: 2,
             passedCount: 2,
@@ -1138,7 +1138,7 @@ test('finalrun runs --workspace works from outside any workspace', async () => {
             durationMs: 10000,
             envName: 'dev',
             platform: 'android',
-            modelLabel: 'openai/gpt-4o',
+            modelLabel: 'openai/gpt-5.4-mini',
             appLabel: 'repo app',
             testCount: 1,
             passedCount: 1,
@@ -1204,7 +1204,7 @@ test('finalrun runs --workspace overrides the current workspace', async () => {
             durationMs: 20000,
             envName: 'dev',
             platform: 'ios',
-            modelLabel: 'openai/gpt-4o',
+            modelLabel: 'openai/gpt-5.4-mini',
             appLabel: 'repo app',
             testCount: 2,
             passedCount: 2,

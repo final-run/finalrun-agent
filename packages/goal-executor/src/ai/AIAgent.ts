@@ -132,7 +132,7 @@ type AIAgentProviderOptions = {
  */
 export class AIAgent {
   private _provider: string; // e.g., 'openai', 'google', 'anthropic'
-  private _modelName: string; // e.g., 'gpt-4o', 'gemini-2.0-flash'
+  private _modelName: string; // e.g., 'gpt-5.4-mini', 'gemini-2.0-flash'
   private _apiKey: string;
 
   // Cached prompt contents

@@ -70,7 +70,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           durationMs: 10000,
           envName: 'dev',
           platform: 'android',
-          modelLabel: 'openai/gpt-4o',
+          modelLabel: 'openai/gpt-5.4-mini',
           appLabel: 'repo app',
           target: {
             type: 'suite',
@@ -96,7 +96,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           durationMs: 12000,
           envName: 'dev',
           platform: 'android',
-          modelLabel: 'openai/gpt-4o',
+          modelLabel: 'openai/gpt-5.4-mini',
           appLabel: 'repo app',
           target: {
             type: 'direct',
@@ -119,7 +119,7 @@ test('loadReportIndexViewModel derives display metadata from persisted run manif
           durationMs: 2000,
           envName: 'dev',
           platform: 'android',
-          modelLabel: 'openai/gpt-4o',
+          modelLabel: 'openai/gpt-5.4-mini',
           appLabel: 'repo app',
           target: {
             type: 'direct',
@@ -289,8 +289,8 @@ async function writeRunManifest(
       platform: 'android',
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',

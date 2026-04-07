@@ -286,7 +286,7 @@ test('TestExecutor fails immediately on terminal planner provider errors', async
   const aiAgent = createAiAgent(async () => {
     throw new FatalProviderError({
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
       statusCode: 401,
       detail: 'Unauthorized',
     });
@@ -306,14 +306,14 @@ test('TestExecutor fails immediately on terminal planner provider errors', async
   assert.equal(result.status, 'failure');
   assert.equal(
     result.message,
-    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+    'AI provider error (openai/gpt-5.4-mini, HTTP 401): Unauthorized',
   );
   assert.equal(result.terminalFailure?.statusCode, 401);
   assert.equal(result.totalIterations, 1);
   assert.equal(result.steps[0]?.action, 'plannerError');
   assert.equal(
     result.steps[0]?.errorMessage,
-    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+    'AI provider error (openai/gpt-5.4-mini, HTTP 401): Unauthorized',
   );
 });
 
