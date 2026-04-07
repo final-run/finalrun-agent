@@ -40,9 +40,9 @@
 
 `finalrun-agent` is an AI-driven CLI that tests your Android and iOS apps using natural language. You write a plain-English test in YAML, FinalRun launches your app on an emulator or simulator, uses an AI model (Gemini, GPT, or Claude) to see the screen and perform each step — tapping, swiping, typing — and produces a pass/fail report with video and device logs.
 
-## Watch Demo
+## Demo
 
-[![Watch the FinalRun demo](https://img.youtube.com/vi/q6CFoN-ohT4/maxresdefault.jpg)](https://www.youtube.com/watch?v=q6CFoN-ohT4)
+<video src=".github/resources/finalrun-demo.mp4" autoplay loop muted playsinline></video>
 
 ## Install
 
