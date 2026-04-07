@@ -317,7 +317,6 @@ Using FinalRun has two layers of setup:
 
 ### Optional helpers
 
-- `avdmanager` enriches Android Virtual Device metadata
 - `ffmpeg` compresses iOS recordings after capture
 - `applesimutils` enables simulator permission helpers
 - `lsof`, `ps`, and `kill` help with stale iOS driver cleanup
