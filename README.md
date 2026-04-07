@@ -23,6 +23,19 @@
   <a aria-label="FinalRun Slack community" href="https://join.slack.com/t/finalrun-community/shared_invite/zt-38qg6q9fq-9L87nNF8aX4HZ8_pn9KBgw" target="_blank">Join Slack Community</a>
 </p>
 
+<h6 align="center">Follow us on</h6>
+<p align="center">
+  <a aria-label="Follow FinalRun on X" href="https://x.com/get_final_run" target="_blank">
+    <img alt="FinalRun on X" src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" />
+  </a>&nbsp;
+  <a aria-label="FinalRun on GitHub" href="https://github.com/final-run" target="_blank">
+    <img alt="FinalRun on GitHub" src="https://img.shields.io/badge/GitHub-222222?style=for-the-badge&logo=github&logoColor=white" />
+  </a>&nbsp;
+  <a aria-label="Follow FinalRun on LinkedIn" href="https://linkedin.com/company/finalrun/" target="_blank">
+    <img alt="FinalRun on LinkedIn" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" />
+  </a>
+</p>
+
 ---
 
 `finalrun-agent` is an AI-driven CLI that tests your Android and iOS apps using natural language. You write a plain-English test in YAML, FinalRun launches your app on an emulator or simulator, uses an AI model (Gemini, GPT, or Claude) to see the screen and perform each step — tapping, swiping, typing — and produces a pass/fail report with video and device logs.
@@ -42,12 +55,6 @@ curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scrip
 ```
 
 The installer checks for Node.js (installs via nvm if missing), installs the `finalrun` CLI globally, adds FinalRun skills for Claude Code / Codex, and walks you through Android and iOS tool setup.
-
-Or install manually:
-
-```sh
-npm install -g @finalrun/finalrun-agent
-```
 
 ## Prerequisites
 
@@ -296,18 +303,3 @@ Project policies:
 - [SECURITY.md](SECURITY.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [LICENSE](LICENSE)
-
----
-
-<h6 align="center">Follow us on</h6>
-<p align="center">
-  <a aria-label="Follow FinalRun on X" href="https://x.com/get_final_run" target="_blank">
-    <img alt="FinalRun on X" src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" />
-  </a>&nbsp;
-  <a aria-label="FinalRun on GitHub" href="https://github.com/final-run" target="_blank">
-    <img alt="FinalRun on GitHub" src="https://img.shields.io/badge/GitHub-222222?style=for-the-badge&logo=github&logoColor=white" />
-  </a>&nbsp;
-  <a aria-label="Follow FinalRun on LinkedIn" href="https://linkedin.com/company/finalrun/" target="_blank">
-    <img alt="FinalRun on LinkedIn" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" />
-  </a>
-</p>
