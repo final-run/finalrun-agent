@@ -494,6 +494,7 @@ export async function executeTestOnSession(
               `Log capture stopped for test ${activeLogCapture.testId} but no file path was returned.`,
             );
           }
+          activeLogCapture = undefined;
         } else {
           Logger.w(
             `Unable to stop log capture for test ${activeLogCapture.testId}: ` +
@@ -507,11 +508,12 @@ export async function executeTestOnSession(
           } catch (error) {
             Logger.w('Failed to finalize log capture after stop failure:', error);
           }
+          activeLogCapture = undefined;
         }
       } catch (error) {
         Logger.w('Failed to stop device log capture:', error);
+        // Do NOT clear activeLogCapture here — let the finally block abort it
       }
-      activeLogCapture = undefined;
     }
 
     const finalResult = recording

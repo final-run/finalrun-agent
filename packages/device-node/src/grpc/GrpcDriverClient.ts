@@ -95,6 +95,7 @@ export class GrpcDriverClient {
       const response = await this._unaryCall('getDeviceScale', {}, {
         timeoutMs: 3000,
         errorLogLevel: 'debug',
+        maxRetries: 2,
       });
       this._connected = true;
       Logger.d(`GrpcDriverClient: Ping successful, scale=${response?.scale}`);
@@ -229,7 +230,7 @@ export class GrpcDriverClient {
     permissions?: Record<string, string>;
     shouldUninstallBeforeLaunch?: boolean;
   }): Promise<GrpcResponse> {
-    return this._unaryCall('launchApp', params, { timeoutMs: 60000 }); // 60s timeout like Dart
+    return this._unaryCall('launchApp', params, { timeoutMs: 60000, maxRetries: 2 }); // 60s timeout like Dart; retries enable driver recovery on iOS
   }
 
   /** Kill a running app. */
@@ -246,27 +247,28 @@ export class GrpcDriverClient {
   async checkAppInForeground(packageName: string, timeoutSeconds: number): Promise<GrpcResponse> {
     return this._unaryCall('checkAppInForeground', { packageName, timeoutSeconds }, {
       timeoutMs: (timeoutSeconds + 5) * 1000,
+      maxRetries: 2,
     });
   }
 
   /** Get list of installed apps. */
   async getAppList(): Promise<GrpcAppListResponse> {
-    return this._unaryCall('getAppList', {}) as Promise<GrpcAppListResponse>;
+    return this._unaryCall('getAppList', {}, { maxRetries: 2 }) as Promise<GrpcAppListResponse>;
   }
 
   /** Update app IDs. */
   async updateAppIds(appIds: string[]): Promise<GrpcResponse> {
-    return this._unaryCall('updateAppIds', { appIds });
+    return this._unaryCall('updateAppIds', { appIds }, { maxRetries: 2 });
   }
 
   /** Get device scale factor. */
   async getDeviceScale(): Promise<GrpcDeviceScaleResponse> {
-    return this._unaryCall('getDeviceScale', {}) as Promise<GrpcDeviceScaleResponse>;
+    return this._unaryCall('getDeviceScale', {}, { maxRetries: 2 }) as Promise<GrpcDeviceScaleResponse>;
   }
 
   /** Get screen dimensions. */
   async getScreenDimension(): Promise<GrpcScreenDimensionResponse> {
-    return this._unaryCall('getScreenDimension', {}) as Promise<GrpcScreenDimensionResponse>;
+    return this._unaryCall('getScreenDimension', {}, { maxRetries: 2 }) as Promise<GrpcScreenDimensionResponse>;
   }
 
   /** Set device GPS location. */
@@ -332,7 +334,8 @@ export class GrpcDriverClient {
   /**
    * Make a unary gRPC call with optional retry.
    * Retries up to `maxRetries` times on any error, with linear backoff.
-   * Screenshot RPCs should pass `maxRetries: 0` since ScreenshotCapture has its own retry.
+   * Default is 0 (no retry) to prevent duplicating mutating actions.
+   * Read-only RPCs opt in with `maxRetries: 2`.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _unaryCall(
@@ -340,7 +343,7 @@ export class GrpcDriverClient {
     request: Record<string, any>,
     options?: UnaryCallOptions,
   ): Promise<any> {
-    const maxRetries = options?.maxRetries ?? 2;
+    const maxRetries = options?.maxRetries ?? 0;
     const retryDelayMs = options?.retryDelayMs ?? 500;
     let lastError: Error | null = null;
 
@@ -446,7 +449,7 @@ export interface GrpcScreenDimensionResponse extends GrpcResponse {
 export interface UnaryCallOptions {
   timeoutMs?: number;
   errorLogLevel?: 'error' | 'debug' | 'silent';
-  /** Max retries on error (default 2, total 3 attempts). Set to 0 for no retry. */
+  /** Max retries on error (default 0 — no retry for mutating RPCs). Read-only RPCs opt in explicitly. */
   maxRetries?: number;
   /** Base delay between retries in ms (default 500). Scales linearly: delay * (attempt + 1). */
   retryDelayMs?: number;

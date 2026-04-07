@@ -2600,13 +2600,12 @@ function formatRelativeTime(timestamp: string): string {
   return `${totalWeeks}w`;
 }
 
-function parseLogTimestamp(line: string): string | undefined {
+function parseLogTimestamp(line: string, referenceDate?: string): string | undefined {
   // Android logcat threadtime: "MM-DD HH:MM:SS.mmm ..."
   const androidMatch = /^(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\.(\d{3})/.exec(line);
   if (androidMatch) {
     const [, month, day, hour, min, sec, ms] = androidMatch;
-    const now = new Date();
-    const year = now.getFullYear();
+    const year = referenceDate ? new Date(referenceDate).getFullYear() : new Date().getFullYear();
     return new Date(year, parseInt(month, 10) - 1, parseInt(day, 10),
       parseInt(hour, 10), parseInt(min, 10), parseInt(sec, 10), parseInt(ms, 10)).toISOString();
   }
@@ -2647,13 +2646,13 @@ function renderDeviceLogLines(logText: string, recordingStartedAt?: string): str
     .filter(line => {
       if (line.length === 0) return false;
       if (recStartMs === undefined) return true;
-      const ts = parseLogTimestamp(line);
+      const ts = parseLogTimestamp(line, recordingStartedAt);
       if (!ts) return true;
       const tsMs = new Date(ts).getTime();
       return !Number.isFinite(tsMs) || tsMs >= recStartMs;
     })
     .map(line => {
-      const ts = parseLogTimestamp(line);
+      const ts = parseLogTimestamp(line, recordingStartedAt);
       const level = parseLogLevel(line);
       return `<div class="device-log-line" data-log-ts="${escapeHtml(ts ?? '')}" data-log-level="${level}">${escapeHtml(line)}</div>`;
     })
