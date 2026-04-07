@@ -86,15 +86,9 @@ finalrun doctor --platform ios
 
 See [docs/environment.md](docs/environment.md#platform-prerequisites-detailed) for the full list of required and optional tools.
 
-## Writing Your First Test in Claude Code
+## Writing Your First Test
 
-FinalRun ships skills for Claude Code that let your AI agent generate tests, validate workspaces, and run tests — all from chat. These skills also work with any AI coding agent supported by the [skills registry](https://github.com/vercel-labs/skills).
-
-The install script adds skills automatically. To install manually:
-
-```sh
-npx skills add final-run/finalrun-agent
-```
+FinalRun ships [skills](https://github.com/vercel-labs/skills) that let your AI coding agent generate tests, validate workspaces, and run tests — all from chat.
 
 ### Generate tests with `/finalrun-generate-test`
 
@@ -117,9 +111,9 @@ Once your tests are generated, use this skill to validate and run them.
 
 > `/finalrun-use-cli` Run the auth tests on Android
 
-## API Keys
+## API Keys (BYOK — Bring Your Own Key)
 
-FinalRun needs an API key from your AI provider to run tests. Create a `.env` file at your workspace root (the folder containing `.finalrun/`):
+FinalRun uses your own AI provider API key to run tests. Create a `.env` file at your workspace root (the folder containing `.finalrun/`):
 
 ```sh
 cp .env.example .env    # then fill in your key
