@@ -44,47 +44,13 @@
 
 [![Watch the FinalRun demo](https://img.youtube.com/vi/q6CFoN-ohT4/maxresdefault.jpg)](https://www.youtube.com/watch?v=q6CFoN-ohT4)
 
-Watch the demo on YouTube: https://www.youtube.com/watch?v=q6CFoN-ohT4
-
 ## Install
-
-Run the installer to set up everything — Node.js, the CLI, skills, and platform tools:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-The installer checks for Node.js (installs via nvm if missing), installs the `finalrun` CLI globally, adds FinalRun skills for Claude Code / Codex, and walks you through Android and iOS tool setup.
-
-## Prerequisites
-
-> **Tip:** The install script handles most of these automatically. The details below are for manual setup.
-
-**Required:**
-- Node.js `>=20` and `npm`
-- A built app binary (`.apk` for Android, `.app` for iOS) to test against
-
-**Android:**
-- [Android Studio](https://developer.android.com/studio) (provides `adb`, `emulator`, and SDK tools)
-  After installing, add the SDK tools to your shell profile (`~/.zshrc` or `~/.bashrc`):
-  ```sh
-  export ANDROID_HOME="$HOME/Library/Android/sdk"   # macOS default
-  export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
-  ```
-- `scrcpy` — install via `brew install scrcpy` (macOS) or see [scrcpy docs](https://github.com/Genymobile/scrcpy)
-
-**iOS (macOS only):**
-- [Xcode](https://developer.apple.com/xcode/) with Command Line Tools (`xcode-select --install`)
-
-Run `finalrun doctor` to verify your host is ready:
-
-```sh
-finalrun doctor
-finalrun doctor --platform android
-finalrun doctor --platform ios
-```
-
-See [docs/environment.md](docs/environment.md#platform-prerequisites-detailed) for the full list of required and optional tools.
+Sets up Node.js, the CLI, AI coding agent skills, and platform tools. Run `finalrun doctor` to verify host readiness.
 
 ## Writing Your First Test
 
@@ -113,10 +79,9 @@ Once your tests are generated, use this skill to validate and run them.
 
 ## API Keys (BYOK — Bring Your Own Key)
 
-FinalRun uses your own AI provider API key to run tests. Create a `.env` file at your workspace root (the folder containing `.finalrun/`):
+FinalRun uses your own AI provider API key to run tests.
 
 ```sh
-# Create your .env with the key matching your chosen provider
 echo "GOOGLE_API_KEY=your-key-here" > .env
 ```
 
@@ -126,76 +91,30 @@ echo "GOOGLE_API_KEY=your-key-here" > .env
 | `openai/...` | `OPENAI_API_KEY` |
 | `anthropic/...` | `ANTHROPIC_API_KEY` |
 
-You can also pass `--api-key` on the command line to override. Keys are read from `process.env` and workspace-root `.env` / `.env.<name>` files — see [Environment & Secrets](#environment--secrets) for details.
-
 > Test runs consume API tokens from your configured provider — standard API billing applies.
 
 ## Running Tests
-
-Run a single test:
 
 ```sh
 finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
 ```
 
-Run a suite:
-
 ```sh
 finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-preview
 ```
 
-For more details see:
+## Documentation
+
 - [YAML Tests](docs/yaml-tests.md) — test format, fields, suites, and environment placeholders
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, and report tools
 - [Configuration](docs/configuration.md) — workspace config, app identity, `--app` flag, and per-environment overrides
-
-## Environment & Secrets
-
-Put your API keys and test credentials in a `.env` file at the workspace root (the folder containing `.finalrun/`). Use `.finalrun/env/<name>.yaml` for placeholder bindings only — never put real secrets in YAML.
-
-```sh
-echo "GOOGLE_API_KEY=your-key-here" > .env
-```
-
-Add `.env` and `.env.*` to your `.gitignore` to keep secrets out of version control.
-
-For the full guide — load order, per-environment files, and binding syntax — see [docs/environment.md](docs/environment.md).
-
-## Troubleshooting
-
-**`Error: No .finalrun/ workspace found`**
-FinalRun looks for `.finalrun/` by walking up from your current directory. Make sure you're inside your app repo and `.finalrun/tests/` exists.
-
-**`Error: API key not configured`**
-Set the matching environment variable for your model provider. For `google/...`, set `GOOGLE_API_KEY` in your `.env` or shell. See [API Keys](#api-keys-byok--bring-your-own-key).
-
-**`Error: No Android emulator running`**
-Start an emulator with `emulator -avd <name>` or launch one from Android Studio. Run `finalrun doctor --platform android` to verify.
-
-**`Error: scrcpy not found` / `adb not found`**
-Install missing Android tools: `brew install scrcpy android-platform-tools` (macOS). Run `finalrun doctor` to check.
-
-**`Unresolved ${secrets.*} placeholder`**
-The referenced variable isn't set. Check that it's declared in `.finalrun/env/<name>.yaml` and the actual value is in `.env` or your shell environment.
-
-**`Error: App path invalid`**
-The `--app` flag requires a path to an existing `.apk` file or `.app` directory. Verify the path and ensure the file matches the target platform.
+- [Environment & Secrets](docs/environment.md) — dotenv load order, provider keys, and platform prerequisites
+- [Troubleshooting](docs/troubleshooting.md) — common errors and fixes
 
 ## Development
 
-Contributor setup, monorepo structure, build commands, and testing expectations live in [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for monorepo structure, build commands, and contributor guidelines.
 
-For source development in this monorepo, install workspace dependencies first:
-
-```sh
-npm ci
-```
-
-If you use git worktrees, do this once per fresh worktree before running `npm run build`, `npm run test`, `npm run dev:cli`, or any local `finalrun-dev` wrapper that executes the TypeScript sources directly.
-
-Project policies:
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [SECURITY.md](SECURITY.md)
 - [CHANGELOG.md](CHANGELOG.md)
