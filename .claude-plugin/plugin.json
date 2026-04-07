@@ -1,0 +1,11 @@
+{
+  "name": "finalrun-agent",
+  "description": "Enforce FinalRun test coverage as the definition of done for every user-facing feature. Bundles lifecycle hooks (Stop, SubagentStop, TaskCompleted) and two skills: finalrun-generate-test and finalrun-use-cli.",
+  "version": "0.1.0",
+  "author": {
+    "name": "FinalRun"
+  },
+  "repository": "https://github.com/final-run/finalrun-agent",
+  "license": "MIT",
+  "keywords": ["testing", "mobile", "e2e", "finalrun"]
+}

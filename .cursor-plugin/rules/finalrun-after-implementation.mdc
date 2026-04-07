@@ -1,0 +1,18 @@
+---
+description: After implementation, generate FinalRun tests and run them via the FinalRun CLI skills
+alwaysApply: true
+---
+
+# FinalRun tests after implementation
+
+Follow the section **FinalRun tests after implementation** in the repository root **`AGENTS.md`**. That section is the portable copy shared with Antigravity, Codex, and other agents; this rule keeps Cursor aligned with the same workflow.
+
+In Cursor, treat the workflow as two skills in order:
+
+1. **finalrun-generate-test** — plan, add or update **`.finalrun/tests/`**, **`.finalrun/suites/`**, and **`.finalrun/env/*.yaml`** as needed, then run **`finalrun check`** until it passes.
+2. **finalrun-use-cli** — build the app under test when native code changed, then run tests with **fail-fast execution**:
+   - Read the suite YAML to get the ordered list of tests.
+   - Run each test individually with **`finalrun test <selector>`** one at a time. Do **not** run the entire suite in one shot with `finalrun suite`.
+   - If a test **fails**: stop immediately, diagnose the failure from CLI output and `finalrun runs`, fix the issue (app code, test spec, or env config), re-run that specific test until it passes, then continue to the next test.
+   - Pass **`--app`** set to the fresh installable — **Android:** **`--app path/to/your.apk`**; **iOS:** **`--app path/to/Your.app`** — plus **`--env`** / **`--platform`** as needed—per **`AGENTS.md`** step 4.
+   - If the host cannot run it (no device, missing keys, user opt-out), state the blocker and the exact command to run later (still including **`--app`**).

@@ -1,0 +1,14 @@
+{
+  "name": "finalrun-agent",
+  "version": "0.1.0",
+  "description": "Enforce FinalRun test coverage as the definition of done. Includes finalrun-generate-test and finalrun-use-cli skills with an always-apply rule.",
+  "author": {
+    "name": "FinalRun"
+  },
+  "repository": "https://github.com/final-run/finalrun-agent",
+  "license": "MIT",
+  "keywords": ["testing", "mobile", "e2e", "finalrun"],
+  "skills": "skills/",
+  "rules": ".cursor-plugin/rules/",
+  "agents": ".cursor-plugin/agents/"
+}

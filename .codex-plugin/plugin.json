@@ -1,0 +1,7 @@
+{
+  "name": "finalrun-agent",
+  "version": "0.1.0",
+  "description": "Enforce FinalRun test coverage as the definition of done. Includes finalrun-generate-test and finalrun-use-cli skills.",
+  "skills": "./skills/",
+  "agents": "./AGENTS.md"
+}
