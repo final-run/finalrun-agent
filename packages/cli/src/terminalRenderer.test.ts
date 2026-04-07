@@ -5,7 +5,7 @@ import { TerminalRenderer } from './terminalRenderer.js';
 test('TerminalRenderer prints provider runtime failures as errors and failed summaries', () => {
   const renderer = new TerminalRenderer();
   const terminalFailureMessage =
-    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized';
+    'AI provider error (openai/gpt-5.4-mini, HTTP 401): Unauthorized';
   const printedLines: string[] = [];
   const originalConsoleLog = console.log;
 
@@ -27,7 +27,7 @@ test('TerminalRenderer prints provider runtime failures as errors and failed sum
       terminalFailure: {
         kind: 'provider',
         provider: 'openai',
-        modelName: 'gpt-4o',
+        modelName: 'gpt-5.4-mini',
         statusCode: 401,
         message: terminalFailureMessage,
       },
@@ -43,7 +43,7 @@ test('TerminalRenderer prints provider runtime failures as errors and failed sum
   }
 
   const output = printedLines.join('\n');
-  assert.match(output, /AI provider error \(openai\/gpt-4o, HTTP 401\): Unauthorized/);
+  assert.match(output, /AI provider error \(openai\/gpt-5.4-mini, HTTP 401\): Unauthorized/);
   assert.match(output, /Goal failed/);
   assert.doesNotMatch(output, /Goal aborted/);
 });

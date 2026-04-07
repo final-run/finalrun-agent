@@ -536,7 +536,7 @@ test('ActionExecutor surfaces terminal provider failures from grounder calls', a
   const aiAgent = createAiAgent(async () => {
     throw new FatalProviderError({
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
       statusCode: 401,
       detail: 'Unauthorized',
     });
@@ -558,14 +558,14 @@ test('ActionExecutor surfaces terminal provider failures from grounder calls', a
   assert.equal(result.success, false);
   assert.equal(
     result.error,
-    'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+    'AI provider error (openai/gpt-5.4-mini, HTTP 401): Unauthorized',
   );
   assert.deepEqual(result.terminalFailure, {
     kind: 'provider',
     provider: 'openai',
-    modelName: 'gpt-4o',
+    modelName: 'gpt-5.4-mini',
     statusCode: 401,
-    message: 'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized',
+    message: 'AI provider error (openai/gpt-5.4-mini, HTTP 401): Unauthorized',
   });
   assert.equal(executedActions.length, 0);
   assertTraceNames(result.trace, ['action.ground']);

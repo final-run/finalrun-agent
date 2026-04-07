@@ -219,7 +219,7 @@ FinalRun supports `openai`, `google`, and `anthropic` as provider prefixes:
 | Provider | Model example | API key variable |
 |---|---|---|
 | `google` | `google/gemini-3-flash-preview` | `GOOGLE_API_KEY` |
-| `openai` | `openai/gpt-4o` | `OPENAI_API_KEY` |
+| `openai` | `openai/gpt-5.4-mini` | `OPENAI_API_KEY` |
 | `anthropic` | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
 
 Keys are read from `process.env` and from workspace-root `.env` / `.env.<name>`. You can also pass `--api-key` to override.
