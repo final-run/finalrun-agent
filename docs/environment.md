@@ -81,8 +81,8 @@ This ignores `.env`, `.env.dev`, `.env.staging`, and similar while keeping `.env
 
 - `adb` available through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`
 - `emulator` on `PATH`; the current Android preflight requires it to discover and boot Android Virtual Devices
-- `scrcpy` on `PATH`; FinalRun uses it for Android screen recording during local runs and treats it as required
-- Bundled FinalRun Android driver assets present; the published CLI installs them automatically
+- `scrcpy` on `PATH` — required by FinalRun for Android screen recording during local runs
+- FinalRun Android driver assets — bundled automatically by the published CLI during installation
 
 ### Required for iOS local runs
 
