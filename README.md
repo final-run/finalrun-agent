@@ -105,58 +105,30 @@ Example prompts for your AI agent:
 - *"Run the smoke tests on Android"*
 - *"Why is finalrun check failing?"*
 
-## Zero to First Test
+## API Keys
+
+FinalRun needs an API key from your AI provider to run tests. Create a `.env` file at your workspace root (the folder containing `.finalrun/`):
 
 ```sh
-# 1. Go to your mobile app repo
-cd ~/my-app
+cp .env.example .env    # then fill in your key
+```
 
-# 2. Create the workspace
-mkdir -p .finalrun/tests
+Or create one directly:
 
-# 3. Create a minimal config (replace with your app's identifiers)
-cat > .finalrun/config.yaml << 'EOF'
-app:
-  packageName: com.example.myapp    # Android
-  bundleId: com.example.myapp       # iOS
-env: dev
-model: google/gemini-3-flash-preview
-EOF
-
-# 4. Generate your first test
-#    Using Claude Code or Codex with FinalRun skills installed:
-#    "Write a FinalRun smoke test that launches the app and verifies the home screen"
-#
-#    Or create one manually:
-cat > .finalrun/tests/smoke.yaml << 'EOF'
-name: smoke_test
-description: Verify the app launches and the home screen is visible.
-
-steps:
-  - Launch the app.
-  - Verify the home screen is visible.
-EOF
-
-# 5. Set your AI provider key
-cp .env.example .env   # if using FinalRun's template
-# Or create directly:
+```sh
+# Use the key matching your chosen provider
 echo "GOOGLE_API_KEY=your-key-here" > .env
-
-# 6. Validate the workspace
-finalrun check
-
-# 7. Run the test
-finalrun test smoke.yaml --platform android
 ```
 
-To test a specific app binary, pass `--app`:
+| Provider | Environment variable |
+|---|---|
+| `google/...` | `GOOGLE_API_KEY` |
+| `openai/...` | `OPENAI_API_KEY` |
+| `anthropic/...` | `ANTHROPIC_API_KEY` |
 
-```sh
-finalrun test smoke.yaml --platform android --app path/to/your.apk
-finalrun test smoke.yaml --platform ios --app path/to/YourApp.app
-```
+You can also pass `--api-key` on the command line to override. Keys are read from `process.env` and workspace-root `.env` / `.env.<name>` files — see [Environment & Secrets](#environment--secrets) for details.
 
-> You need a built `.apk` or `.app` to test against. The `--app` flag takes a path to the binary; the CLI extracts the package/bundle ID and infers the platform automatically. If omitted, FinalRun uses the app identity from `.finalrun/config.yaml`.
+> Test runs consume API tokens from your configured provider — standard API billing applies.
 
 ## YAML Test Specs
 
@@ -240,20 +212,6 @@ All report commands support `--workspace <path>` to target a specific workspace.
 </details>
 
 See full options with `finalrun --help` or `finalrun <command> --help`.
-
-## Supported AI Providers
-
-FinalRun supports `openai`, `google`, and `anthropic` as provider prefixes:
-
-| Provider | Model example | API key variable |
-|---|---|---|
-| `google` | `google/gemini-3-flash-preview` | `GOOGLE_API_KEY` |
-| `openai` | `openai/gpt-5.4-mini` | `OPENAI_API_KEY` |
-| `anthropic` | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
-
-Keys are read from `process.env` and from workspace-root `.env` / `.env.<name>`. You can also pass `--api-key` to override.
-
-> Test runs consume API tokens from your configured provider — standard API billing applies.
 
 ## Environment & Secrets
 
