@@ -46,7 +46,7 @@ For a resolved environment name `N`, the CLI loads variables in this order:
 
 This single workspace-root dotenv setup is used for:
 
-- Resolving **`${secrets.*}`** references defined in `.finalrun/env/*.yaml`.
+- Resolving `secrets` mappings declared in `.finalrun/env/*.yaml` (from `${ENV_VAR}` placeholders), which are referenced as `${secrets.*}` in test specs.
 - Reading **AI provider API keys** (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) for `finalrun test` and `finalrun suite`.
 
 When no FinalRun environment is in use (env-free workspace), the CLI does not require a `.env.N` file for YAML bindings; you can still use `process.env` or `.env` for keys if applicable.

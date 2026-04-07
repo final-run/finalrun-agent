@@ -116,13 +116,7 @@ Once your tests are generated, use this skill to validate and run them.
 FinalRun uses your own AI provider API key to run tests. Create a `.env` file at your workspace root (the folder containing `.finalrun/`):
 
 ```sh
-cp .env.example .env    # then fill in your key
-```
-
-Or create one directly:
-
-```sh
-# Use the key matching your chosen provider
+# Create your .env with the key matching your chosen provider
 echo "GOOGLE_API_KEY=your-key-here" > .env
 ```
 
@@ -160,7 +154,7 @@ For more details see:
 Put your API keys and test credentials in a `.env` file at the workspace root (the folder containing `.finalrun/`). Use `.finalrun/env/<name>.yaml` for placeholder bindings only — never put real secrets in YAML.
 
 ```sh
-cp .env.example .env    # then fill in your keys
+echo "GOOGLE_API_KEY=your-key-here" > .env
 ```
 
 Add `.env` and `.env.*` to your `.gitignore` to keep secrets out of version control.
@@ -173,7 +167,7 @@ For the full guide — load order, per-environment files, and binding syntax —
 FinalRun looks for `.finalrun/` by walking up from your current directory. Make sure you're inside your app repo and `.finalrun/tests/` exists.
 
 **`Error: API key not configured`**
-Set the matching environment variable for your model provider. For `google/...`, set `GOOGLE_API_KEY` in your `.env` or shell. See [Supported AI Providers](#supported-ai-providers).
+Set the matching environment variable for your model provider. For `google/...`, set `GOOGLE_API_KEY` in your `.env` or shell. See [API Keys](#api-keys-byok--bring-your-own-key).
 
 **`Error: No Android emulator running`**
 Start an emulator with `emulator -avd <name>` or launch one from Android Studio. Run `finalrun doctor --platform android` to verify.
