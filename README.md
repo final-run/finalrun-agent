@@ -42,7 +42,9 @@
 
 ## Demo
 
-<video src=".github/resources/finalrun-demo.mp4" autoplay loop muted playsinline></video>
+<p align="center">
+  <img alt="FinalRun demo" src=".github/resources/finalrun-demo.gif" />
+</p>
 
 ## Install
 
