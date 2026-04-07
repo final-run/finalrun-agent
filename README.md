@@ -38,18 +38,13 @@
 
 `finalrun-agent` is an AI-driven CLI for mobile app testing. You define repo-local tests in YAML, run them against Android or iOS targets, and inspect local run artifacts from the terminal.
 
-Install the npm package globally:
+Run the installer to set up everything — Node.js, the CLI, skills, and platform tools:
 
 ```sh
-npm install -g @finalrun/finalrun-agent@latest
-finalrun --version
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-If you're using Codex, Claude Code, or another tool that supports skills, add the FinalRun skills from this repo:
-
-```sh
-npx skills add final-run/finalrun-agent
-```
+The installer checks for Node.js (installs via nvm if missing), installs the `finalrun` CLI globally, adds FinalRun skills for Claude Code / Codex, and walks you through Android and iOS tool setup.
 
 The package installs the `finalrun` command and also exposes `finalrun-agent` as an alias.
 
@@ -69,11 +64,11 @@ Watch the demo on YouTube: https://www.youtube.com/watch?v=q6CFoN-ohT4
 
 ## Quick Start
 
-1. Create a `.finalrun/` workspace in the mobile app repo you want to test.
-2. Add at least one YAML spec under `.finalrun/tests/`.
-3. Configure the AI provider key you want to use.
-4. Validate the workspace with `finalrun check`.
-5. If you plan to run locally on Android or iOS, verify host readiness with `finalrun doctor`.
+1. Run the install script (see above) to set up the CLI and platform tools.
+2. Create a `.finalrun/` workspace in the mobile app repo you want to test.
+3. Add at least one YAML spec under `.finalrun/tests/`.
+4. Configure the AI provider key you want to use.
+5. Validate the workspace with `finalrun check`.
 6. Run a test with `finalrun test`.
 
 Example workspace layout (workspace root is the directory that contains `.finalrun/`):
@@ -283,6 +278,8 @@ finalrun suite --help
 
 ## Prerequisites
 
+> **Tip:** The install script (`curl -fsSL .../install.sh | bash`) handles most of these automatically. The details below are for reference.
+
 Using FinalRun has two layers of setup:
 
 - `finalrun check` requires the CLI, a `.finalrun/` workspace, and any needed config or secrets.
@@ -320,7 +317,6 @@ Using FinalRun has two layers of setup:
 
 ### Optional helpers
 
-- `avdmanager` enriches Android Virtual Device metadata
 - `ffmpeg` compresses iOS recordings after capture
 - `applesimutils` enables simulator permission helpers
 - `lsof`, `ps`, and `kill` help with stale iOS driver cleanup
