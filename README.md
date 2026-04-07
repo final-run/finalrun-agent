@@ -86,7 +86,7 @@ finalrun doctor --platform ios
 
 See [docs/environment.md](docs/environment.md#platform-prerequisites-detailed) for the full list of required and optional tools.
 
-## Using with AI Coding Agents
+## Writing Your First Test in Claude Code
 
 FinalRun ships two skills for AI coding assistants (Claude Code, Codex):
 
