@@ -60,12 +60,17 @@ The installer checks for Node.js (installs via nvm if missing), installs the `fi
 
 > **Tip:** The install script handles most of these automatically. The details below are for manual setup.
 
-**All platforms:**
+**Required:**
 - Node.js `>=20` and `npm`
 - A built app binary (`.apk` for Android, `.app` for iOS) to test against
 
 **Android:**
 - [Android Studio](https://developer.android.com/studio) (provides `adb`, `emulator`, and SDK tools)
+  After installing, add the SDK tools to your shell profile (`~/.zshrc` or `~/.bashrc`):
+  ```sh
+  export ANDROID_HOME="$HOME/Library/Android/sdk"   # macOS default
+  export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+  ```
 - `scrcpy` — install via `brew install scrcpy` (macOS) or see [scrcpy docs](https://github.com/Genymobile/scrcpy)
 
 **iOS (macOS only):**
@@ -99,7 +104,11 @@ env: dev
 model: google/gemini-3-flash-preview
 EOF
 
-# 4. Write your first test
+# 4. Generate your first test
+#    Using Claude Code or Codex with FinalRun skills installed:
+#    "Write a FinalRun smoke test that launches the app and verifies the home screen"
+#
+#    Or create one manually:
 cat > .finalrun/tests/smoke.yaml << 'EOF'
 name: smoke_test
 description: Verify the app launches and the home screen is visible.
