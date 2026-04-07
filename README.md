@@ -136,99 +136,24 @@ You can also pass `--api-key` on the command line to override. Keys are read fro
 
 > Test runs consume API tokens from your configured provider — standard API billing applies.
 
-## YAML Test Specs
+## Running Tests
 
-FinalRun specs are plain YAML files stored under `.finalrun/tests/`.
+Run a single test:
 
-| Field | Required | Description |
-|---|---|---|
-| `name` | yes | Stable identifier for the scenario |
-| `description` | no | Short human-readable summary |
-| `setup` | no | Actions to prepare clean state before the test runs |
-| `steps` | yes | Ordered natural-language steps executed by the agent |
-| `expected_state` | no | Expected UI state after all steps complete |
-
-```yaml
-name: login_smoke
-description: Verify that a user can log in and reach the home screen.
-
-setup:
-  - Clear app data.
-
-steps:
-  - Launch the app.
-  - Enter ${secrets.email} on the login screen.
-  - Enter ${secrets.password} on the password screen.
-  - Tap the login button.
-
-expected_state:
-  - The home screen is visible.
-  - The user's name appears in the header.
+```sh
+finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
 ```
 
-Environment placeholders:
-- `${secrets.*}` resolves from OS environment variables and workspace-root `.env` / `.env.<name>` files
-- `${variables.*}` resolves from non-sensitive values in `.finalrun/env/*.yaml`
+Run a suite:
 
-See [Environment & Secrets](#environment--secrets) for details.
-
-### Suite Manifests
-
-Suite manifests live under `.finalrun/suites/` and list test files, directories, or globs that resolve under `.finalrun/tests/`.
-
-```yaml
-name: auth_smoke
-description: Covers the authentication smoke scenarios.
-tests:
-  - auth/login.yaml
-  - auth/logout.yaml
+```sh
+finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-preview
 ```
 
-## CLI Commands
-
-### Getting Started
-
-| Command | Description |
-|---|---|
-| `finalrun check` | Validates the `.finalrun` workspace, environment bindings, selectors, and suite manifests. Uses `env` from `.finalrun/config.yaml` when `--env` is omitted. |
-| `finalrun doctor` | Checks host readiness for local Android and iOS runs. Supports `--platform` to check one platform. |
-
-### Running Tests
-
-| Command | Description |
-|---|---|
-| `finalrun test <selectors...>` | Executes one or more YAML specs from `.finalrun/tests`. |
-| `finalrun suite <suitePath>` | Executes a suite manifest from `.finalrun/suites`. |
-
-Common flags for `test` and `suite`:
-
-| Flag | Description |
-|---|---|
-| `--platform <android\|ios>` | Target platform |
-| `--model <provider/model>` | AI model (e.g. `google/gemini-3-flash-preview`). Falls back to `.finalrun/config.yaml`. |
-| `--env <name>` | Environment name (matches `.finalrun/env/<name>.yaml`). Falls back to config. |
-| `--app <path>` | Path to `.apk` or `.app` binary. Overrides config app identity. |
-| `--api-key <key>` | Override the provider API key. |
-| `--debug` | Enable debug logging. |
-| `--max-iterations <n>` | Limit AI action iterations per step. |
-
-CLI flags always take precedence over `.finalrun/config.yaml`.
-
-<details>
-<summary><b>Report Commands</b></summary>
-
-| Command | Description |
-|---|---|
-| `finalrun runs` | Lists local reports from `~/.finalrun/workspaces/<workspace-hash>/artifacts`. |
-| `finalrun start-server` | Starts or reuses the local report UI for a workspace. |
-| `finalrun server-status` | Shows the current local report server status. |
-| `finalrun stop-server` | Stops the local report server. |
-
-All report commands support `--workspace <path>` to target a specific workspace.
-
-</details>
-
-See full options with `finalrun --help` or `finalrun <command> --help`.
+For more details see:
+- [YAML Tests](docs/yaml-tests.md) — test format, fields, suites, and environment placeholders
+- [CLI Reference](docs/cli-reference.md) — all commands, flags, and report tools
+- [Configuration](docs/configuration.md) — workspace config, app identity, `--app` flag, and per-environment overrides
 
 ## Environment & Secrets
 

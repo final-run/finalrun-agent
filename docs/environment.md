@@ -1,6 +1,6 @@
 # Environment Variables and Secrets
 
-This guide covers the full details of how FinalRun resolves environment variables, secrets, and AI provider API keys. For a quick summary, see the [README](../README.md#environment--secrets).
+This guide covers the full details of how FinalRun resolves environment variables, secrets, and AI provider API keys. For a quick summary, see the [README](../README.md#environment--secrets). For workspace config and app identity, see [configuration.md](configuration.md).
 
 ## Where to Put Files
 
