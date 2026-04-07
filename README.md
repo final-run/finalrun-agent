@@ -134,19 +134,30 @@ You can also pass `--api-key` on the command line to override. Keys are read fro
 
 FinalRun specs are plain YAML files stored under `.finalrun/tests/`.
 
-- `name`: stable identifier for the scenario
-- `description`: short human-readable summary
-- `steps`: ordered natural-language steps executed by the agent
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | Stable identifier for the scenario |
+| `description` | no | Short human-readable summary |
+| `setup` | no | Actions to prepare clean state before the test runs |
+| `steps` | yes | Ordered natural-language steps executed by the agent |
+| `expected_state` | no | Expected UI state after all steps complete |
 
 ```yaml
 name: login_smoke
 description: Verify that a user can log in and reach the home screen.
 
+setup:
+  - Clear app data.
+
 steps:
   - Launch the app.
   - Enter ${secrets.email} on the login screen.
   - Enter ${secrets.password} on the password screen.
-  - Verify the home screen is visible.
+  - Tap the login button.
+
+expected_state:
+  - The home screen is visible.
+  - The user's name appears in the header.
 ```
 
 Environment placeholders:
