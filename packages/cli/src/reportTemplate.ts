@@ -517,11 +517,96 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       min-height: 0;
     }
 
+    .device-log-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-light);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .device-log-search {
+      flex: 1;
+      min-width: 0;
+      padding: 5px 10px;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+    }
+
+    .device-log-search:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(67, 24, 255, 0.10);
+    }
+
+    .device-log-match-count {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .device-log-filters {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .log-filter-chip {
+      padding: 3px 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      font-size: 11px;
+      cursor: pointer;
+      background: var(--bg);
+      color: var(--muted);
+      transition: all 0.15s;
+    }
+
+    .log-filter-chip.is-active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .log-filter-chip[data-log-level="error"].is-active {
+      background: #ee5d50;
+      border-color: #ee5d50;
+    }
+
+    .log-filter-chip[data-log-level="warn"].is-active {
+      background: #e8a735;
+      border-color: #e8a735;
+    }
+
     .device-log-lines {
       flex: 1;
       overflow-y: auto;
       padding: 8px 0;
       background: rgba(0, 0, 0, 0.02);
+    }
+
+    .device-log-lines::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .device-log-lines::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.03);
+    }
+
+    .device-log-lines::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+    }
+
+    .device-log-lines::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.25);
     }
 
     .device-log-line {
@@ -534,6 +619,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       color: var(--text);
       cursor: pointer;
       transition: background 0.1s;
+      border-left: 2px solid transparent;
     }
 
     .device-log-line:hover {
@@ -544,6 +630,18 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       background: rgba(67, 24, 255, 0.10);
       border-left: 2px solid var(--accent);
       padding-left: 14px;
+    }
+
+    .device-log-line.is-hidden {
+      display: none;
+    }
+
+    .device-log-line[data-log-level="error"] {
+      border-left-color: rgba(238, 93, 80, 0.5);
+    }
+
+    .device-log-line[data-log-level="warn"] {
+      border-left-color: rgba(232, 167, 53, 0.5);
     }
 
     .device-log-line[data-log-ts=""] {
@@ -1137,7 +1235,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       var nearest = null;
       var nearestDist = Infinity;
 
-      var lines = logContainer.querySelectorAll('.device-log-line[data-log-ts]');
+      var lines = logContainer.querySelectorAll('.device-log-line[data-log-ts]:not(.is-hidden)');
       for (var i = 0; i < lines.length; i++) {
         var ts = lines[i].dataset.logTs;
         if (!ts) continue;
@@ -1212,6 +1310,98 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     }
 
     document.addEventListener('click', handleLogLineClick);
+
+    function applyLogVisibility(logInline) {
+      var searchInput = logInline.querySelector('.device-log-search');
+      var term = (searchInput ? searchInput.value : '').toLowerCase();
+      var activeFilters = [];
+      var chips = logInline.querySelectorAll('.log-filter-chip');
+      for (var c = 0; c < chips.length; c++) {
+        if (chips[c].classList.contains('is-active') && chips[c].dataset.logLevel !== 'all') {
+          activeFilters.push(chips[c].dataset.logLevel);
+        }
+      }
+      var allChip = logInline.querySelector('.log-filter-chip[data-log-level="all"]');
+      var showAll = allChip && allChip.classList.contains('is-active');
+
+      var lines = logInline.querySelectorAll('.device-log-line');
+      var visible = 0;
+      var total = lines.length;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var text = line.textContent || '';
+        var matchesSearch = !term || text.toLowerCase().indexOf(term) !== -1;
+        var matchesLevel = showAll || activeFilters.indexOf(line.dataset.logLevel) !== -1;
+        if (matchesSearch && matchesLevel) {
+          line.classList.remove('is-hidden');
+          visible++;
+        } else {
+          line.classList.add('is-hidden');
+        }
+      }
+
+      var countEl = logInline.querySelector('.device-log-match-count');
+      if (countEl) {
+        countEl.textContent = (term || !showAll) ? visible + ' / ' + total + ' lines' : total + ' lines';
+      }
+    }
+
+    function handleLogSearch(input) {
+      var logInline = input.closest('.device-log-inline');
+      if (logInline) applyLogVisibility(logInline);
+    }
+
+    function handleLogFilter(chip) {
+      var logInline = chip.closest('.device-log-inline');
+      if (!logInline) return;
+      var level = chip.dataset.logLevel;
+      if (level === 'all') {
+        var chips = logInline.querySelectorAll('.log-filter-chip');
+        for (var i = 0; i < chips.length; i++) {
+          chips[i].classList.toggle('is-active', chips[i].dataset.logLevel === 'all');
+        }
+      } else {
+        var allChip = logInline.querySelector('.log-filter-chip[data-log-level="all"]');
+        chip.classList.toggle('is-active');
+        var anyActive = false;
+        var levelChips = logInline.querySelectorAll('.log-filter-chip:not([data-log-level="all"])');
+        for (var j = 0; j < levelChips.length; j++) {
+          if (levelChips[j].classList.contains('is-active')) anyActive = true;
+        }
+        if (allChip) {
+          allChip.classList.toggle('is-active', !anyActive);
+        }
+      }
+      applyLogVisibility(logInline);
+    }
+
+    document.addEventListener('input', function(e) {
+      if (e.target && e.target.classList && e.target.classList.contains('device-log-search')) {
+        handleLogSearch(e.target);
+      }
+    });
+
+    // Initialize line counts on load
+    var logInlines = document.querySelectorAll('.device-log-inline');
+    for (var li = 0; li < logInlines.length; li++) {
+      var countEl = logInlines[li].querySelector('.device-log-match-count');
+      var total = logInlines[li].querySelectorAll('.device-log-line').length;
+      if (countEl) countEl.textContent = total + ' lines';
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        var activeLogTab = document.querySelector('.tab-content.is-active[data-tab-content="logs"]');
+        if (activeLogTab) {
+          var searchInput = activeLogTab.querySelector('.device-log-search');
+          if (searchInput) {
+            e.preventDefault();
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+      }
+    });
 
     function syncRecordingShell(container, video) {
       const shell = container.querySelector('.recording-shell');
@@ -1714,6 +1904,15 @@ function renderSpecDetailSection(
           ${test?.deviceLogFile
             ? `<div class="tab-content" data-tab-content="logs">
                 <div class="device-log-inline" data-recording-started="${escapeHtml(test.recordingStartedAt ?? '')}">
+                  <div class="device-log-toolbar">
+                    <input class="device-log-search" type="text" placeholder="Search logs..." />
+                    <span class="device-log-match-count"></span>
+                    <div class="device-log-filters">
+                      <button class="log-filter-chip is-active" data-log-level="all" onclick="handleLogFilter(this)" type="button">All</button>
+                      <button class="log-filter-chip" data-log-level="error" onclick="handleLogFilter(this)" type="button">Errors</button>
+                      <button class="log-filter-chip" data-log-level="warn" onclick="handleLogFilter(this)" type="button">Warnings</button>
+                    </div>
+                  </div>
                   <div class="device-log-lines">${renderDeviceLogLines(test.deviceLogTailText ?? '', test.recordingStartedAt)}</div>
                   <a class="device-log-download" href="${escapeHtml(test.deviceLogFile)}" download>Download full log</a>
                 </div>
@@ -2029,6 +2228,24 @@ function parseLogTimestamp(line: string): string | undefined {
   return undefined;
 }
 
+function parseLogLevel(line: string): string {
+  // iOS compact log: timestamp then level code like "E ", "Ef"
+  const iosMatch = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(E|Ef)\s/.exec(line);
+  if (iosMatch) return 'error';
+  const iosWarnMatch = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(W|Wf)\s/.exec(line);
+  if (iosWarnMatch) return 'warn';
+
+  // Android logcat threadtime: "MM-DD HH:MM:SS.mmm PID TID LEVEL TAG: ..."
+  const androidMatch = /^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([EWDIV])\s/.exec(line);
+  if (androidMatch) {
+    const level = androidMatch[1];
+    if (level === 'E') return 'error';
+    if (level === 'W') return 'warn';
+  }
+
+  return 'info';
+}
+
 function renderDeviceLogLines(logText: string, recordingStartedAt?: string): string {
   if (!logText) {
     return '<div class="device-log-line muted">No log content available.</div>';
@@ -2045,7 +2262,8 @@ function renderDeviceLogLines(logText: string, recordingStartedAt?: string): str
     })
     .map(line => {
       const ts = parseLogTimestamp(line);
-      return `<div class="device-log-line" data-log-ts="${escapeHtml(ts ?? '')}">${escapeHtml(line)}</div>`;
+      const level = parseLogLevel(line);
+      return `<div class="device-log-line" data-log-ts="${escapeHtml(ts ?? '')}" data-log-level="${level}">${escapeHtml(line)}</div>`;
     })
     .join('');
 }

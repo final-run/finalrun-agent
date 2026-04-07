@@ -45,9 +45,15 @@ export class IOSLogProvider implements LogCaptureProvider {
       const args = ['simctl', 'spawn', params.deviceId, 'log', 'stream', '--style', 'compact'];
 
       if (params.appIdentifier) {
-        args.push('--predicate', `process == "${params.appIdentifier}"`);
+        const predicate = [
+          `process == "${params.appIdentifier}"`,
+          'NOT subsystem BEGINSWITH "com.apple.dt.xctest"',
+          'NOT subsystem BEGINSWITH "com.apple.UIKit"',
+          'NOT subsystem BEGINSWITH "com.apple.BackBoard"',
+        ].join(' AND ');
+        args.push('--predicate', predicate);
         Logger.i(
-          `IOSLogProvider: Filtering logs by process "${params.appIdentifier}"`,
+          `IOSLogProvider: Filtering logs with predicate: ${predicate}`,
         );
       }
       Logger.i(
