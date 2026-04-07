@@ -58,7 +58,7 @@ export interface TestSessionConfig {
   goal: string;
   apiKey: string;
   provider: string;   // 'openai' | 'google' | 'anthropic'
-  modelName: string;  // e.g., 'gpt-4o', 'gemini-2.0-flash'
+  modelName: string;  // e.g., 'gpt-5.4-mini', 'gemini-2.0-flash'
   maxIterations?: number;
   debug?: boolean;
   platform?: string;

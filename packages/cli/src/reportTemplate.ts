@@ -2035,7 +2035,7 @@ function buildTestListItems(manifest: ReportRunManifest): ReportTestListItem[] {
         name: test.testName,
         setup: [],
         steps: [],
-        assertions: [],
+        expected_state: [],
         relativePath: test.relativePath,
         workspaceSourcePath: test.workspaceSourcePath,
         snapshotYamlPath: test.snapshotYamlPath,

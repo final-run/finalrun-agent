@@ -1,6 +1,6 @@
 {
   "name": "@finalrun/device-node",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Device detection, gRPC communication, and driver management",
   "license": "Apache-2.0",

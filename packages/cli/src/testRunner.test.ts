@@ -170,7 +170,7 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
     description: 'Verify a user can log in.',
     setup: [],
     steps: ['Enter ${secrets.email} on the login screen.'],
-    assertions: ['The feed is visible.'],
+    expected_state: ['The feed is visible.'],
     sourcePath: testSourcePath,
     relativePath: 'auth/login.yaml',
     testId: 'auth__login',
@@ -253,7 +253,7 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
         'description: Verify a user can log in.',
         'steps:',
         '  - Enter ${secrets.email} on the login screen.',
-        'assertions:',
+        'expected_state:',
         '  - The feed is visible.',
       ].join('\n'),
       'utf-8',
@@ -306,8 +306,8 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
       },
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',
@@ -406,7 +406,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
     name: 'valid login',
     setup: [],
     steps: ['Open login.', 'Submit valid credentials.'],
-    assertions: ['The dashboard is visible.'],
+    expected_state: ['The dashboard is visible.'],
     sourcePath: testSourcePath,
     relativePath: 'login/valid_login.yaml',
     testId: 'login__valid_login',
@@ -422,7 +422,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
         'steps:',
         '  - Open login.',
         '  - Submit valid credentials.',
-        'assertions:',
+        'expected_state:',
         '  - The dashboard is visible.',
       ].join('\n'),
       'utf-8',
@@ -482,8 +482,8 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
       },
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',
@@ -557,7 +557,7 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
     description: 'Verify login.',
     setup: [],
     steps: ['Open login.'],
-    assertions: ['The dashboard is visible.'],
+    expected_state: ['The dashboard is visible.'],
     sourcePath: path.join(runDir, 'workspace', '.finalrun', 'tests', 'login.yaml'),
     relativePath: 'login.yaml',
     testId: 'login',
@@ -633,7 +633,7 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
       selectors: ['login.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, false);
@@ -721,7 +721,7 @@ test('runTests succeeds without env config when the repo is env-free', async () 
       selectors: ['smoke.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, true);
@@ -781,7 +781,7 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
       suitePath: 'smoke.yaml',
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
       invokedCommand: 'suite',
     });
 
@@ -848,7 +848,7 @@ test('runTests prepares one shared session for multiple tests and cleans it up o
       selectors: ['login.yaml', 'search.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, true);
@@ -910,7 +910,7 @@ test('runTests uses mov artifact recording output paths for iOS tests', async ()
       platform: 'ios',
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, true);
@@ -979,7 +979,7 @@ test('runTests stops the batch after a shared-session failure and cleans up once
       selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, false);
@@ -1024,7 +1024,7 @@ test('runTests stops remaining tests after a terminal AI provider failure', asyn
   const originalExecuteTestOnSession = testRunnerDependencies.executeTestOnSession;
   let cleanupCalls = 0;
   const executedCases: string[] = [];
-  const terminalFailureMessage = 'AI provider error (openai/gpt-4o, HTTP 401): Unauthorized';
+  const terminalFailureMessage = 'AI provider error (openai/gpt-5.4-mini, HTTP 401): Unauthorized';
 
   testRunnerDependencies.prepareTestSession = async () =>
     createTestSession({
@@ -1043,7 +1043,7 @@ test('runTests stops remaining tests after a terminal AI provider failure', asyn
         terminalFailure: {
           kind: 'provider',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
           statusCode: 401,
           message: terminalFailureMessage,
         },
@@ -1062,7 +1062,7 @@ test('runTests stops remaining tests after a terminal AI provider failure', asyn
       selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, false);
@@ -1099,7 +1099,7 @@ test('runTests stops remaining tests after a terminal AI provider failure', asyn
 
     const runnerLog = await fsp.readFile(path.join(result.runDir, 'runner.log'), 'utf-8');
     assert.match(runnerLog, /Stopping run after terminal AI provider failure/);
-    assert.match(runnerLog, /AI provider error \(openai\/gpt-4o, HTTP 401\): Unauthorized/);
+    assert.match(runnerLog, /AI provider error \(openai\/gpt-5.4-mini, HTTP 401\): Unauthorized/);
   } finally {
     testRunnerDependencies.prepareTestSession = originalPrepareTestSession;
     testRunnerDependencies.executeTestOnSession = originalExecuteTestOnSession;
@@ -1178,7 +1178,7 @@ test('runTests aborts the batch after SIGINT and marks the active run as aborted
       selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, false);
@@ -1270,7 +1270,7 @@ test('runTests requests a forced exit after a second SIGINT', async () => {
       selectors: ['first.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(forcedExitCode, 130);
@@ -1312,7 +1312,7 @@ test('runTests requires base app config even when the env file contains an app o
           selectors: ['login.yaml'],
           apiKey: 'test-key',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1352,7 +1352,7 @@ test('runTests rejects validation failures before creating run artifacts', async
           cwd: rootDir,
           apiKey: 'test-key',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1411,7 +1411,7 @@ test('runTests surfaces device setup diagnostics before execution without creati
           selectors: ['login.yaml'],
           apiKey: 'test-key',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1474,7 +1474,7 @@ test('runTests fails before prepareGoalSession when Android host preflight is bl
           platform: 'android',
           apiKey: 'test-key',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1537,7 +1537,7 @@ test('runTests fails before prepareGoalSession when iOS host preflight is blocke
           platform: 'ios',
           apiKey: 'test-key',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1611,7 +1611,7 @@ test('runTests continues when one platform is healthy and the other is blocked',
       selectors: ['login.yaml'],
       apiKey: 'test-key',
       provider: 'openai',
-      modelName: 'gpt-4o',
+      modelName: 'gpt-5.4-mini',
     });
 
     assert.equal(result.success, true);
@@ -1676,7 +1676,7 @@ test('runTests requires --platform when both Android and iOS apps are configured
           selectors: ['login.yaml'],
           apiKey: 'test-key',
           provider: 'openai',
-          modelName: 'gpt-4o',
+          modelName: 'gpt-5.4-mini',
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);

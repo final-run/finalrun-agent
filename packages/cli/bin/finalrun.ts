@@ -81,7 +81,7 @@ program
   .option('--platform <platform>', 'Target platform (android, ios, or all)')
   .action(async (options: DoctorCommandOptions) => {
     await runCommand(async () => {
-      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      Logger.init({ level: LogLevel.WARN, resetSinks: true });
       const result = await runDoctorCommand({
         platform: options.platform,
         output: process.stdout,

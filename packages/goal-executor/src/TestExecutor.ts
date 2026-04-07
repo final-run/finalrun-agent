@@ -30,6 +30,21 @@ import {
 } from './trace.js';
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+const MAX_LOG_FIELD_LENGTH = 300;
+
+/** Strip ANSI escapes and ASCII control chars from model-generated strings before logging. */
+function sanitizeLogField(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = value.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  return cleaned.length > MAX_LOG_FIELD_LENGTH
+    ? cleaned.slice(0, MAX_LOG_FIELD_LENGTH) + '…'
+    : cleaned;
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -386,7 +401,7 @@ export class TestExecutor {
       const reason = plannerResponse.reason;
       const naturalLanguageAction = plannerResponse.thought?.act ?? reason;
 
-      Logger.i(`[${iteration}/${maxIterations}] Action: ${action} — ${reason}`);
+      Logger.i(`[${iteration}/${maxIterations}] \x1b[35mAction\x1b[0m: ${sanitizeLogField(action)} — ${sanitizeLogField(reason)}`);
 
       stepTrace.setAction(action);
       remember = plannerResponse.remember;

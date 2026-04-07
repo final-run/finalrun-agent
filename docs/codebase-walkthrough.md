@@ -95,15 +95,15 @@ steps:                              # Main test actions (required, non-empty)
   - Enter ${secrets.password} in the password field
   - Tap the Login button
 
-assertions:                         # Expected outcomes (verified after steps)
+expected_state:                     # Expected outcomes (verified after steps)
   - Dashboard screen is visible
   - Welcome message shows user name
 ```
 
-**Why this structure?** The `setup → steps → assertions` pattern mirrors how QA engineers think:
+**Why this structure?** The `setup → steps → expected_state` pattern mirrors how QA engineers think:
 - **setup**: Get the app into the right state
 - **steps**: Perform the user actions being tested
-- **assertions**: Verify the outcome
+- **expected_state**: Verify the outcome
 
 `${secrets.email}` and `${variables.language}` are **binding references** — they get resolved from the environment config at runtime. This lets the same test run against different environments.
 
@@ -185,7 +185,7 @@ finalrun doctor                  Check host readiness
 ### The `test` command flow
 
 ```bash
-finalrun test auth/login.yaml --env staging --platform android --model openai/gpt-4o
+finalrun test auth/login.yaml --env staging --platform android --model openai/gpt-5.4-mini
 ```
 
 **What happens in `runTestCommand()` (bin/finalrun.ts:271-350):**
@@ -194,7 +194,7 @@ finalrun test auth/login.yaml --env staging --platform android --model openai/gp
 1. normalizeTestSelectors()     Split comma-separated selectors, trim whitespace
 2. resolveWorkspace()           Walk up directory tree to find .finalrun/
 3. loadWorkspaceConfig()        Read .finalrun/config.yaml
-4. parseModel()                 Parse "openai/gpt-4o" → { provider: "openai", modelName: "gpt-4o" }
+4. parseModel()                 Parse "openai/gpt-5.4-mini" → { provider: "openai", modelName: "gpt-5.4-mini" }
 5. resolveEnvironmentFile()     Find the right .finalrun/env/*.yaml
 6. CliEnv.load()                Merge .env files + process.env
 7. resolveApiKey()              Get OPENAI_API_KEY (or equivalent) from env
@@ -493,7 +493,7 @@ Standard Grounder (hierarchy-based)
 
 ```typescript
 // AIAgent supports three providers via Vercel AI SDK:
-- OpenAI     (gpt-4o, with reasoning effort)
+- OpenAI     (gpt-5.4-mini, with reasoning effort)
 - Google     (Gemini, with thinking levels)
 - Anthropic  (Claude, with extended thinking)
 ```
@@ -840,8 +840,8 @@ This is the most important artifact. It contains everything about a run.
     "platform": "android",
     "model": {
       "provider": "openai",
-      "modelName": "gpt-4o",
-      "label": "openai/gpt-4o"
+      "modelName": "gpt-5.4-mini",
+      "label": "openai/gpt-5.4-mini"
     },
     "app": {
       "source": "repo",
@@ -902,7 +902,7 @@ This is the most important artifact. It contains everything about a run.
         },
         "setup": ["Launch the app"],
         "steps": ["Enter ${secrets.email} in email field", "Tap Login"],
-        "assertions": ["Dashboard is visible"]
+        "expected_state": ["Dashboard is visible"]
       }
     ],
     "cli": {
@@ -999,7 +999,7 @@ This is the most important artifact. It contains everything about a run.
       "durationMs": 70000,
       "envName": "dev",
       "platform": "android",
-      "modelLabel": "openai/gpt-4o",
+      "modelLabel": "openai/gpt-5.4-mini",
       "appLabel": "repo app",
       "target": {
         "type": "suite",

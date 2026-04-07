@@ -25,8 +25,8 @@ function createRunManifest(
       platform: 'android',
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',
@@ -152,7 +152,7 @@ test('formatRunIndexForConsole prints ABORT for aborted runs', () => {
         durationMs: 10000,
         envName: 'dev',
         platform: 'android',
-        modelLabel: 'openai/gpt-4o',
+        modelLabel: 'openai/gpt-5.4-mini',
         appLabel: 'repo app',
         testCount: 2,
         passedCount: 0,

@@ -212,7 +212,7 @@ test('AIAgent uses low GPT-5 reasoning defaults for grounder calls', () => {
 test('AIAgent applies OpenAI reasoning defaults without model-family gating', () => {
   const providerOptions = getProviderOptions({
     provider: 'openai',
-    modelName: 'gpt-4o',
+    modelName: 'gpt-5.4-mini',
     phase: 'planner',
   });
 

@@ -27,7 +27,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         durationMs: 10000,
         envName: 'dev',
         platform: 'android',
-        modelLabel: 'openai/gpt-4o',
+        modelLabel: 'openai/gpt-5.4-mini',
         appLabel: 'repo app',
         target: {
           type: 'suite',
@@ -62,7 +62,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         durationMs: 12000,
         envName: 'dev',
         platform: 'android',
-        modelLabel: 'openai/gpt-4o',
+        modelLabel: 'openai/gpt-5.4-mini',
         appLabel: 'repo app',
         target: {
           type: 'direct',
@@ -99,8 +99,8 @@ function createSuiteRunManifest(): ReportRunManifest {
       platform: 'android',
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',
@@ -160,7 +160,7 @@ function createSuiteRunManifest(): ReportRunManifest {
           name: 'valid login',
           setup: [],
           steps: [],
-          assertions: [],
+          expected_state: [],
           relativePath: 'login/valid_login.yaml',
           workspaceSourcePath: '.finalrun/tests/login/valid_login.yaml',
           snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/login.yaml',
@@ -175,7 +175,7 @@ function createSuiteRunManifest(): ReportRunManifest {
           name: 'guest checkout',
           setup: [],
           steps: [],
-          assertions: [],
+          expected_state: [],
           relativePath: 'checkout/guest_checkout.yaml',
           workspaceSourcePath: '.finalrun/tests/checkout/guest_checkout.yaml',
           snapshotYamlPath: '/artifacts/2026-03-24T18-00-00.000Z-dev-android/input/tests/checkout.yaml',
@@ -259,7 +259,7 @@ function createSuiteRunManifest(): ReportRunManifest {
           name: 'valid login',
           setup: [],
           steps: ['Tap login'],
-          assertions: ['Dashboard is visible'],
+          expected_state: ['Dashboard is visible'],
         },
         effectiveGoal: 'Tap login',
         counts: {
@@ -364,14 +364,14 @@ function withSnapshotYamlText(manifest: ReportRunManifest): ReportRunManifest {
       'name: valid login',
       'steps:',
       '  - Tap login',
-      'assertions:',
+      'expected_state:',
       '  - Dashboard is visible',
     ].join('\n')],
     ['checkout', [
       'name: guest checkout',
       'steps:',
       '  - Open checkout',
-      'assertions:',
+      'expected_state:',
       '  - Checkout page is visible',
     ].join('\n')],
   ]);
@@ -512,7 +512,7 @@ test('renderHtmlReport renders the new suite report layout on the live CLI serve
   assert.equal((html.match(/Run history/g) || []).length, 1);
   assert.match(html, /class="context-summary-value">dev<\/div>/);
   assert.match(html, /class="context-summary-value">android<\/div>/);
-  assert.match(html, /class="context-summary-value">openai\/gpt-4o<\/div>/);
+  assert.match(html, /class="context-summary-value">openai\/gpt-5.4-mini<\/div>/);
   assert.match(html, /class="context-summary-value">repo app<\/div>/);
   assert.match(html, /name: valid login/);
   assert.match(html, /name: guest checkout/);
@@ -620,7 +620,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           durationMs: 10000,
           envName: 'dev',
           platform: 'android',
-          modelLabel: 'openai/gpt-4o',
+          modelLabel: 'openai/gpt-5.4-mini',
           appLabel: 'repo app',
           target: {
             type: 'suite',
@@ -646,7 +646,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           durationMs: 12000,
           envName: 'dev',
           platform: 'android',
-          modelLabel: 'openai/gpt-4o',
+          modelLabel: 'openai/gpt-5.4-mini',
           appLabel: 'repo app',
           target: {
             type: 'direct',
@@ -669,7 +669,7 @@ test('buildReportIndexViewModel derives display metadata for the actual CLI-serv
           durationMs: 2000,
           envName: 'dev',
           platform: 'android',
-          modelLabel: 'openai/gpt-4o',
+          modelLabel: 'openai/gpt-5.4-mini',
           appLabel: 'repo app',
           target: {
             type: 'direct',
@@ -844,8 +844,8 @@ async function writeRunManifest(
         platform: 'android',
         model: {
           provider: 'openai',
-          modelName: 'gpt-4o',
-          label: 'openai/gpt-4o',
+          modelName: 'gpt-5.4-mini',
+          label: 'openai/gpt-5.4-mini',
         },
         app: {
           source: 'repo',

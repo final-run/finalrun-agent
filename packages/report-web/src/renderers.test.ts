@@ -22,7 +22,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         durationMs: 10000,
         envName: 'dev',
         platform: 'android',
-        modelLabel: 'openai/gpt-4o',
+        modelLabel: 'openai/gpt-5.4-mini',
         appLabel: 'repo app',
         target: {
           type: 'suite',
@@ -57,7 +57,7 @@ function createRunIndexViewModel(): ReportIndexViewModel {
         durationMs: 12000,
         envName: 'dev',
         platform: 'android',
-        modelLabel: 'openai/gpt-4o',
+        modelLabel: 'openai/gpt-5.4-mini',
         appLabel: 'repo app',
         target: {
           type: 'direct',
@@ -94,8 +94,8 @@ function createSuiteRunManifest(): RunManifest {
       platform: 'android',
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',
@@ -163,7 +163,7 @@ function createSuiteRunManifest(): RunManifest {
           },
           setup: [],
           steps: ['Tap login'],
-          assertions: ['Dashboard is visible'],
+          expected_state: ['Dashboard is visible'],
         },
         {
           testId: 'checkout',
@@ -178,7 +178,7 @@ function createSuiteRunManifest(): RunManifest {
           },
           setup: [],
           steps: ['Open checkout'],
-          assertions: ['Checkout page is visible'],
+          expected_state: ['Checkout page is visible'],
         },
       ],
       cli: {
@@ -254,7 +254,7 @@ function createSuiteRunManifest(): RunManifest {
           name: 'valid login',
           setup: [],
           steps: ['Tap login'],
-          assertions: ['Dashboard is visible'],
+          expected_state: ['Dashboard is visible'],
         },
         effectiveGoal: 'Tap login',
         counts: {
@@ -346,14 +346,14 @@ function withSnapshotYamlText(manifest: RunManifest): RunManifest {
       'name: valid login',
       'steps:',
       '  - Tap login',
-      'assertions:',
+      'expected_state:',
       '  - Dashboard is visible',
     ].join('\n')],
     ['checkout', [
       'name: guest checkout',
       'steps:',
       '  - Open checkout',
-      'assertions:',
+      'expected_state:',
       '  - Checkout page is visible',
     ].join('\n')],
   ]);
@@ -495,7 +495,7 @@ test('renderRunHtml renders suite overview, run context, test detail panes, and 
   assert.equal((html.match(/Run history/g) || []).length, 1);
   assert.match(html, /class="context-summary-value">dev<\/div>/);
   assert.match(html, /class="context-summary-value">android<\/div>/);
-  assert.match(html, /class="context-summary-value">openai\/gpt-4o<\/div>/);
+  assert.match(html, /class="context-summary-value">openai\/gpt-5.4-mini<\/div>/);
   assert.match(html, /class="context-summary-value">repo app<\/div>/);
   assert.match(html, /name: valid login/);
   assert.match(html, /name: guest checkout/);
