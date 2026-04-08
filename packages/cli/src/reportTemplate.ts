@@ -730,7 +730,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .workspace {
       display: grid;
-      grid-template-columns: minmax(420px, 1.15fr) minmax(300px, 0.85fr);
+      grid-template-columns: minmax(340px, 0.8fr) minmax(300px, 1.2fr);
       height: clamp(520px, calc(100vh - 48px), 760px);
       border-top: 1px solid var(--border-light);
       align-items: stretch;
