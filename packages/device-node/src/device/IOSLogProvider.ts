@@ -96,13 +96,19 @@ export class IOSLogProvider implements LogCaptureProvider {
       Logger.i(`IOSLogProvider: Sent SIGINT to xcrun simctl log process: ${killSent}`);
 
       if (!killSent) {
-        Logger.e(
-          `IOSLogProvider: Failed to deliver SIGINT for log capture file: ${params.outputFilePath}`,
-        );
-        return new DeviceNodeResponse({
-          success: false,
-          message: 'Failed to send SIGINT to xcrun simctl log process.',
-        });
+        if (params.process.exitCode !== null) {
+          Logger.i(
+            `IOSLogProvider: xcrun simctl log process already exited (code ${params.process.exitCode}) for file: ${params.outputFilePath}`,
+          );
+        } else {
+          Logger.e(
+            `IOSLogProvider: Failed to deliver SIGINT for log capture file: ${params.outputFilePath}`,
+          );
+          return new DeviceNodeResponse({
+            success: false,
+            message: 'Failed to send SIGINT to xcrun simctl log process.',
+          });
+        }
       }
 
       const exitCode = await this._waitForExit(params.process);
