@@ -9,8 +9,29 @@ import {
   SetLocationAction,
 } from '@finalrun/common';
 import type { GrpcDriverClient } from '../../grpc/GrpcDriverClient.js';
+import type { IOSDriverProcessHandle } from '../../infra/ios/SimctlClient.js';
 import { CommonDriverActions } from '../shared/CommonDriverActions.js';
 import { IOSSimulator } from './IOSSimulator.js';
+
+/** Stub process handle that always reports alive (exitCode null, not killed). */
+function stubDriverProcess(): IOSDriverProcessHandle {
+  return {
+    pid: 1234,
+    exitCode: null,
+    killed: false,
+    stdout: null,
+    stderr: null,
+    on() { return this; },
+  } as unknown as IOSDriverProcessHandle;
+}
+
+/** Default recovery-related params for tests that don't exercise driver restart. */
+function stubRecoveryParams() {
+  return {
+    driverProcess: stubDriverProcess(),
+    restartDriver: async () => stubDriverProcess(),
+  };
+}
 
 test('IOSSimulator refreshes app IDs before launchApp', async () => {
   const calls: string[] = [];
@@ -45,6 +66,7 @@ test('IOSSimulator refreshes app IDs before launchApp', async () => {
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const response = await runtime.launchApp(
@@ -69,16 +91,17 @@ test('IOSSimulator refreshes app IDs before launchApp', async () => {
 
 test('IOSSimulator routes scroll through gRPC swipe and installed-app listing through simctl', async () => {
   const grpcSwipeCalls: Array<Record<string, number>> = [];
+  const grpcClient = {
+    isConnected: true,
+    async swipe(params: Record<string, number>) {
+      grpcSwipeCalls.push(params);
+      return { success: true, message: 'scrolled via grpc' };
+    },
+    close() {},
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        async swipe(params: Record<string, number>) {
-          grpcSwipeCalls.push(params);
-          return { success: true, message: 'scrolled via grpc' };
-        },
-        close() {},
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async listInstalledApps() {
@@ -99,6 +122,7 @@ test('IOSSimulator routes scroll through gRPC swipe and installed-app listing th
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const scrollResponse = await runtime.scrollAbs(
@@ -130,14 +154,15 @@ test('IOSSimulator routes scroll through gRPC swipe and installed-app listing th
 
 test('IOSSimulator terminates the runner before closing gRPC', async () => {
   const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    close() {
+      calls.push('close');
+    },
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        close() {
-          calls.push('close');
-        },
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async terminateApp() {
@@ -154,6 +179,7 @@ test('IOSSimulator terminates the runner before closing gRPC', async () => {
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   await runtime.close();
@@ -163,16 +189,17 @@ test('IOSSimulator terminates the runner before closing gRPC', async () => {
 
 test('IOSSimulator routes home and physical button keys through simctl', async () => {
   const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    async pressKey(key: string) {
+      calls.push(`grpc:${key}`);
+      return { success: true, message: 'pressed via grpc' };
+    },
+    close() {},
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        async pressKey(key: string) {
-          calls.push(`grpc:${key}`);
-          return { success: true, message: 'pressed via grpc' };
-        },
-        close() {},
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async pressButton(_deviceId: string, button: string) {
@@ -194,6 +221,7 @@ test('IOSSimulator routes home and physical button keys through simctl', async (
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const homeResponse = await runtime.home({} as never);
@@ -216,12 +244,13 @@ test('IOSSimulator routes home and physical button keys through simctl', async (
 
 test('IOSSimulator uses simctl for setLocation', async () => {
   const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    close() {},
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        close() {},
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async setLocation(_deviceId: string, lat: string, long: string) {
@@ -243,6 +272,7 @@ test('IOSSimulator uses simctl for setLocation', async () => {
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const response = await runtime.setLocation(
@@ -259,19 +289,20 @@ test('IOSSimulator uses simctl for setLocation', async () => {
 
 test('IOSSimulator fails explicitly when clearState is requested without reinstall context', async () => {
   const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    async updateAppIds() {
+      return { success: true };
+    },
+    async launchApp() {
+      calls.push('grpc:launch');
+      return { success: true, message: 'launched' };
+    },
+    close() {},
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        async updateAppIds() {
-          return { success: true };
-        },
-        async launchApp() {
-          calls.push('grpc:launch');
-          return { success: true, message: 'launched' };
-        },
-        close() {},
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async listInstalledAppIds() {
@@ -290,6 +321,7 @@ test('IOSSimulator fails explicitly when clearState is requested without reinsta
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const response = await runtime.launchApp(
@@ -315,24 +347,25 @@ test('IOSSimulator fails explicitly when clearState is requested without reinsta
 
 test('IOSSimulator continues launch when allowAllPermissions warns about missing applesimutils', async () => {
   const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    async updateAppIds() {
+      calls.push('grpc:updateAppIds');
+      return { success: true };
+    },
+    async launchApp() {
+      calls.push('grpc:launch');
+      return {
+        success: true,
+        message: 'launched',
+        data: { packageName: 'org.wikipedia' },
+      };
+    },
+    close() {},
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        async updateAppIds() {
-          calls.push('grpc:updateAppIds');
-          return { success: true };
-        },
-        async launchApp() {
-          calls.push('grpc:launch');
-          return {
-            success: true,
-            message: 'launched',
-            data: { packageName: 'org.wikipedia' },
-          };
-        },
-        close() {},
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async listInstalledAppIds() {
@@ -364,6 +397,7 @@ test('IOSSimulator continues launch when allowAllPermissions warns about missing
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const response = await runtime.launchApp(
@@ -397,23 +431,24 @@ test('IOSSimulator continues launch when allowAllPermissions warns about missing
 
 test('IOSSimulator applies supported custom permissions through simctl before launch', async () => {
   const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    async updateAppIds() {
+      calls.push('grpc:updateAppIds');
+      return { success: true };
+    },
+    async launchApp() {
+      calls.push('grpc:launch');
+      return {
+        success: true,
+        message: 'launched',
+      };
+    },
+    close() {},
+  };
   const runtime = new IOSSimulator({
     commonDriverActions: new CommonDriverActions({
-      grpcClient: {
-        isConnected: true,
-        async updateAppIds() {
-          calls.push('grpc:updateAppIds');
-          return { success: true };
-        },
-        async launchApp() {
-          calls.push('grpc:launch');
-          return {
-            success: true,
-            message: 'launched',
-          };
-        },
-        close() {},
-      } as unknown as GrpcDriverClient,
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
       async listInstalledAppIds() {
@@ -441,6 +476,7 @@ test('IOSSimulator applies supported custom permissions through simctl before la
       },
     } as never,
     deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
   });
 
   const response = await runtime.launchApp(

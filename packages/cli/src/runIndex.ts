@@ -20,7 +20,7 @@ export async function rebuildRunIndex(
     try {
       const raw = await fsp.readFile(runJsonPath, 'utf-8');
       const parsed = JSON.parse(raw) as RunManifest;
-      if (parsed.schemaVersion !== 2) {
+      if (parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3) {
         continue;
       }
       manifest = parsed;

@@ -505,7 +505,7 @@ test('finalrun test resolves nested test paths without requiring the .finalrun/t
       result.stderr,
       /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
     );
-    assert.doesNotMatch(result.stderr, /Test selector not found/);
+    assert.doesNotMatch(result.stderr, /Test file not found/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -808,7 +808,7 @@ test('finalrun test prints missing test selector failures raw and does not creat
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Test selector not found:/);
+    assert.match(result.stderr, /Test file not found:/);
     assertNoRunOutput(result);
     await assertNoRunArtifacts(rootDir);
   } finally {

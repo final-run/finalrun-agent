@@ -69,7 +69,12 @@ export class IOSSimulatorSetup {
   async prepare(
     deviceInfo: DeviceInfo,
     grpcClient: GrpcDriverClient,
-  ): Promise<{ deviceId: string }> {
+  ): Promise<{
+    deviceId: string;
+    grpcPort: number;
+    driverProcess: IOSDriverProcessHandle;
+    restartDriver: () => Promise<IOSDriverProcessHandle>;
+  }> {
     const deviceId = deviceInfo.id;
     if (!deviceId) {
       throw new Error('iOS simulator ID is required for driver setup.');
@@ -140,7 +145,56 @@ export class IOSSimulatorSetup {
 
       startupState.setupComplete = true;
       Logger.i('iOS gRPC connection established successfully');
-      return { deviceId };
+
+      // Restart callback — runs the full post-install setup sequence
+      // (same steps as initial setup: kill stale, terminate, start, connect, capture readiness, app IDs)
+      const restartDriver = async (): Promise<IOSDriverProcessHandle> => {
+        Logger.i(`IOSSimulatorSetup: Restarting driver for ${deviceId}...`);
+
+        await this._killStaleHostProcessesOnPortFn(DEFAULT_GRPC_PORT_START);
+
+        try {
+          await this._simctlClient.terminateApp(deviceId, IOS_DRIVER_RUNNER_BUNDLE_ID);
+        } catch {
+          // May already be dead
+        }
+
+        grpcClient.close();
+
+        const newProcess = this._simctlClient.startDriver(deviceId, DEFAULT_GRPC_PORT_START);
+        const newStartupState = this._trackIOSDriverProcess(deviceId, newProcess);
+
+        const connected = await this._connectWithPolling(
+          grpcClient,
+          '127.0.0.1',
+          DEFAULT_GRPC_PORT_START,
+          {
+            getStartupFailureMessage: () => newStartupState.failureMessage,
+            getWaitStatusMessage: () => this._formatWaitStatus(newStartupState),
+          },
+        );
+        if (!connected) {
+          throw new Error('Failed to reconnect to iOS driver via gRPC after restart');
+        }
+
+        const captureReady = await waitForDriverCaptureReadiness(grpcClient, {
+          timeoutMs: this._captureReadinessTimeoutMs,
+          delayMs: this._captureReadinessDelayMs,
+        });
+        if (!captureReady.ready) {
+          throw new Error(
+            `iOS driver restarted but capture readiness failed: ${captureReady.message ?? 'unknown'}`,
+          );
+        }
+
+        await this._updateIOSAppIds(deviceId, grpcClient, { throwOnFailure: true });
+
+        newStartupState.setupComplete = true;
+        Logger.i(`IOSSimulatorSetup: Driver restarted successfully for ${deviceId}`);
+        return newProcess;
+      };
+
+      return { deviceId, grpcPort: DEFAULT_GRPC_PORT_START, driverProcess, restartDriver };
     } catch (error) {
       if (driverStarted) {
         try {

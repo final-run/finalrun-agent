@@ -17,6 +17,8 @@ export const IOS_DRIVER_RUNNER_BUNDLE_ID = 'app.finalrun.iosUITests.xctrunner';
 
 export interface IOSDriverProcessHandle {
   pid?: number;
+  exitCode?: number | null;
+  killed?: boolean;
   stdout?: NodeJS.ReadableStream | null;
   stderr?: NodeJS.ReadableStream | null;
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
@@ -386,6 +388,14 @@ export class SimctlClient {
     return DeviceAppInfo.getAppIdList(apps);
   }
 
+  async getAppExecutableName(deviceId: string, bundleId: string): Promise<string | null> {
+    const metadata = await this._listInstalledAppMetadata(deviceId);
+    if (!metadata.success || !metadata.data?.['apps']) return null;
+    const apps = metadata.data['apps'] as Array<Record<string, unknown>>;
+    const app = apps.find((a) => a['bundleId'] === bundleId);
+    return (app?.['executableName'] as string) ?? null;
+  }
+
   startDriver(deviceId: string, port: number): IOSDriverProcessHandle {
     const child = this._spawnFn(
       'xcrun',
@@ -453,11 +463,15 @@ export class SimctlClient {
           (valueRecord['ApplicationType'] as string | undefined)?.trim() ??
           (bundleId.startsWith('com.apple.') ? 'System' : 'User');
 
+        const executableName =
+          (valueRecord['CFBundleExecutable'] as string | undefined)?.trim() ?? null;
+
         apps.push({
           bundleId,
           name,
           version,
           applicationType,
+          executableName,
         });
       }
 

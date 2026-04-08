@@ -71,7 +71,11 @@ async function expandSelector(
       throw new Error(`Test selector must point to a .yaml or .yml file: ${selector}`);
     }
     if (!stats?.isFile()) {
-      throw new Error(`Test selector not found: ${resolvedPath}`);
+      const similar = findSimilarFiles(selector, allTestFiles, testsDir);
+      const suggestion = similar.length > 0
+        ? `\n\nDid you mean?\n${similar.map(f => `  - ${f}`).join('\n')}`
+        : '';
+      throw new Error(`Test file not found: ${selector}${suggestion}`);
     }
     return [resolvedPath];
   }
@@ -188,6 +192,34 @@ function globToRegExp(pattern: string): RegExp {
   }
 
   return new RegExp(`^${parts.join('')}$`);
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function findSimilarFiles(selector: string, allTestFiles: string[], testsDir: string): string[] {
+  const maxDistance = Math.ceil(selector.length * 0.4);
+  const scored = allTestFiles
+    .map((filePath) => {
+      const relative = path.relative(testsDir, filePath).split(path.sep).join('/');
+      return { relative, distance: levenshteinDistance(selector, relative) };
+    })
+    .filter((entry) => entry.distance > 0 && entry.distance <= maxDistance)
+    .sort((a, b) => a.distance - b.distance);
+  return scored.slice(0, 3).map((entry) => entry.relative);
 }
 
 async function collectYamlFiles(dirPath: string): Promise<string[]> {

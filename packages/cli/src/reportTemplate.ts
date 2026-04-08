@@ -23,6 +23,7 @@ export interface ReportManifestSelectedTestRecord extends TestDefinition {
 
 export interface ReportManifestTestRecord extends TestResult {
   snapshotYamlText?: string;
+  deviceLogTailText?: string;
 }
 
 export interface ReportRunManifest extends Omit<SharedRunManifest, 'input' | 'tests'> {
@@ -468,6 +469,213 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       overflow: auto;
     }
 
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border-light);
+      background: white;
+      flex-shrink: 0;
+    }
+
+    .tab-button {
+      flex: 1;
+      padding: 10px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .tab-button:hover { color: var(--text); }
+
+    .tab-button.is-active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-content {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .tab-content.is-active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .device-log-inline {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .device-log-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-light);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .device-log-search {
+      flex: 1;
+      min-width: 0;
+      padding: 5px 10px;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+    }
+
+    .device-log-search:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(67, 24, 255, 0.10);
+    }
+
+    .device-log-match-count {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .device-log-filters {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .log-filter-chip {
+      padding: 3px 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      font-size: 11px;
+      cursor: pointer;
+      background: var(--bg);
+      color: var(--muted);
+      transition: all 0.15s;
+    }
+
+    .log-filter-chip.is-active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .log-filter-chip[data-log-level="error"].is-active {
+      background: #d32f2f;
+      border-color: #d32f2f;
+    }
+
+    .log-filter-chip[data-log-level="warn"].is-active {
+      background: #e8a735;
+      border-color: #e8a735;
+    }
+
+    .device-log-lines {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+      background: rgba(0, 0, 0, 0.02);
+    }
+
+    .device-log-lines::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .device-log-lines::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.03);
+    }
+
+    .device-log-lines::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+    }
+
+    .device-log-lines::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .device-log-line {
+      padding: 2px 16px;
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.1s;
+      border-left: 2px solid transparent;
+    }
+
+    .device-log-line:hover {
+      background: rgba(67, 24, 255, 0.06);
+    }
+
+    .device-log-line.is-active {
+      background: rgba(67, 24, 255, 0.10);
+      border-left: 2px solid var(--accent);
+      padding-left: 14px;
+    }
+
+    .device-log-line.is-hidden {
+      display: none;
+    }
+
+    .device-log-line[data-log-level="error"] {
+      border-left: 3px solid #d32f2f;
+      background: rgba(211, 47, 47, 0.06);
+      padding-left: 13px;
+    }
+
+    .device-log-line[data-log-level="warn"] {
+      border-left-color: rgba(232, 167, 53, 0.6);
+    }
+
+    .device-log-line[data-log-ts=""] {
+      cursor: default;
+    }
+
+    .device-log-line[data-log-ts=""]:hover {
+      background: transparent;
+    }
+
+    .device-log-line.before-recording {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .device-log-line.before-recording:hover {
+      background: transparent;
+    }
+
+    .device-log-download {
+      display: block;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border-light);
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .device-log-download:hover {
+      background: rgba(67, 24, 255, 0.04);
+    }
+
     .analysis-card.success {
       background: rgba(5, 205, 153, 0.08);
       border-color: rgba(5, 205, 153, 0.22);
@@ -522,30 +730,29 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .workspace {
       display: grid;
-      grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.05fr);
+      grid-template-columns: minmax(340px, 0.8fr) minmax(300px, 1.2fr);
       height: clamp(520px, calc(100vh - 48px), 760px);
       border-top: 1px solid var(--border-light);
       align-items: stretch;
       overflow: hidden;
     }
 
-    .timeline-panel {
+    .video-panel {
       padding: 22px;
       border-right: 1px solid var(--border-light);
       background: white;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
       min-height: 0;
       overflow: hidden;
     }
 
-    .detail-panel {
-      padding: 22px;
+    .tabs-panel {
+      padding: 0;
       background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
-      gap: 12px;
+      display: flex;
+      flex-direction: column;
       min-height: 0;
       overflow: hidden;
     }
@@ -823,23 +1030,13 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
         height: auto;
       }
 
-      .timeline-panel {
+      .video-panel {
         border-right: 0;
         border-bottom: 1px solid var(--border-light);
         overflow: visible;
       }
 
-      .detail-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 0;
-      }
-
-      .detail-panel .section-label {
-        margin: 0 0 14px;
-      }
-
-      .detail-panel .media-shell {
+      .video-panel .media-shell {
         width: min(100%, clamp(220px, 16vw, 260px));
         height: auto;
         max-width: 100%;
@@ -847,8 +1044,12 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
         margin: 0 auto 12px;
       }
 
-      .detail-panel .recording-controls {
+      .video-panel .recording-controls {
         margin: -4px auto 12px;
+      }
+
+      .tabs-panel {
+        min-height: 400px;
       }
 
       .timeline-scroll {
@@ -890,6 +1091,25 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
   <script>
     const reportPayload = JSON.parse(document.getElementById('finalrun-report-data').textContent);
     const testMap = Object.fromEntries(reportPayload.tests.map((t) => [t.testId, t]));
+
+    function switchTab(button) {
+      const panel = button.closest('.tabs-panel');
+      if (!panel) return;
+      const tabName = button.dataset.tab;
+      for (const btn of panel.querySelectorAll('.tab-button')) {
+        btn.classList.toggle('is-active', btn.dataset.tab === tabName);
+      }
+      for (const content of panel.querySelectorAll('.tab-content')) {
+        content.classList.toggle('is-active', content.dataset.tabContent === tabName);
+      }
+      if (tabName === 'logs') {
+        const container = panel.closest('[data-step-detail]');
+        const video = container ? container.querySelector('[data-role="recording-video"]') : null;
+        if (container && video && Number.isFinite(video.currentTime)) {
+          highlightNearestLogLine(container, video.currentTime);
+        }
+      }
+    }
 
     function clearTestSelection() {
       const overview = document.getElementById('suite-overview');
@@ -1012,6 +1232,189 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       return String(minutesPart).padStart(2, '0') + ':' + String(secondsPart).padStart(2, '0');
     }
 
+    function highlightNearestLogLine(container, targetSeconds) {
+      var logContainer = container.querySelector('.device-log-inline');
+      if (!logContainer) return;
+      var recordingStarted = logContainer.dataset.recordingStarted;
+      if (!recordingStarted) return;
+
+      var recStartMs = new Date(recordingStarted).getTime();
+      if (!Number.isFinite(recStartMs)) return;
+
+      var nearest = null;
+      var nearestDist = Infinity;
+
+      var lines = logContainer.querySelectorAll('.device-log-line[data-log-ts]:not(.is-hidden)');
+      for (var i = 0; i < lines.length; i++) {
+        var ts = lines[i].dataset.logTs;
+        if (!ts) continue;
+        var lineMs = new Date(ts).getTime();
+        if (!Number.isFinite(lineMs)) continue;
+        var lineSeconds = Math.max(0, (lineMs - recStartMs) / 1000);
+        var dist = Math.abs(lineSeconds - targetSeconds);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = lines[i];
+        }
+      }
+
+      var active = logContainer.querySelectorAll('.device-log-line.is-active');
+      for (var j = 0; j < active.length; j++) {
+        active[j].classList.remove('is-active');
+      }
+      if (nearest) {
+        nearest.classList.add('is-active');
+        nearest.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+
+    function handleLogLineClick(event) {
+      var line = event.target.closest('.device-log-line');
+      if (!line) return;
+      var logTs = line.dataset.logTs;
+      if (!logTs) return;
+
+      var container = line.closest('.workspace');
+      if (!container) return;
+
+      var logContainer = line.closest('.device-log-inline');
+      var recordingStarted = logContainer ? logContainer.dataset.recordingStarted : null;
+      if (!recordingStarted) return;
+
+      var logTimeMs = new Date(logTs).getTime();
+      var recStartMs = new Date(recordingStarted).getTime();
+      if (!Number.isFinite(logTimeMs) || !Number.isFinite(recStartMs)) return;
+
+      var offsetSeconds = Math.max(0, (logTimeMs - recStartMs) / 1000);
+
+      var video = container.querySelector('[data-role="recording-video"]');
+      if (video) {
+        if (typeof video.fastSeek === 'function') {
+          video.fastSeek(offsetSeconds);
+        } else {
+          video.currentTime = offsetSeconds;
+        }
+      }
+
+      var seekbar = container.querySelector('[data-role="recording-seekbar"]');
+      if (seekbar) {
+        seekbar.value = String(offsetSeconds);
+      }
+
+      var currentDisplay = container.querySelector('[data-role="recording-current"]');
+      if (currentDisplay) {
+        currentDisplay.textContent = formatVideoClock(offsetSeconds);
+      }
+
+      var activeLines = logContainer.querySelectorAll('.device-log-line.is-active');
+      for (var i = 0; i < activeLines.length; i++) {
+        activeLines[i].classList.remove('is-active');
+      }
+      line.classList.add('is-active');
+
+      var testId = container.dataset.stepDetail;
+      if (testId) {
+        selectNearestStepForTime(testId, offsetSeconds);
+      }
+    }
+
+    document.addEventListener('click', handleLogLineClick);
+
+    function applyLogVisibility(logInline) {
+      var searchInput = logInline.querySelector('.device-log-search');
+      var term = (searchInput ? searchInput.value : '').toLowerCase();
+      var activeFilters = [];
+      var chips = logInline.querySelectorAll('.log-filter-chip');
+      for (var c = 0; c < chips.length; c++) {
+        if (chips[c].classList.contains('is-active') && chips[c].dataset.logLevel !== 'all') {
+          activeFilters.push(chips[c].dataset.logLevel);
+        }
+      }
+      var allChip = logInline.querySelector('.log-filter-chip[data-log-level="all"]');
+      var showAll = allChip && allChip.classList.contains('is-active');
+
+      var lines = logInline.querySelectorAll('.device-log-line');
+      var visible = 0;
+      var total = lines.length;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var text = line.textContent || '';
+        var matchesSearch = !term || text.toLowerCase().indexOf(term) !== -1;
+        var matchesLevel = showAll || activeFilters.indexOf(line.dataset.logLevel) !== -1;
+        if (matchesSearch && matchesLevel) {
+          line.classList.remove('is-hidden');
+          visible++;
+        } else {
+          line.classList.add('is-hidden');
+        }
+      }
+
+      var countEl = logInline.querySelector('.device-log-match-count');
+      if (countEl) {
+        countEl.textContent = (term || !showAll) ? visible + ' / ' + total + ' lines' : total + ' lines';
+      }
+    }
+
+    function handleLogSearch(input) {
+      var logInline = input.closest('.device-log-inline');
+      if (logInline) applyLogVisibility(logInline);
+    }
+
+    function handleLogFilter(chip) {
+      var logInline = chip.closest('.device-log-inline');
+      if (!logInline) return;
+      var level = chip.dataset.logLevel;
+      if (level === 'all') {
+        var chips = logInline.querySelectorAll('.log-filter-chip');
+        for (var i = 0; i < chips.length; i++) {
+          chips[i].classList.toggle('is-active', chips[i].dataset.logLevel === 'all');
+        }
+      } else {
+        var allChip = logInline.querySelector('.log-filter-chip[data-log-level="all"]');
+        chip.classList.toggle('is-active');
+        var anyActive = false;
+        var levelChips = logInline.querySelectorAll('.log-filter-chip:not([data-log-level="all"])');
+        for (var j = 0; j < levelChips.length; j++) {
+          if (levelChips[j].classList.contains('is-active')) anyActive = true;
+        }
+        if (allChip) {
+          allChip.classList.toggle('is-active', !anyActive);
+        }
+      }
+      applyLogVisibility(logInline);
+    }
+
+    document.addEventListener('input', function(e) {
+      if (e.target && e.target.classList && e.target.classList.contains('device-log-search')) {
+        handleLogSearch(e.target);
+      }
+    });
+
+    // Initialize line counts on load
+    var logInlines = document.querySelectorAll('.device-log-inline');
+    for (var li = 0; li < logInlines.length; li++) {
+      var countEl = logInlines[li].querySelector('.device-log-match-count');
+      var total = logInlines[li].querySelectorAll('.device-log-line').length;
+      if (countEl) countEl.textContent = total + ' lines';
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        var activePanel = document.querySelector('[data-test-panel].is-visible');
+        var activeLogTab = activePanel
+          ? activePanel.querySelector('.tab-content.is-active[data-tab-content="logs"]')
+          : null;
+        if (activeLogTab) {
+          var searchInput = activeLogTab.querySelector('.device-log-search');
+          if (searchInput) {
+            e.preventDefault();
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+      }
+    });
+
     function syncRecordingShell(container, video) {
       const shell = container.querySelector('.recording-shell');
       if (!shell) {
@@ -1053,6 +1456,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
         if (testId) {
           selectNearestStepForTime(testId, nextTime);
         }
+        highlightNearestLogLine(container, nextTime);
       };
 
       const togglePlayback = async () => {
@@ -1096,6 +1500,15 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
         video.playbackRate = Number(speed.value || 2);
         speed.addEventListener('change', applyPlaybackRate);
       }
+
+      let lastLogHighlightTime = 0;
+      video.addEventListener('timeupdate', () => {
+        const now = Date.now();
+        if (now - lastLogHighlightTime < 500) return;
+        lastLogHighlightTime = now;
+        highlightNearestLogLine(container, video.currentTime);
+      });
+
       video.dataset.seekbarBound = '1';
     }
 
@@ -1448,18 +1861,8 @@ function renderSpecDetailSection(
       ${manifest ? renderRunContextSection(manifest) : ''}
       ${renderSpecAnalysisSection(item.status, analysisText)}
 
-      <div class="workspace">
-        <div class="timeline-panel">
-          <p class="section-label">Agent Actions</p>
-          <div class="timeline-scroll">
-            ${test && test.steps.length > 0
-              ? test.steps.map((step, index) => renderStepButton(test.testId, step, index)).join('')
-              : '<div class="empty-panel">No steps were recorded for this test.</div>'}
-          </div>
-        </div>
-
-        <div class="detail-panel" data-step-detail="${escapeHtml(item.input.testId!)}">
-          <p class="section-label">Session Recording</p>
+      <div class="workspace" data-step-detail="${escapeHtml(item.input.testId!)}">
+        <div class="video-panel">
           <div class="media-shell recording-shell">
             ${test?.recordingFile
               ? `<video data-role="recording-video" playsinline preload="metadata" src="${escapeHtml(test.recordingFile)}"></video>`
@@ -1503,6 +1906,39 @@ function renderSpecDetailSection(
               </select>
             </div>
           </div>
+        </div>
+
+        <div class="tabs-panel">
+          <div class="tab-bar">
+            <button class="tab-button is-active" data-tab="actions" onclick="switchTab(this)" type="button">Actions</button>
+            ${test?.deviceLogFile
+              ? '<button class="tab-button" data-tab="logs" onclick="switchTab(this)" type="button">Device Logs</button>'
+              : ''}
+          </div>
+          <div class="tab-content is-active" data-tab-content="actions">
+            <div class="timeline-scroll">
+              ${test && test.steps.length > 0
+                ? test.steps.map((step, index) => renderStepButton(test.testId, step, index)).join('')
+                : '<div class="empty-panel">No steps were recorded for this test.</div>'}
+            </div>
+          </div>
+          ${test?.deviceLogFile
+            ? `<div class="tab-content" data-tab-content="logs">
+                <div class="device-log-inline" data-recording-started="${escapeHtml(test.recordingStartedAt ?? '')}">
+                  <div class="device-log-toolbar">
+                    <input class="device-log-search" type="text" placeholder="Search logs..." />
+                    <span class="device-log-match-count"></span>
+                    <div class="device-log-filters">
+                      <button class="log-filter-chip is-active" data-log-level="all" onclick="handleLogFilter(this)" type="button">All</button>
+                      <button class="log-filter-chip" data-log-level="error" onclick="handleLogFilter(this)" type="button">Errors</button>
+                      <button class="log-filter-chip" data-log-level="warn" onclick="handleLogFilter(this)" type="button">Warnings</button>
+                    </div>
+                  </div>
+                  <div class="device-log-lines">${renderDeviceLogLines(test.deviceLogTailText ?? '', test.recordingStartedAt)}</div>
+                  <a class="device-log-download" href="${escapeHtml(test.deviceLogFile)}" download>Download full log</a>
+                </div>
+              </div>`
+            : ''}
         </div>
       </div>
     </section>
@@ -1743,7 +2179,7 @@ function stripSnapshotYamlText(manifest: ReportRunManifest): ReportRunManifest {
       ...manifest.input,
       tests: manifest.input.tests.map(({ snapshotYamlText: _snapshotYamlText, ...test }) => test),
     },
-    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, ...test }) => test),
+    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, deviceLogTailText: _deviceLogTailText, ...test }) => test),
   };
 }
 
@@ -1791,6 +2227,65 @@ function formatRelativeTime(timestamp: string): string {
   }
   const totalWeeks = Math.floor(totalDays / 7);
   return `${totalWeeks}w`;
+}
+
+function parseLogTimestamp(line: string, referenceDate?: string): string | undefined {
+  // Android logcat threadtime: "MM-DD HH:MM:SS.mmm ..."
+  const androidMatch = /^(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\.(\d{3})/.exec(line);
+  if (androidMatch) {
+    const [, month, day, hour, min, sec, ms] = androidMatch;
+    const year = referenceDate ? new Date(referenceDate).getFullYear() : new Date().getFullYear();
+    return new Date(year, parseInt(month, 10) - 1, parseInt(day, 10),
+      parseInt(hour, 10), parseInt(min, 10), parseInt(sec, 10), parseInt(ms, 10)).toISOString();
+  }
+
+  // iOS compact log: "YYYY-MM-DD HH:MM:SS.mmm ..."
+  const iosMatch = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}\.\d{3})/.exec(line);
+  if (iosMatch) {
+    return new Date(`${iosMatch[1]}T${iosMatch[2]}`).toISOString();
+  }
+
+  return undefined;
+}
+
+function parseLogLevel(line: string): string {
+  // iOS compact log: timestamp then level code like "E ", "Ef"
+  const iosMatch = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(E|Ef)\s/.exec(line);
+  if (iosMatch) return 'error';
+  const iosWarnMatch = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(W|Wf)\s/.exec(line);
+  if (iosWarnMatch) return 'warn';
+
+  // Android logcat threadtime: "MM-DD HH:MM:SS.mmm PID TID LEVEL TAG: ..."
+  const androidMatch = /^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([EWDIV])\s/.exec(line);
+  if (androidMatch) {
+    const level = androidMatch[1];
+    if (level === 'E') return 'error';
+    if (level === 'W') return 'warn';
+  }
+
+  return 'info';
+}
+
+function renderDeviceLogLines(logText: string, recordingStartedAt?: string): string {
+  if (!logText) {
+    return '<div class="device-log-line muted">No log content available.</div>';
+  }
+  const recStartMs = recordingStartedAt ? new Date(recordingStartedAt).getTime() : undefined;
+  return logText.split('\n')
+    .filter(line => {
+      if (line.length === 0) return false;
+      if (recStartMs === undefined) return true;
+      const ts = parseLogTimestamp(line, recordingStartedAt);
+      if (!ts) return true;
+      const tsMs = new Date(ts).getTime();
+      return !Number.isFinite(tsMs) || tsMs >= recStartMs;
+    })
+    .map(line => {
+      const ts = parseLogTimestamp(line, recordingStartedAt);
+      const level = parseLogLevel(line);
+      return `<div class="device-log-line" data-log-ts="${escapeHtml(ts ?? '')}" data-log-level="${level}">${escapeHtml(line)}</div>`;
+    })
+    .join('');
 }
 
 function formatVideoTimestamp(videoOffsetMs: number | undefined): string {

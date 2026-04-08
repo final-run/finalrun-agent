@@ -62,7 +62,7 @@ export interface RunSummary {
 }
 
 export interface RunManifest {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   run: {
     runId: string;
     success: boolean;

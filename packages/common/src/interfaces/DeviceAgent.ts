@@ -52,6 +52,12 @@ export interface DeviceAgent {
   recordingCleanUp(): Promise<void>;
   abortRecording(runId: string, keepOutput?: boolean): Promise<void>;
 
+  // Device log capture methods
+  startLogCapture(request: { runId: string; testId: string; appIdentifier?: string }): Promise<DeviceNodeResponse>;
+  stopLogCapture(runId: string, testId: string): Promise<DeviceNodeResponse>;
+  logCaptureCleanUp(): Promise<void>;
+  abortLogCapture(runId: string, keepOutput?: boolean): Promise<void>;
+
   // Dart: void uninstallDriver()
   uninstallDriver(): void;
 }

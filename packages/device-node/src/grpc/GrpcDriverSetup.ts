@@ -8,6 +8,7 @@ import { DeviceInfo, Logger } from '@finalrun/common';
 import type { FilePathUtil } from '@finalrun/common';
 import { AndroidDevice } from '../device/android/AndroidDevice.js';
 import { Device } from '../device/Device.js';
+import { LogCaptureManager } from '../device/LogCaptureManager.js';
 import { IOSSimulator } from '../device/ios/IOSSimulator.js';
 import { CommonDriverActions } from '../device/shared/CommonDriverActions.js';
 import type { DeviceRuntime } from '../device/shared/DeviceRuntime.js';
@@ -99,10 +100,11 @@ export class GrpcDriverSetup {
     const grpcClient = this._grpcClientFactory();
 
     try {
-      const runtime = await this._createRuntime(deviceInfo, grpcClient);
+      const { runtime, adbPath } = await this._createRuntime(deviceInfo, grpcClient);
       return new Device({
         deviceInfo,
         runtime,
+        logCaptureController: new LogCaptureManager({ adbPath }),
       });
     } catch (error) {
       grpcClient.close();
@@ -113,25 +115,32 @@ export class GrpcDriverSetup {
   private async _createRuntime(
     deviceInfo: DeviceInfo,
     grpcClient: GrpcDriverClient,
-  ): Promise<DeviceRuntime> {
+  ): Promise<{ runtime: DeviceRuntime; adbPath?: string }> {
     const commonDriverActions = new CommonDriverActions({ grpcClient });
 
     if (deviceInfo.isAndroid) {
       const prepared = await this._androidDeviceSetup.prepare(deviceInfo, grpcClient);
-      return new AndroidDevice({
-        commonDriverActions,
-        adbClient: this._adbClient,
+      return {
+        runtime: new AndroidDevice({
+          commonDriverActions,
+          adbClient: this._adbClient,
+          adbPath: prepared.adbPath,
+          deviceSerial: prepared.deviceSerial,
+        }),
         adbPath: prepared.adbPath,
-        deviceSerial: prepared.deviceSerial,
-      });
+      };
     }
 
     const prepared = await this._iosSimulatorSetup.prepare(deviceInfo, grpcClient);
-    return new IOSSimulator({
-      commonDriverActions,
-      simctlClient: this._simctlClient,
-      deviceId: prepared.deviceId,
-    });
+    return {
+      runtime: new IOSSimulator({
+        commonDriverActions,
+        simctlClient: this._simctlClient,
+        deviceId: prepared.deviceId,
+        driverProcess: prepared.driverProcess,
+        restartDriver: prepared.restartDriver,
+      }),
+    };
   }
 
   /**

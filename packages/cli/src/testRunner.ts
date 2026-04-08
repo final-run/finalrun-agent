@@ -297,6 +297,11 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
               outputFilePath: recordingOutputPath,
               keepPartialOnFailure: true,
             },
+            deviceLog: {
+              runId: path.basename(runDir),
+              testId: test.testId!,
+              keepPartialOnFailure: true,
+            },
           });
 
           const testRecord = await reportWriter.writeTestRecord(
