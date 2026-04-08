@@ -17,6 +17,7 @@ import {
   startOrReuseWorkspaceReportServer,
 } from '../src/reportServerManager.js';
 import { normalizeSpecSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import { runCloud } from '../src/cloudRunner.js';
 import { PreExecutionFailureError, runTests } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
@@ -163,6 +164,31 @@ program
   });
 
 program
+  .command('cloud')
+  .description('Run tests on FinalRun cloud devices')
+  .option('--env <name>', 'Environment name')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--app <path>', 'Optional app override (.apk or .app)')
+  .option('--suite <path>', 'Suite manifest under .finalrun/suites')
+  .argument('[selectors...]', 'Workspace-relative YAML files, directories, or globs under .finalrun/tests')
+  .action(async (selectors: string[] | undefined, options: CloudCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      const normalizedSelectors = normalizeSpecSelectors(selectors);
+      if (normalizedSelectors.length === 0 && !options.suite) {
+        throw new Error(TEST_SELECTION_REQUIRED_ERROR);
+      }
+      await runCloud({
+        selectors: normalizedSelectors,
+        suitePath: options.suite,
+        envName: options.env,
+        platform: options.platform,
+        appPath: options.app,
+      });
+    });
+  });
+
+program
   .command('start-server')
   .description('Start or reuse the local FinalRun report server for this workspace')
   .option('--port <n>', 'Preferred port to bind to', '4173')
@@ -229,6 +255,13 @@ program
 program.parse();
 
 interface CheckCommandOptions {
+  env?: string;
+  platform?: string;
+  app?: string;
+  suite?: string;
+}
+
+interface CloudCommandOptions {
   env?: string;
   platform?: string;
   app?: string;
