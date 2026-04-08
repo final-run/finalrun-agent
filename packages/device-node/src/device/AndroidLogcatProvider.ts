@@ -19,13 +19,16 @@ type ExecFileFn = (
 export class AndroidLogcatProvider implements LogCaptureProvider {
   private readonly _execFileFn: ExecFileFn;
   private readonly _spawnFn: typeof spawn;
+  private readonly _adbPath: string;
 
   constructor(params?: {
     execFileFn?: ExecFileFn;
     spawnFn?: typeof spawn;
+    adbPath?: string;
   }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
     this._spawnFn = params?.spawnFn ?? spawn;
+    this._adbPath = params?.adbPath ?? 'adb';
   }
 
   get fileExtension(): string {
@@ -43,7 +46,7 @@ export class AndroidLogcatProvider implements LogCaptureProvider {
   }): Promise<{ process: ChildProcess; response: DeviceNodeResponse }> {
     try {
       // Clear the logcat ring buffer before capture
-      await this._execFileFn('adb', ['-s', params.deviceId, 'logcat', '-c']);
+      await this._execFileFn(this._adbPath, ['-s', params.deviceId, 'logcat', '-c']);
       Logger.i(
         `AndroidLogcatProvider: Cleared logcat ring buffer for device ${params.deviceId}`,
       );
@@ -53,7 +56,7 @@ export class AndroidLogcatProvider implements LogCaptureProvider {
 
       if (params.appIdentifier) {
         try {
-          const { stdout } = await this._execFileFn('adb', [
+          const { stdout } = await this._execFileFn(this._adbPath, [
             '-s', params.deviceId, 'shell', 'pidof', params.appIdentifier,
           ]);
           const pids = String(stdout).trim().split(/\s+/).filter(Boolean);
@@ -80,7 +83,7 @@ export class AndroidLogcatProvider implements LogCaptureProvider {
         `AndroidLogcatProvider: Starting log capture for device ${params.deviceId} with command: adb ${args.join(' ')}`,
       );
 
-      const childProcess = this._spawnFn('adb', args, {
+      const childProcess = this._spawnFn(this._adbPath, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
       }) as ChildProcess;
 
@@ -153,7 +156,7 @@ export class AndroidLogcatProvider implements LogCaptureProvider {
 
   async checkAvailability(): Promise<DeviceNodeResponse> {
     try {
-      await this._execFileFn('which', ['adb']);
+      await this._execFileFn('which', [this._adbPath]);
       return new DeviceNodeResponse({
         success: true,
         message: 'Android log capture tools (adb) are available.',

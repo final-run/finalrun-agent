@@ -280,7 +280,12 @@ export class Device implements DeviceAgent {
     let logIdentifier = request.appIdentifier;
     if (logIdentifier && this._runtime.resolveLogFilterIdentifier) {
       const resolved = await this._runtime.resolveLogFilterIdentifier(logIdentifier);
-      if (resolved) logIdentifier = resolved;
+      if (resolved) {
+        logIdentifier = resolved;
+      } else {
+        Logger.w(`Could not resolve log filter identifier for "${logIdentifier}"; capturing unfiltered log`);
+        logIdentifier = undefined;
+      }
     }
 
     return await this._logCaptureController.startLogCapture({

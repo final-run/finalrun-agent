@@ -59,9 +59,10 @@ export class LogCaptureManager implements DeviceLogCaptureController {
 
   constructor(params?: {
     providers?: Record<string, LogCaptureProvider>;
+    adbPath?: string;
   }) {
     const providers = params?.providers ?? {
-      [PLATFORM_ANDROID]: new AndroidLogcatProvider(),
+      [PLATFORM_ANDROID]: new AndroidLogcatProvider({ adbPath: params?.adbPath }),
       [PLATFORM_IOS]: new IOSLogProvider(),
     };
     this._providers = new Map(Object.entries(providers));
@@ -88,6 +89,11 @@ export class LogCaptureManager implements DeviceLogCaptureController {
         success: false,
         message: `Log capture is not configured for platform: ${params.platform}`,
       });
+    }
+
+    const availability = await provider.checkAvailability();
+    if (!availability.success) {
+      return availability;
     }
 
     const logDir = path.join(os.tmpdir(), 'finalrun-logs');

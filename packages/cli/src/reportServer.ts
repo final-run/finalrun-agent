@@ -307,6 +307,11 @@ export async function buildReportRunManifestViewModel(
     if (!content) {
       return undefined;
     }
+    const lines = content.split('\n');
+    const maxLines = 500;
+    if (lines.length > maxLines) {
+      return `[… ${lines.length - maxLines} lines truncated]\n${lines.slice(-maxLines).join('\n')}`;
+    }
     return content;
   };
 

@@ -1361,6 +1361,13 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
       for (const content of panel.querySelectorAll('.tab-content')) {
         content.classList.toggle('is-active', content.dataset.tabContent === tabName);
       }
+      if (tabName === 'logs') {
+        const container = panel.closest('[data-step-detail]');
+        const video = container ? container.querySelector('[data-role="recording-video"]') : null;
+        if (container && video && Number.isFinite(video.currentTime)) {
+          highlightNearestLogLine(container, video.currentTime);
+        }
+      }
     }
 
     function clearTestSelection() {
@@ -1652,7 +1659,10 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
 
     document.addEventListener('keydown', function(e) {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        var activeLogTab = document.querySelector('.tab-content.is-active[data-tab-content="logs"]');
+        var activePanel = document.querySelector('[data-test-panel].is-visible');
+        var activeLogTab = activePanel
+          ? activePanel.querySelector('.tab-content.is-active[data-tab-content="logs"]')
+          : null;
         if (activeLogTab) {
           var searchInput = activeLogTab.querySelector('.device-log-search');
           if (searchInput) {
@@ -1749,6 +1759,15 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
         video.playbackRate = Number(speed.value || 2);
         speed.addEventListener('change', applyPlaybackRate);
       }
+
+      let lastLogHighlightTime = 0;
+      video.addEventListener('timeupdate', () => {
+        const now = Date.now();
+        if (now - lastLogHighlightTime < 500) return;
+        lastLogHighlightTime = now;
+        highlightNearestLogLine(container, video.currentTime);
+      });
+
       video.dataset.seekbarBound = '1';
     }
 
@@ -2552,7 +2571,7 @@ function stripSnapshotYamlText(manifest: ReportRunManifest): RunManifest {
       ...manifest.input,
       tests: manifest.input.tests.map(({ snapshotYamlText: _snapshotYamlText, ...test }) => test),
     },
-    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, ...test }) => test),
+    tests: manifest.tests.map(({ snapshotYamlText: _snapshotYamlText, deviceLogTailText: _deviceLogTailText, ...test }) => test),
   };
 }
 

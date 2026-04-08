@@ -737,6 +737,8 @@ export class ReportWriter {
       }
     } catch (error) {
       Logger.w(`Failed to redact device log file: ${this._formatError(error)}`);
+      await fsp.unlink(targetPath).catch(() => {});
+      return undefined;
     }
 
     return logRelative;
