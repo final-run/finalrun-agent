@@ -175,15 +175,17 @@ export function formatHostPreflightReport(
 }
 
 function formatDoctorReport(result: HostPreflightResult): string {
-  const readyChecks = result.checks.filter((check) => check.status === 'ok');
-  const setupRequiredChecks = getBlockingChecks(result);
-  const warningChecks = result.checks.filter((check) => check.status === 'warning');
-
-  return [
-    formatSection('Ready', readyChecks),
-    formatSection('Setup Required', setupRequiredChecks),
-    formatSection('Warnings', warningChecks),
-  ].join('\n\n');
+  const lines: string[] = [];
+  for (const check of result.checks) {
+    if (check.status === 'ok') {
+      lines.push(`  ✓ ${check.title}`);
+    } else if (check.status === 'error') {
+      lines.push(`  ✗ ${check.title} — ${check.summary}`);
+    } else {
+      lines.push(`  ⚠ ${check.title} — ${check.summary}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 function formatTestReport(result: HostPreflightResult): string {
@@ -316,17 +318,6 @@ async function runAndroidChecks(
     resolvedPath: await filePathUtil.getDriverTestAppPath(),
     fallbackDetail: path.join(resourceDir, 'android', 'app-debug-androidTest.apk'),
     blocking: true,
-    dependencies,
-  }));
-
-  checks.push(await checkCommandOnPath({
-    platform: PLATFORM_ANDROID,
-    id: 'avdmanager',
-    title: 'avdmanager',
-    summary: 'Used to enrich Android Virtual Device metadata.',
-    detailWhenMissing: 'avdmanager was not found in PATH.',
-    smokeArgs: ['list', 'avd'],
-    blocking: false,
     dependencies,
   }));
 

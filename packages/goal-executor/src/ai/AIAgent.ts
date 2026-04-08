@@ -46,6 +46,9 @@ import {
 import {
   describeLLMTrace,
   finishTracePhase,
+  formatPlannerReasoning,
+  formatGrounderRequest,
+  formatGrounderResult,
   roundDuration,
   startTracePhase,
   type LLMTrace,
@@ -57,7 +60,7 @@ import { classifyFatalProviderError } from './providerFailure.js';
 // ============================================================================
 
 export interface PlannerRequest {
-  testCase: string;
+  testObjective: string;
   platform: string;
   preActionScreenshot?: string; // base64
   postActionScreenshot?: string; // base64
@@ -129,7 +132,7 @@ type AIAgentProviderOptions = {
  */
 export class AIAgent {
   private _provider: string; // e.g., 'openai', 'google', 'anthropic'
-  private _modelName: string; // e.g., 'gpt-4o', 'gemini-2.0-flash'
+  private _modelName: string; // e.g., 'gpt-5.4-mini', 'gemini-2.0-flash'
   private _apiKey: string;
 
   // Cached prompt contents
@@ -156,7 +159,7 @@ export class AIAgent {
       userParts.push({ type: 'image', image: request.preActionScreenshot });
     }
 
-    let textPrompt = `Test case: ${request.testCase}\n`;
+    let textPrompt = `Test objective: ${request.testObjective}\n`;
     textPrompt += `Platform: ${request.platform}\n`;
 
     if (request.history) {
@@ -227,6 +230,16 @@ export class AIAgent {
       const parsed = this._parsePlannerResponse(rawResult);
       const parseMs = roundDuration(performance.now() - parseStartedAt);
       finishTracePhase(parsePhase, 'success');
+
+      if (request.traceStep !== undefined) {
+        Logger.i(formatPlannerReasoning({
+          step: request.traceStep,
+          thought: parsed.thought,
+          action: parsed.act,
+          reason: parsed.reason,
+        }));
+      }
+
       return {
         ...parsed,
         trace: {
@@ -252,6 +265,14 @@ export class AIAgent {
    * Dart: Future<Map<String, dynamic>> ground(...)
    */
   async ground(request: GrounderRequest): Promise<GrounderResponse> {
+    if (request.traceStep !== undefined) {
+      Logger.i(formatGrounderRequest({
+        step: request.traceStep,
+        feature: request.feature,
+        act: request.act,
+      }));
+    }
+
     const phaseName = request.tracePhase ?? 'action.ground';
     const phase = startTracePhase(
       request.traceStep,
@@ -316,6 +337,21 @@ export class AIAgent {
           extraDetail: `feature=${request.feature}`,
         }),
       );
+
+      if (request.traceStep !== undefined) {
+        let bounds: [number, number, number, number] | null = null;
+        const idx = parsed.output['index'];
+        if (typeof idx === 'number' && request.hierarchy) {
+          const node = request.hierarchy.flattenedHierarchy[idx];
+          bounds = node?.bounds ?? null;
+        }
+        Logger.i(formatGrounderResult({
+          step: request.traceStep,
+          output: parsed.output,
+          bounds,
+        }));
+      }
+
       return {
         ...parsed,
         trace: {
@@ -378,12 +414,12 @@ export class AIAgent {
 
     if (result.reasoningText) {
       Logger.d(
-        `LLM reasoning (${this._provider}/${this._modelName}):\n${result.reasoningText}`,
+        `LLM reasoning [${phase}] (${this._provider}/${this._modelName}):\n${result.reasoningText}`,
       );
     }
 
     Logger.d(
-      `LLM response (${this._provider}/${this._modelName}):\n${result.text || '<empty response>'}`,
+      `LLM response [${phase}] (${this._provider}/${this._modelName}):\n${result.text || '<empty response>'}`,
     );
     return result.text;
   }
@@ -417,7 +453,7 @@ export class AIAgent {
         return {
           google: {
             thinkingConfig: {
-              thinkingLevel: phase === 'planner' ? 'medium' : 'minimal',
+              thinkingLevel: phase === 'planner' ? 'high' : 'medium',
               includeThoughts: false,
             },
           } satisfies GoogleLanguageModelOptions,

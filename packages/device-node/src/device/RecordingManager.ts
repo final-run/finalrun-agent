@@ -39,12 +39,12 @@ export interface RecordingAbortOptions {
 export interface DeviceRecordingController {
   startRecording(params: RecordingSessionStartParams): Promise<DeviceNodeResponse>;
   stopRecording(
-    testRunId: string,
-    testCaseId: string,
+    runId: string,
+    testId: string,
     options: RecordingStopOptions,
   ): Promise<DeviceNodeResponse>;
   cleanupDevice(deviceId: string, options: RecordingCleanupOptions): Promise<void>;
-  abortRecording(testRunId: string, options: RecordingAbortOptions): Promise<void>;
+  abortRecording(runId: string, options: RecordingAbortOptions): Promise<void>;
 }
 
 const MAP_KEY_DELIMITER = '###';
@@ -69,14 +69,14 @@ export class RecordingManager implements DeviceRecordingController {
     this._cwdProvider = params?.cwdProvider ?? (() => process.cwd());
   }
 
-  getMapKey(testRunId: string, testCaseId: string): string {
-    return `${testRunId}${MAP_KEY_DELIMITER}${testCaseId}`;
+  getMapKey(runId: string, testId: string): string {
+    return `${runId}${MAP_KEY_DELIMITER}${testId}`;
   }
 
   async startRecording(params: RecordingSessionStartParams): Promise<DeviceNodeResponse> {
     const mapKey = this.getMapKey(
-      params.recordingRequest.testRunId,
-      params.recordingRequest.testCaseId,
+      params.recordingRequest.runId,
+      params.recordingRequest.testId,
     );
 
     this._stoppedTestCases.delete(mapKey);
@@ -103,9 +103,9 @@ export class RecordingManager implements DeviceRecordingController {
       : path.resolve(this._cwdProvider(), provider.recordingFolder);
     await fsp.mkdir(recordingDir, { recursive: true });
 
-    const sanitizedTestRunId = this._sanitizeForFilename(params.recordingRequest.testRunId);
+    const sanitizedTestRunId = this._sanitizeForFilename(params.recordingRequest.runId);
     const sanitizedTestCaseId = this._sanitizeForFilename(
-      params.recordingRequest.testCaseId,
+      params.recordingRequest.testId,
     );
     const fallbackFileName =
       `${sanitizedTestRunId}_${sanitizedTestCaseId}.${provider.fileExtension}`;
@@ -116,8 +116,8 @@ export class RecordingManager implements DeviceRecordingController {
       deviceId: params.deviceId,
       fileName,
       filePath,
-      testRunId: params.recordingRequest.testRunId,
-      testCaseId: params.recordingRequest.testCaseId,
+      runId: params.recordingRequest.runId,
+      testId: params.recordingRequest.testId,
       platform: params.platform,
       apiKey: params.recordingRequest.apiKey,
     });
@@ -147,7 +147,7 @@ export class RecordingManager implements DeviceRecordingController {
         success: true,
         message:
           providerResult.response.message ??
-          `Recording started successfully for test case: ${params.recordingRequest.testCaseId}`,
+          `Recording started successfully for test case: ${params.recordingRequest.testId}`,
         data: {
           fileName,
           filePath,
@@ -162,7 +162,7 @@ export class RecordingManager implements DeviceRecordingController {
       this._recordingInfoMap.delete(mapKey);
       this._removeDeviceRecordingKey(params.deviceId, mapKey);
       Logger.e(
-        `Failed to start recording for test case: ${params.recordingRequest.testCaseId}`,
+        `Failed to start recording for test case: ${params.recordingRequest.testId}`,
         error,
       );
       return new DeviceNodeResponse({
@@ -173,11 +173,11 @@ export class RecordingManager implements DeviceRecordingController {
   }
 
   async stopRecording(
-    testRunId: string,
-    testCaseId: string,
+    runId: string,
+    testId: string,
     options: RecordingStopOptions,
   ): Promise<DeviceNodeResponse> {
-    const mapKey = this.getMapKey(testRunId, testCaseId);
+    const mapKey = this.getMapKey(runId, testId);
 
     if (this._stoppedTestCases.has(mapKey)) {
       return new DeviceNodeResponse({
@@ -236,13 +236,13 @@ export class RecordingManager implements DeviceRecordingController {
 
       return new DeviceNodeResponse({
         success: true,
-        message: `Recording aborted and cleaned up for test case: ${testCaseId}`,
+        message: `Recording aborted and cleaned up for test case: ${testId}`,
       });
     }
 
     return new DeviceNodeResponse({
       success: true,
-      message: `Recording stopped successfully for test case: ${testCaseId}`,
+      message: `Recording stopped successfully for test case: ${testId}`,
       data: {
         fileName: recordingInfo.fileName,
         filePath: recordingInfo.filePath,
@@ -255,9 +255,9 @@ export class RecordingManager implements DeviceRecordingController {
   async cleanupDevice(deviceId: string, options: RecordingCleanupOptions): Promise<void> {
     const recordingKeys = [...(this._deviceToRecordingKeysMap.get(deviceId) ?? [])];
     for (const mapKey of recordingKeys) {
-      const [testRunId, testCaseId] = mapKey.split(MAP_KEY_DELIMITER);
-      if (testRunId && testCaseId) {
-        await this.stopRecording(testRunId, testCaseId, {
+      const [runId, testId] = mapKey.split(MAP_KEY_DELIMITER);
+      if (runId && testId) {
+        await this.stopRecording(runId, testId, {
           platform: options.platform,
           keepOutput: options.keepOutput ?? false,
         });
@@ -276,16 +276,16 @@ export class RecordingManager implements DeviceRecordingController {
   }
 
   async abortRecording(
-    testRunId: string,
+    runId: string,
     options: RecordingAbortOptions,
   ): Promise<void> {
     const matchingEntries = [...this._recordingInfoMap.entries()].filter(
       ([, recordingInfo]) =>
-        recordingInfo.testRunId === testRunId && recordingInfo.deviceId === options.deviceId,
+        recordingInfo.runId === runId && recordingInfo.deviceId === options.deviceId,
     );
 
     for (const [, recordingInfo] of matchingEntries) {
-      await this.stopRecording(recordingInfo.testRunId, recordingInfo.testCaseId, {
+      await this.stopRecording(recordingInfo.runId, recordingInfo.testId, {
         platform: options.platform,
         keepOutput: options.keepOutput ?? false,
       });

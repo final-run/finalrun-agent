@@ -1,0 +1,29 @@
+name: Star Notifier
+
+on:
+  watch:
+    types: [started]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack Notification
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          STAR_COUNT=$(curl -s https://api.github.com/repos/${{ github.repository }} | jq '.stargazers_count')
+
+          curl -X POST "$SLACK_WEBHOOK" \
+            -H 'Content-type: application/json' \
+            --data '{
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "⭐ *New Star on ${{ github.repository }}!*\n\n👤 *Starred by:* <https://github.com/${{ github.actor }}|${{ github.actor }}>\n🌟 *Total Stars:* '"$STAR_COUNT"'"
+                  }
+                }
+              ]
+            }'

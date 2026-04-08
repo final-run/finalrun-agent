@@ -4,16 +4,16 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import type { RunManifestRecord, RunTargetRecord } from '@finalrun/common';
+import type { RunManifest, RunTarget } from '@finalrun/common';
 import { formatRunIndexForConsole, rebuildRunIndex } from './runIndex.js';
 
 function createRunManifest(
   runId: string,
   success: boolean,
-  target: RunTargetRecord = { type: 'direct' },
-): RunManifestRecord {
+  target: RunTarget = { type: 'direct' },
+): RunManifest {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     run: {
       runId,
       success,
@@ -25,8 +25,8 @@ function createRunManifest(
       platform: 'android',
       model: {
         provider: 'openai',
-        modelName: 'gpt-4o',
-        label: 'openai/gpt-4o',
+        modelName: 'gpt-5.4-mini',
+        label: 'openai/gpt-5.4-mini',
       },
       app: {
         source: 'repo',
@@ -35,7 +35,7 @@ function createRunManifest(
       selectors: ['login.yaml'],
       target,
       counts: {
-        specs: {
+        tests: {
           total: 1,
           passed: success ? 1 : 0,
           failed: success ? 0 : 1,
@@ -49,8 +49,8 @@ function createRunManifest(
       firstFailure: success
         ? undefined
         : {
-            specId: 'login',
-            specName: 'login',
+            testId: 'login',
+            testName: 'login',
             message: 'button not found',
             screenshotPath: 'tests/login/screenshots/001.jpg',
           },
@@ -61,14 +61,14 @@ function createRunManifest(
         variables: {},
         secretReferences: [],
       },
-      specs: [],
+      tests: [],
       cli: {
         command: 'finalrun test',
         selectors: ['login.yaml'],
         debug: false,
       },
     },
-    specs: [],
+    tests: [],
     paths: {
       runJson: 'run.json',
       summaryJson: 'summary.json',
@@ -152,9 +152,9 @@ test('formatRunIndexForConsole prints ABORT for aborted runs', () => {
         durationMs: 10000,
         envName: 'dev',
         platform: 'android',
-        modelLabel: 'openai/gpt-4o',
+        modelLabel: 'openai/gpt-5.4-mini',
         appLabel: 'repo app',
-        specCount: 2,
+        testCount: 2,
         passedCount: 0,
         failedCount: 1,
         stepCount: 1,

@@ -3,11 +3,11 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import type {
-  RunIndexEntryRecord,
-  RunIndexRecord,
-  RunManifestRecord as SharedRunManifestRecord,
-  RunManifestSelectedSpecRecord,
-  RunManifestSpecRecord,
+  RunIndexEntry,
+  RunIndex,
+  RunManifest,
+  TestDefinition,
+  TestResult,
 } from '@finalrun/common';
 import { REPORT_CONTENT_TYPES } from './contentTypes';
 
@@ -19,11 +19,11 @@ export interface ReportWorkspaceContext {
   artifactsDir: string;
 }
 
-export interface ReportIndexRunRecord extends RunIndexEntryRecord {
+export interface ReportIndexRunRecord extends RunIndexEntry {
   displayName: string;
-  displayKind: 'suite' | 'single_spec' | 'multi_spec' | 'fallback';
+  displayKind: 'suite' | 'single_test' | 'multi_test' | 'fallback';
   triggeredFrom: 'Suite' | 'Direct';
-  selectedSpecCount: number;
+  selectedTestCount: number;
 }
 
 export interface ReportIndexViewModel {
@@ -36,19 +36,19 @@ export interface ReportIndexViewModel {
   runs: ReportIndexRunRecord[];
 }
 
-export interface ReportManifestSelectedSpecRecord extends RunManifestSelectedSpecRecord {
+export interface ReportManifestSelectedTestRecord extends TestDefinition {
   snapshotYamlText?: string;
 }
 
-export interface ReportManifestSpecRecord extends RunManifestSpecRecord {
+export interface ReportManifestTestRecord extends TestResult {
   snapshotYamlText?: string;
 }
 
-export interface ReportRunManifestRecord extends Omit<SharedRunManifestRecord, 'input' | 'specs'> {
-  input: Omit<SharedRunManifestRecord['input'], 'specs'> & {
-    specs: ReportManifestSelectedSpecRecord[];
+export interface ReportRunManifest extends Omit<RunManifest, 'input' | 'tests'> {
+  input: Omit<RunManifest['input'], 'tests'> & {
+    tests: ReportManifestSelectedTestRecord[];
   };
-  specs: ReportManifestSpecRecord[];
+  tests: ReportManifestTestRecord[];
 }
 
 export class ArtifactRangeNotSatisfiableError extends Error {
@@ -76,11 +76,11 @@ export function resolveReportWorkspaceContext(): ReportWorkspaceContext {
 
 export async function loadRunIndexRecord(
   context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
-): Promise<RunIndexRecord> {
+): Promise<RunIndex> {
   const indexPath = path.join(context.artifactsDir, 'runs.json');
   try {
     const raw = await fsp.readFile(indexPath, 'utf-8');
-    return JSON.parse(raw) as RunIndexRecord;
+    return JSON.parse(raw) as RunIndex;
   } catch {
     return {
       schemaVersion: 1,
@@ -113,16 +113,20 @@ export async function loadReportIndexViewModel(
 export async function loadRunManifestRecord(
   runId: string,
   context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
-): Promise<SharedRunManifestRecord> {
+): Promise<RunManifest> {
   const runJsonPath = path.join(context.artifactsDir, runId, 'run.json');
   const raw = await fsp.readFile(runJsonPath, 'utf-8');
-  return JSON.parse(raw) as SharedRunManifestRecord;
+  const parsed = JSON.parse(raw) as RunManifest;
+  if (parsed.schemaVersion !== 2) {
+    throw new Error(`Unsupported schema version: ${parsed.schemaVersion}`);
+  }
+  return parsed;
 }
 
 export async function loadReportRunManifestViewModel(
   runId: string,
   context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
-): Promise<ReportRunManifestRecord> {
+): Promise<ReportRunManifest> {
   return await enrichRunManifestRecord(await loadRunManifestRecord(runId, context), context);
 }
 
@@ -265,12 +269,15 @@ function escapeHtml(value: string): string {
 }
 
 async function enrichRunManifestRecord(
-  manifest: SharedRunManifestRecord,
+  manifest: RunManifest,
   context: ReportWorkspaceContext,
-): Promise<ReportRunManifestRecord> {
+): Promise<ReportRunManifest> {
   const runId = manifest.run.runId;
   const snapshotCache = new Map<string, Promise<string | undefined>>();
-  const readSnapshotYamlText = async (snapshotYamlPath: string): Promise<string | undefined> => {
+  const readSnapshotYamlText = async (snapshotYamlPath: string | undefined): Promise<string | undefined> => {
+    if (!snapshotYamlPath) {
+      return undefined;
+    }
     let cached = snapshotCache.get(snapshotYamlPath);
     if (!cached) {
       cached = readRunArtifactText(context, runId, snapshotYamlPath);
@@ -283,17 +290,17 @@ async function enrichRunManifestRecord(
     ...manifest,
     input: {
       ...manifest.input,
-      specs: await Promise.all(
-        manifest.input.specs.map(async (spec) => ({
-          ...spec,
-          snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+      tests: await Promise.all(
+        manifest.input.tests.map(async (t) => ({
+          ...t,
+          snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
         })),
       ),
     },
-    specs: await Promise.all(
-      manifest.specs.map(async (spec) => ({
-        ...spec,
-        snapshotYamlText: await readSnapshotYamlText(spec.snapshotYamlPath),
+    tests: await Promise.all(
+      manifest.tests.map(async (t) => ({
+        ...t,
+        snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
       })),
     ),
   };
@@ -335,56 +342,56 @@ function normalizeRunArtifactPath(runId: string, artifactPath: string): string |
 }
 
 async function enrichRunIndexEntry(
-  run: RunIndexEntryRecord,
+  run: RunIndexEntry,
   context: ReportWorkspaceContext,
 ): Promise<ReportIndexRunRecord> {
   const manifest = await loadRunManifestRecord(run.runId, context).catch(() => null);
-  const selectedSpecs = manifest?.input.specs ?? [];
+  const selectedTests = manifest?.input.tests ?? [];
 
   return {
     ...run,
     displayName: deriveRunDisplayName(run, manifest),
     displayKind: deriveRunDisplayKind(run, manifest),
     triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
-    selectedSpecCount: selectedSpecs.length > 0 ? selectedSpecs.length : run.specCount,
+    selectedTestCount: selectedTests.length > 0 ? selectedTests.length : run.testCount,
   };
 }
 
 function deriveRunDisplayName(
-  run: RunIndexEntryRecord,
-  manifest: SharedRunManifestRecord | null,
+  run: RunIndexEntry,
+  manifest: RunManifest | null,
 ): string {
   if (run.target?.type === 'suite' && run.target.suiteName) {
     return run.target.suiteName;
   }
 
-  const selectedSpecs = manifest?.input.specs ?? [];
-  if (selectedSpecs.length === 1) {
-    return selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || run.runId;
+  const selectedTests = manifest?.input.tests ?? [];
+  if (selectedTests.length === 1) {
+    return selectedTests[0]?.name || selectedTests[0]?.relativePath || run.runId;
   }
-  if (selectedSpecs.length > 1) {
+  if (selectedTests.length > 1) {
     const firstLabel =
-      selectedSpecs[0]?.specName || selectedSpecs[0]?.relativePath || 'Selected specs';
-    return `${firstLabel} +${selectedSpecs.length - 1} more`;
+      selectedTests[0]?.name || selectedTests[0]?.relativePath || 'Selected tests';
+    return `${firstLabel} +${selectedTests.length - 1} more`;
   }
 
   return run.runId;
 }
 
 function deriveRunDisplayKind(
-  run: RunIndexEntryRecord,
-  manifest: SharedRunManifestRecord | null,
+  run: RunIndexEntry,
+  manifest: RunManifest | null,
 ): ReportIndexRunRecord['displayKind'] {
   if (run.target?.type === 'suite') {
     return 'suite';
   }
 
-  const selectedCount = manifest?.input.specs.length ?? run.specCount;
+  const selectedCount = manifest?.input.tests?.length ?? run.testCount;
   if (selectedCount === 1) {
-    return 'single_spec';
+    return 'single_test';
   }
   if (selectedCount > 1) {
-    return 'multi_spec';
+    return 'multi_test';
   }
 
   return 'fallback';

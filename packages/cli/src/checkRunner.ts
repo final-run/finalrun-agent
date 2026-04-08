@@ -1,14 +1,19 @@
-import { type LoadedRepoTestSuite, type LoadedRepoTestSpec, type RunTargetRecord } from '@finalrun/common';
+import { type SuiteDefinition, type TestDefinition, type RunTarget } from '@finalrun/common';
 import { CliEnv } from './env.js';
 import {
-  loadEnvironmentConfig,
-  loadTestSpec,
-  loadTestSuite,
-  validateSpecBindings,
-} from './specLoader.js';
-import { normalizeSpecSelectors, selectSpecFiles } from './testSelection.js';
+  resolveAppOverrideIdentifier,
+  resolveAppConfig,
+  type ResolvedAppConfig,
+} from './appConfig.js';
 import {
-  ensureWorkspaceDirectories,
+  loadEnvironmentConfig,
+  loadTest,
+  loadTestSuite,
+  validateTestBindings,
+} from './testLoader.js';
+import { normalizeTestSelectors, selectTestFiles } from './testSelection.js';
+import {
+  loadWorkspaceConfig,
   resolveWorkspace,
   resolveConfiguredEnvironmentFile,
   resolveSuiteManifestPath,
@@ -16,7 +21,7 @@ import {
   type AppOverrideValidationResult,
   type FinalRunWorkspace,
 } from './workspace.js';
-import type { LoadedEnvironmentConfig } from './specLoader.js';
+import type { LoadedEnvironmentConfig } from './testLoader.js';
 
 export const SUITE_SELECTOR_CONFLICT_ERROR =
   'Pass either --suite <path> or positional test selectors, not both.';
@@ -34,9 +39,10 @@ export interface CheckRunnerOptions {
 export interface CheckRunnerResult {
   workspace: FinalRunWorkspace;
   environment: LoadedEnvironmentConfig;
-  specs: LoadedRepoTestSpec[];
-  target: RunTargetRecord;
-  suite?: LoadedRepoTestSuite;
+  tests: TestDefinition[];
+  target: RunTarget;
+  suite?: SuiteDefinition;
+  resolvedApp: ResolvedAppConfig;
   appOverride?: AppOverrideValidationResult;
 }
 
@@ -44,7 +50,7 @@ export async function runCheck(
   options: CheckRunnerOptions,
 ): Promise<CheckRunnerResult> {
   const workspace = await resolveWorkspace(options.cwd);
-  await ensureWorkspaceDirectories(workspace);
+  const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
   const resolvedEnvironment = await resolveConfiguredEnvironmentFile(
     workspace,
     options.envName,
@@ -63,9 +69,9 @@ export async function runCheck(
     runtimeEnv,
   );
   const resolvedRunTarget = await resolveRunTarget(workspace, options);
-  const selectedFiles = await selectSpecFiles(
+  const selectedFiles = await selectTestFiles(
     workspace.testsDir,
-    resolvedRunTarget.specSelectors,
+    resolvedRunTarget.testSelectors,
     {
       requireSelection:
         resolvedRunTarget.target.type === 'suite'
@@ -73,26 +79,40 @@ export async function runCheck(
           : options.requireSelection,
     },
   );
-  const specs = await Promise.all(
+  const tests = await Promise.all(
     selectedFiles.map(async (filePath) => {
-      const spec = await loadTestSpec(filePath, workspace.testsDir);
-      validateSpecBindings(spec, environment.config, {
+      const test = await loadTest(filePath, workspace.testsDir);
+      validateTestBindings(test, environment.config, {
         environmentResolved: !resolvedEnvironment.usesEmptyBindings,
       });
-      return spec;
+      return test;
     }),
   );
 
-  const appOverride = options.appPath
+  const validatedAppOverride = options.appPath
     ? await validateAppOverride(options.appPath, options.platform)
     : undefined;
+  const appOverride = validatedAppOverride
+    ? {
+        ...validatedAppOverride,
+        resolvedIdentifier: await resolveAppOverrideIdentifier(validatedAppOverride),
+      }
+    : undefined;
+  const resolvedApp = resolveAppConfig({
+    workspaceApp: workspaceConfig.app,
+    environmentApp: environment.config.app,
+    envName: environment.envName,
+    requestedPlatform: options.platform,
+    appOverride,
+  });
 
   return {
     workspace,
     environment,
-    specs,
+    tests,
     target: resolvedRunTarget.target,
     suite: resolvedRunTarget.suite,
+    resolvedApp,
     appOverride,
   };
 }
@@ -101,11 +121,11 @@ async function resolveRunTarget(
   workspace: FinalRunWorkspace,
   options: CheckRunnerOptions,
 ): Promise<{
-  target: RunTargetRecord;
-  specSelectors: string[];
-  suite?: LoadedRepoTestSuite;
+  target: RunTarget;
+  testSelectors: string[];
+  suite?: SuiteDefinition;
 }> {
-  const normalizedSelectors = normalizeSpecSelectors(options.selectors);
+  const normalizedSelectors = normalizeTestSelectors(options.selectors);
   if (options.suitePath && normalizedSelectors.length > 0) {
     throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
   }
@@ -113,7 +133,7 @@ async function resolveRunTarget(
   if (!options.suitePath) {
     return {
       target: { type: 'direct' },
-      specSelectors: normalizedSelectors,
+      testSelectors: normalizedSelectors,
     };
   }
 
@@ -126,7 +146,7 @@ async function resolveRunTarget(
       suiteName: suite.name,
       suitePath: suite.relativePath,
     },
-    specSelectors: suite.tests,
+    testSelectors: suite.tests,
     suite,
   };
 }

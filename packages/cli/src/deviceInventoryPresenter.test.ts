@@ -35,7 +35,20 @@ function createEntry(params: {
   };
 }
 
-test('promptForDeviceSelection reprompts until a valid device number is entered', async () => {
+const TWO_ENTRIES = [
+  createEntry({
+    selectionId: 'android:1',
+    platform: 'android',
+    displayName: 'Pixel 8 - Android 14 - emulator-5554',
+  }),
+  createEntry({
+    selectionId: 'ios:1',
+    platform: 'ios',
+    displayName: 'iPhone 15 Pro - iOS 17.5 - BOOTED-DEVICE-1',
+  }),
+];
+
+test('promptForDeviceSelection reprompts until a valid device number is entered (TTY)', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   let outputText = '';
@@ -49,18 +62,7 @@ test('promptForDeviceSelection reprompts until a valid device number is entered'
 
   const selected = await promptForDeviceSelection({
     heading: 'Select a device',
-    entries: [
-      createEntry({
-        selectionId: 'android:1',
-        platform: 'android',
-        displayName: 'Pixel 8 - Android 14 - emulator-5554',
-      }),
-      createEntry({
-        selectionId: 'ios:1',
-        platform: 'ios',
-        displayName: 'iPhone 15 Pro - iOS 17.5 - BOOTED-DEVICE-1',
-      }),
-    ],
+    entries: TWO_ENTRIES,
     io: {
       input,
       output,
@@ -70,29 +72,87 @@ test('promptForDeviceSelection reprompts until a valid device number is entered'
 
   assert.equal(selected.selectionId, 'ios:1');
   assert.match(outputText, /Invalid selection/);
+  assert.match(outputText, /Enter a device number/);
 });
 
-test('promptForDeviceSelection fails with the exact non-TTY message', async () => {
+test('promptForDeviceSelection selects from piped stdin without prompting (non-TTY)', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let outputText = '';
+  output.on('data', (chunk: Buffer | string) => {
+    outputText += String(chunk);
+  });
+  input.end('1\n');
+
+  const selected = await promptForDeviceSelection({
+    heading: 'Select a device',
+    entries: TWO_ENTRIES,
+    io: {
+      input,
+      output,
+      isTTY: false,
+    },
+  });
+
+  assert.equal(selected.selectionId, 'android:1');
+  assert.match(outputText, /Select a device/);
+  assert.match(outputText, /1\. Pixel 8/);
+  assert.doesNotMatch(outputText, /Enter a device number/);
+});
+
+test('promptForDeviceSelection throws a clean error when stdin is closed without input (non-TTY)', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let outputText = '';
+  output.on('data', (chunk: Buffer | string) => {
+    outputText += String(chunk);
+  });
+  input.end();
+
   await assert.rejects(
     () =>
       promptForDeviceSelection({
         heading: 'Select a device',
-        entries: [
-          createEntry({
-            selectionId: 'android:1',
-            platform: 'android',
-            displayName: 'Pixel 8 - Android 14 - emulator-5554',
-          }),
-        ],
+        entries: TWO_ENTRIES,
         io: {
-          input: new PassThrough(),
-          output: new PassThrough(),
+          input,
+          output,
           isTTY: false,
         },
       }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.equal(error.message, 'Interactive device selection requires a TTY.');
+      assert.match(error.message, /Multiple devices available/);
+      assert.match(error.message, /echo "1"/);
+      assert.doesNotMatch(error.message, /Enter a device number/);
+      return true;
+    },
+  );
+
+  assert.match(outputText, /Select a device/);
+  assert.match(outputText, /Pixel 8/);
+});
+
+test('promptForDeviceSelection rejects invalid piped input (non-TTY)', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  input.end('99\n');
+
+  await assert.rejects(
+    () =>
+      promptForDeviceSelection({
+        heading: 'Select a device',
+        entries: TWO_ENTRIES,
+        io: {
+          input,
+          output,
+          isTTY: false,
+        },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Invalid device number "99"/);
+      assert.match(error.message, /1, 2/);
       return true;
     },
   );

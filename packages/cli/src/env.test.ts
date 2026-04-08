@@ -25,8 +25,8 @@ test('parseModel rejects malformed values without a slash', () => {
 
 test('parseModel rejects an empty provider segment', () => {
   assert.throws(
-    () => parseModel('/gpt-4o'),
-    /Invalid model format: "\/gpt-4o"\. Expected provider\/model with non-empty provider and model name\. Supported providers: openai, google, anthropic\./,
+    () => parseModel('/gpt-5.4-mini'),
+    /Invalid model format: "\/gpt-5.4-mini"\. Expected provider\/model with non-empty provider and model name\. Supported providers: openai, google, anthropic\./,
   );
 });
 

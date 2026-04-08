@@ -1,7 +1,7 @@
 // Port of mobile_cli/lib/terminal_goal_renderer.dart
 // Renders goal execution progress in the terminal with live updates.
 
-import type { GoalProgressEvent, GoalResult } from '@finalrun/goal-executor';
+import type { ExecutionProgressEvent, TestExecutionResult } from '@finalrun/goal-executor';
 
 /**
  * Renders goal execution progress in the terminal.
@@ -18,30 +18,27 @@ export class TerminalRenderer {
   /**
    * Handle a progress event from the goal executor.
    */
-  onProgress(event: GoalProgressEvent): void {
+  onProgress(event: ExecutionProgressEvent): void {
     switch (event.type) {
       case 'planning':
-        this._showSpinner(
-          `[${event.iteration}/${event.totalIterations}] ${event.message ?? 'Planning...'}`,
+        this._stopSpinner();
+        console.log(
+          `  [${event.iteration}/${event.totalIterations}] ${event.message ?? 'Planning...'}`,
         );
         break;
 
       case 'executing':
         this._stopSpinner();
-        const arrow = '\x1b[36m→\x1b[0m'; // Cyan arrow
-        console.log(
-          `  ${arrow} [${event.iteration}/${event.totalIterations}] \x1b[1m${event.action}\x1b[0m: ${event.reason}`,
-        );
-        this._showSpinner('Executing...');
+        console.log('  Executing...');
         break;
 
       case 'step_complete':
         this._stopSpinner();
         if (event.success) {
-          console.log(`  \x1b[32m✓\x1b[0m Step completed`);
+          console.log(`  \x1b[32m✓\x1b[0m Step completed\n`);
         } else {
           console.log(
-            `  \x1b[31m✗\x1b[0m Step failed: ${event.message ?? 'Unknown error'}`,
+            `  \x1b[31m✗\x1b[0m Step failed: ${event.message ?? 'Unknown error'}\n`,
           );
         }
         break;
@@ -67,7 +64,7 @@ export class TerminalRenderer {
   /**
    * Print a summary of the goal execution result.
    */
-  printSummary(result: GoalResult): void {
+  printSummary(result: TestExecutionResult): void {
     console.log('\n' + '─'.repeat(50));
     console.log(
       result.status === 'aborted'

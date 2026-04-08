@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import {
+  DeviceActionRequest,
   DeviceInfo,
   DeviceNodeResponse,
+  GetAppListAction,
+  LaunchAppAction,
   Logger,
   PLATFORM_ANDROID,
   type DeviceInventoryDiagnostic,
@@ -11,16 +14,16 @@ import {
   type DeviceInventoryReport,
   type RecordingRequest,
 } from '@finalrun/common';
-import type { GoalResult } from '@finalrun/goal-executor';
+import type { TestExecutionResult } from '@finalrun/goal-executor';
 import type { DeviceNode } from '@finalrun/device-node';
 import {
-  executeGoalOnSession,
-  prepareGoalSession,
+  executeTestOnSession,
+  prepareTestSession,
   runGoal,
-  type GoalRunnerDependencies,
-} from './goalRunner.js';
+  type TestSessionDeps,
+} from './sessionRunner.js';
 
-function createAndroidGoalResult(): GoalResult {
+function createAndroidTestExecutionResult(): TestExecutionResult {
   return {
     success: true,
     status: 'success',
@@ -94,9 +97,9 @@ function createStartableIOSEntry(): DeviceInventoryEntry {
 
 function createDependencies(params: {
   startRecording?: (request: RecordingRequest) => Promise<DeviceNodeResponse>;
-  stopRecording?: (testRunId: string, testCaseId: string) => Promise<DeviceNodeResponse>;
-  abortRecording?: (testRunId: string, keepOutput?: boolean) => Promise<void>;
-  executeGoal?: () => Promise<GoalResult>;
+  stopRecording?: (runId: string, testId: string) => Promise<DeviceNodeResponse>;
+  abortRecording?: (runId: string, keepOutput?: boolean) => Promise<void>;
+  executeGoal?: () => Promise<TestExecutionResult>;
   devices?: DeviceInfo[];
   inventoryReports?: DeviceInventoryReport[];
   adbPath?: string | null;
@@ -110,9 +113,14 @@ function createDependencies(params: {
   ) => DeviceInventoryDiagnostic | null | Promise<DeviceInventoryDiagnostic | null>;
   onInstallAndroidApp?: (adbPath: string, deviceId: string, appPath: string) => boolean | Promise<boolean>;
   onInstallIOSApp?: (deviceId: string, appPath: string) => boolean | Promise<boolean>;
+  availableApps?: Array<{ packageName: string; name: string }>;
+  deviceActions?: unknown[];
+  onExecuteDeviceAction?: (
+    request: DeviceActionRequest,
+  ) => DeviceNodeResponse | Promise<DeviceNodeResponse>;
   selectionInput?: string;
-}): GoalRunnerDependencies {
-  const printedResults: GoalResult[] = [];
+}): TestSessionDeps {
+  const printedResults: TestExecutionResult[] = [];
   const selectionInput = new PassThrough();
   if (params.selectionInput) {
     selectionInput.end(params.selectionInput);
@@ -124,6 +132,29 @@ function createDependencies(params: {
   });
   let inventoryCallCount = 0;
   const device = {
+    async executeAction(request: DeviceActionRequest) {
+      if (params.onExecuteDeviceAction) {
+        return await params.onExecuteDeviceAction(request);
+      }
+      if (request.action instanceof GetAppListAction) {
+        return new DeviceNodeResponse({
+          success: true,
+          data: {
+            apps: params.availableApps ?? [],
+          },
+        });
+      }
+
+      params.deviceActions?.push(request.action);
+      if (request.action instanceof LaunchAppAction) {
+        return new DeviceNodeResponse({
+          success: true,
+          message: `Launched ${request.action.appUpload.packageName}`,
+        });
+      }
+
+      return new DeviceNodeResponse({ success: true });
+    },
     async startRecording(request: RecordingRequest) {
       return await (params.startRecording ??
         (async () =>
@@ -134,7 +165,7 @@ function createDependencies(params: {
             },
           })))(request);
     },
-    async stopRecording(testRunId: string, testCaseId: string) {
+    async stopRecording(runId: string, testId: string) {
       return await (params.stopRecording ??
         (async () =>
           new DeviceNodeResponse({
@@ -144,10 +175,10 @@ function createDependencies(params: {
               startedAt: '2026-03-20T10:00:00.000Z',
               completedAt: '2026-03-20T10:00:05.000Z',
             },
-          })))(testRunId, testCaseId);
+          })))(runId, testId);
     },
-    async abortRecording(testRunId: string, keepOutput?: boolean) {
-      await (params.abortRecording ?? (async () => {}))(testRunId, keepOutput);
+    async abortRecording(runId: string, keepOutput?: boolean) {
+      await (params.abortRecording ?? (async () => {}))(runId, keepOutput);
     },
   };
 
@@ -186,13 +217,13 @@ function createDependencies(params: {
     },
   };
 
-  const dependencies: GoalRunnerDependencies = {
+  const dependencies: TestSessionDeps = {
     createFilePathUtil: () =>
       ({
         async getADBPath() {
           return params.adbPath ?? '/usr/bin/adb';
         },
-      }) as unknown as ReturnType<GoalRunnerDependencies['createFilePathUtil']>,
+      }) as unknown as ReturnType<TestSessionDeps['createFilePathUtil']>,
     getDeviceNode: () => deviceNode as unknown as DeviceNode,
     createSelectionIO: () => ({
       input: selectionInput,
@@ -204,12 +235,12 @@ function createDependencies(params: {
       ({
         abort() {},
         async executeGoal() {
-          return await (params.executeGoal ?? (async () => createAndroidGoalResult()))();
+          return await (params.executeGoal ?? (async () => createAndroidTestExecutionResult()))();
         },
-      }) as ReturnType<GoalRunnerDependencies['createExecutor']>,
+      }) as ReturnType<TestSessionDeps['createExecutor']>,
     createRenderer: () => ({
       onProgress() {},
-      printSummary(result: GoalResult) {
+      printSummary(result: TestExecutionResult) {
         printedResults.push(result);
       },
       destroy() {},
@@ -237,8 +268,8 @@ test('runGoal starts and stops Android recording when recording is configured', 
         },
       });
     },
-    async stopRecording(testRunId, testCaseId) {
-      stopCalls.push([testRunId, testCaseId]);
+    async stopRecording(runId, testId) {
+      stopCalls.push([runId, testId]);
       return new DeviceNodeResponse({
         success: true,
         data: {
@@ -258,8 +289,8 @@ test('runGoal starts and stops Android recording when recording is configured', 
       modelName: 'gpt-4.1',
       platform: PLATFORM_ANDROID,
       recording: {
-        testRunId: 'run-1',
-        testCaseId: 'case-1',
+        runId: 'run-1',
+        testId: 'case-1',
       },
     },
     dependencies,
@@ -268,13 +299,13 @@ test('runGoal starts and stops Android recording when recording is configured', 
   assert.equal(result.success, true);
   assert.deepEqual(stopCalls, [['run-1', 'case-1']]);
   assert.equal(recordingRequests.length, 1);
-  assert.equal(recordingRequests[0]?.testRunId, 'run-1');
-  assert.equal(recordingRequests[0]?.testCaseId, 'case-1');
+  assert.equal(recordingRequests[0]?.runId, 'run-1');
+  assert.equal(recordingRequests[0]?.testId, 'case-1');
   assert.equal(recordingRequests[0]?.outputFilePath, undefined);
   assert.equal(result.recording?.filePath, '/tmp/run_case.mp4');
 });
 
-test('executeGoalOnSession forwards explicit recording output paths and preserves partials when execution aborts', async () => {
+test('executeTestOnSession forwards explicit recording output paths and preserves partials when execution aborts', async () => {
   const recordingRequests: RecordingRequest[] = [];
   const abortCalls: Array<[string, boolean | undefined]> = [];
   const dependencies = createDependencies({
@@ -287,15 +318,15 @@ test('executeGoalOnSession forwards explicit recording output paths and preserve
         },
       });
     },
-    async abortRecording(testRunId, keepOutput) {
-      abortCalls.push([testRunId, keepOutput]);
+    async abortRecording(runId, keepOutput) {
+      abortCalls.push([runId, keepOutput]);
     },
     async executeGoal() {
       throw new Error('executor crashed');
     },
   });
 
-  const session = await prepareGoalSession(
+  const session = await prepareTestSession(
     {
       platform: PLATFORM_ANDROID,
     },
@@ -305,16 +336,16 @@ test('executeGoalOnSession forwards explicit recording output paths and preserve
   try {
     await assert.rejects(
       () =>
-        executeGoalOnSession(
+        executeTestOnSession(
           session,
           {
-            goal: 'Spec 1',
+            goal: 'Test 1',
             apiKey: 'test-key',
             provider: 'openai',
             modelName: 'gpt-4.1',
             recording: {
-              testRunId: 'run-1',
-              testCaseId: 'case-1',
+              runId: 'run-1',
+              testId: 'case-1',
               outputFilePath: '/tmp/finalrun-artifacts/run-1/tests/case-1/recording.mp4',
               keepPartialOnFailure: true,
             },
@@ -334,7 +365,7 @@ test('executeGoalOnSession forwards explicit recording output paths and preserve
   }
 });
 
-test('prepareGoalSession installs the Android app override once during shared setup', async () => {
+test('prepareTestSession installs the Android app override once during shared setup', async () => {
   const installCalls: Array<[string, string, string]> = [];
   let detectCalls = 0;
   let setUpCalls = 0;
@@ -355,7 +386,7 @@ test('prepareGoalSession installs the Android app override once during shared se
     },
   });
 
-  const session = await prepareGoalSession(
+  const session = await prepareTestSession(
     {
       platform: PLATFORM_ANDROID,
       appOverridePath: '/tmp/app.apk',
@@ -374,7 +405,67 @@ test('prepareGoalSession installs the Android app override once during shared se
   }
 });
 
-test('prepareGoalSession logs a compact summary when one target is auto-selected', async () => {
+test('prepareTestSession prelaunches the configured app and stores the launch summary', async () => {
+  const deviceActions: unknown[] = [];
+  const dependencies = createDependencies({
+    availableApps: [
+      { packageName: 'org.wikipedia', name: 'Wikipedia' },
+    ],
+    deviceActions,
+  });
+
+  const session = await prepareTestSession(
+    {
+      platform: PLATFORM_ANDROID,
+      app: {
+        platform: PLATFORM_ANDROID,
+        identifier: 'org.wikipedia',
+        identifierKind: 'packageName',
+      },
+    },
+    dependencies,
+  );
+
+  try {
+    assert.equal(session.app?.identifier, 'org.wikipedia');
+    assert.match(
+      session.launchSummary ?? '',
+      /already launched Android package "org\.wikipedia" before the goal started/,
+    );
+    assert.equal(deviceActions.length, 1);
+    assert.ok(deviceActions[0] instanceof LaunchAppAction);
+    assert.equal(
+      (deviceActions[0] as LaunchAppAction).shouldUninstallBeforeLaunch,
+      false,
+    );
+  } finally {
+    await session.cleanup();
+  }
+});
+
+test('prepareTestSession fails when the configured app is not installed', async () => {
+  const dependencies = createDependencies({
+    availableApps: [],
+  });
+
+  await assert.rejects(
+    () =>
+      prepareTestSession(
+        {
+          platform: PLATFORM_ANDROID,
+          app: {
+            platform: PLATFORM_ANDROID,
+            identifier: 'org.wikipedia',
+            identifierKind: 'packageName',
+          },
+        },
+        dependencies,
+      ),
+    /Android package "org\.wikipedia" is not installed on the selected device/,
+  );
+});
+
+test('prepareTestSession logs a compact summary when one target is auto-selected', async () => {
   const androidEntry = createInventoryEntryFromDevice(createAndroidDeviceInfo());
   const shutdownEntry = createStartableIOSEntry();
   const dependencies = createDependencies({
@@ -391,10 +482,10 @@ test('prepareGoalSession logs a compact summary when one target is auto-selected
   };
   Logger.addSink(sink);
 
-  const session = await prepareGoalSession({}, dependencies);
+  const session = await prepareTestSession({}, dependencies);
 
   try {
-    const output = (dependencies as GoalRunnerDependencies & {
+    const output = (dependencies as TestSessionDeps & {
       __selectionOutputText: () => string;
     }).__selectionOutputText();
     assert.equal(output, '');
@@ -408,7 +499,7 @@ test('prepareGoalSession logs a compact summary when one target is auto-selected
   }
 });
 
-test('prepareGoalSession prompts for a device when multiple runnable targets are available', async () => {
+test('prepareTestSession prompts for a device when multiple runnable targets are available', async () => {
   const androidEntry = createInventoryEntryFromDevice(createAndroidDeviceInfo());
   const iosEntry = createInventoryEntryFromDevice(createIOSDeviceInfo());
   const dependencies = createDependencies({
@@ -421,11 +512,11 @@ test('prepareGoalSession prompts for a device when multiple runnable targets are
     selectionInput: '2\n',
   });
 
-  const session = await prepareGoalSession({}, dependencies);
+  const session = await prepareTestSession({}, dependencies);
 
   try {
     assert.equal(session.platform, 'ios');
-    const output = (dependencies as GoalRunnerDependencies & {
+    const output = (dependencies as TestSessionDeps & {
       __selectionOutputText: () => string;
     }).__selectionOutputText();
     assert.doesNotMatch(output, /Detected local targets/);
@@ -439,7 +530,7 @@ test('prepareGoalSession prompts for a device when multiple runnable targets are
   }
 });
 
-test('prepareGoalSession starts a selected shutdown simulator before setup', async () => {
+test('prepareTestSession starts a selected shutdown simulator before setup', async () => {
   const shutdownEntry = createStartableIOSEntry();
   const bootedEntry: DeviceInventoryEntry = {
     selectionId: 'ios-simulator:SHUTDOWN-DEVICE-1',
@@ -480,7 +571,7 @@ test('prepareGoalSession starts a selected shutdown simulator before setup', asy
     },
   });
 
-  const session = await prepareGoalSession({}, dependencies);
+  const session = await prepareTestSession({}, dependencies);
 
   try {
     assert.equal(session.platform, 'ios');
@@ -490,7 +581,7 @@ test('prepareGoalSession starts a selected shutdown simulator before setup', asy
   }
 });
 
-test('prepareGoalSession reports Android app override failure after driver connection', async () => {
+test('prepareTestSession reports Android app override failure after driver connection', async () => {
   let cleanupCalls = 0;
   let setUpCalls = 0;
   const dependencies = createDependencies({
@@ -507,7 +598,7 @@ test('prepareGoalSession reports Android app override failure after driver conne
 
   await assert.rejects(
     () =>
-      prepareGoalSession(
+      prepareTestSession(
         {
           platform: PLATFORM_ANDROID,
           appOverridePath: '/tmp/app.apk',
@@ -521,7 +612,7 @@ test('prepareGoalSession reports Android app override failure after driver conne
   assert.equal(cleanupCalls, 1);
 });
 
-test('executeGoalOnSession reuses one prepared session while keeping recording scoped per spec', async () => {
+test('executeTestOnSession reuses one prepared session while keeping recording scoped per test', async () => {
   const recordingRequests: RecordingRequest[] = [];
   const stopCalls: Array<[string, string]> = [];
   let detectCalls = 0;
@@ -546,12 +637,12 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
         },
       });
     },
-    async stopRecording(testRunId, testCaseId) {
-      stopCalls.push([testRunId, testCaseId]);
+    async stopRecording(runId, testId) {
+      stopCalls.push([runId, testId]);
       return new DeviceNodeResponse({
         success: true,
         data: {
-          filePath: `/tmp/${testCaseId}.mp4`,
+          filePath: `/tmp/${testId}.mp4`,
           startedAt: '2026-03-20T10:00:00.000Z',
           completedAt: '2026-03-20T10:00:05.000Z',
         },
@@ -559,7 +650,7 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
     },
   });
 
-  const session = await prepareGoalSession(
+  const session = await prepareTestSession(
     {
       platform: PLATFORM_ANDROID,
     },
@@ -567,30 +658,30 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
   );
 
   try {
-    await executeGoalOnSession(
+    await executeTestOnSession(
       session,
       {
-        goal: 'Spec 1',
+        goal: 'Test 1',
         apiKey: 'test-key',
         provider: 'openai',
         modelName: 'gpt-4.1',
         recording: {
-          testRunId: 'run-1',
-          testCaseId: 'case-1',
+          runId: 'run-1',
+          testId: 'case-1',
         },
       },
       dependencies,
     );
-    await executeGoalOnSession(
+    await executeTestOnSession(
       session,
       {
-        goal: 'Spec 2',
+        goal: 'Test 2',
         apiKey: 'test-key',
         provider: 'openai',
         modelName: 'gpt-4.1',
         recording: {
-          testRunId: 'run-1',
-          testCaseId: 'case-2',
+          runId: 'run-1',
+          testId: 'case-2',
         },
       },
       dependencies,
@@ -599,7 +690,7 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
     assert.equal(detectCalls, 1);
     assert.equal(setUpCalls, 1);
     assert.deepEqual(
-      recordingRequests.map((request) => request.testCaseId),
+      recordingRequests.map((request) => request.testId),
       ['case-1', 'case-2'],
     );
     assert.deepEqual(stopCalls, [
@@ -612,7 +703,61 @@ test('executeGoalOnSession reuses one prepared session while keeping recording s
   }
 });
 
-test('runGoal still performs isolated setup and cleanup for single-spec execution', async () => {
+test('executeTestOnSession forwards the prelaunch summary and app identifier to the executor', async () => {
+  let capturedConfig:
+    | {
+        preContext?: string;
+        appIdentifier?: string;
+      }
+    | undefined;
+  const dependencies = createDependencies({});
+  dependencies.createExecutor = (params) => {
+    capturedConfig = {
+      preContext: params.preContext,
+      appIdentifier: params.appIdentifier,
+    };
+    return {
+      abort() {},
+      async executeGoal() {
+        return createAndroidTestExecutionResult();
+      },
+    };
+  };
+
+  const session = {
+    platform: 'android' as const,
+    deviceInfo: {} as never,
+    deviceNode: {} as never,
+    device: {} as never,
+    app: {
+      platform: 'android' as const,
+      identifier: 'org.wikipedia',
+      identifierKind: 'packageName' as const,
+    },
+    launchSummary: 'The CLI already launched Android package "org.wikipedia".',
+    async cleanup() {
+      return undefined;
+    },
+  };
+
+  await executeTestOnSession(
+    session,
+    {
+      goal: 'Test 1',
+      apiKey: 'test-key',
+      provider: 'openai',
+      modelName: 'gpt-4.1',
+    },
+    dependencies,
+  );
+
+  assert.deepEqual(capturedConfig, {
+    preContext: 'The CLI already launched Android package "org.wikipedia".',
+    appIdentifier: 'org.wikipedia',
+  });
+});
+
+test('runGoal still performs isolated setup and cleanup for single-test execution', async () => {
   let detectCalls = 0;
   let setUpCalls = 0;
   let cleanupCalls = 0;
@@ -656,7 +801,7 @@ test('runGoal fails before execution if required Android recording cannot start'
     },
     async executeGoal() {
       executed = true;
-      return createAndroidGoalResult();
+      return createAndroidTestExecutionResult();
     },
   });
 
@@ -668,8 +813,8 @@ test('runGoal fails before execution if required Android recording cannot start'
       modelName: 'gpt-4.1',
       platform: PLATFORM_ANDROID,
       recording: {
-        testRunId: 'run-1',
-        testCaseId: 'case-1',
+        runId: 'run-1',
+        testId: 'case-1',
       },
     },
     dependencies,
@@ -680,7 +825,7 @@ test('runGoal fails before execution if required Android recording cannot start'
   assert.match(result.message, /Recording is required for Android runs/);
 });
 
-test('runGoal marks the Android spec as failed if recording stops without a video file', async () => {
+test('runGoal marks the Android test as failed if recording stops without a video file', async () => {
   const abortCalls: Array<[string, boolean | undefined]> = [];
   const dependencies = createDependencies({
     async startRecording() {
@@ -697,8 +842,8 @@ test('runGoal marks the Android spec as failed if recording stops without a vide
         message: 'scrcpy process exited before file creation',
       });
     },
-    async abortRecording(testRunId, keepOutput) {
-      abortCalls.push([testRunId, keepOutput]);
+    async abortRecording(runId, keepOutput) {
+      abortCalls.push([runId, keepOutput]);
     },
   });
 
@@ -710,8 +855,8 @@ test('runGoal marks the Android spec as failed if recording stops without a vide
       modelName: 'gpt-4.1',
       platform: PLATFORM_ANDROID,
       recording: {
-        testRunId: 'run-1',
-        testCaseId: 'case-1',
+        runId: 'run-1',
+        testId: 'case-1',
       },
     },
     dependencies,

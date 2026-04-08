@@ -95,6 +95,8 @@ export class AndroidDeviceSetup {
       throw new Error('ADB not found. Please install Android SDK platform-tools.');
     }
 
+    await this._cleanupStaleDriverProcesses(adbPath, deviceSerial);
+
     let driverInstalled = false;
     let testRunnerInstalled = false;
     let localPort: number | null = null;
@@ -287,6 +289,27 @@ export class AndroidDeviceSetup {
       `gRPC at 127.0.0.1:${localPort} after 120s. Process state: ${processState}. ` +
       `Recent logs: ${logSummary}.`
     );
+  }
+
+  private async _cleanupStaleDriverProcesses(
+    adbPath: string,
+    deviceSerial: string,
+  ): Promise<void> {
+    Logger.d(`Cleaning up stale driver processes on ${deviceSerial}...`);
+    await this._adbClient.forceStop(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_TEST_PACKAGE_NAME,
+      { suppressErrorLog: true },
+    );
+    await this._adbClient.forceStop(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_APP_PACKAGE_NAME,
+      { suppressErrorLog: true },
+    );
+    // Allow time for the old instrumentation to fully release UiAutomation.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
   private async _rollbackFailedSetup(params: {

@@ -16,9 +16,9 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
-  configYaml?: string;
-  specLines?: string[];
-  specs?: Record<string, string>;
+  configYaml?: string | null;
+  testLines?: string[];
+  testFiles?: Record<string, string>;
   suites?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-bin-'));
@@ -34,16 +34,17 @@ function createTempWorkspace(params?: {
     fs.mkdirSync(suitesDir, { recursive: true });
   }
 
-  if (params?.configYaml !== undefined) {
-    fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), params.configYaml, 'utf-8');
+  const configYaml = buildWorkspaceConfigYaml(params?.configYaml);
+  if (configYaml !== undefined) {
+    fs.writeFileSync(path.join(rootDir, '.finalrun', 'config.yaml'), configYaml, 'utf-8');
   }
 
-  const specs = params?.specs ?? {
+  const testFiles = params?.testFiles ?? {
     'login.yaml': (
-      params?.specLines ?? ['name: login', 'steps:', '  - Open the login screen.']
+      params?.testLines ?? ['name: login', 'steps:', '  - Open the login screen.']
     ).join('\n'),
   };
-  for (const [relativePath, contents] of Object.entries(specs)) {
+  for (const [relativePath, contents] of Object.entries(testFiles)) {
     const targetPath = path.join(testsDir, relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, contents, 'utf-8');
@@ -62,6 +63,22 @@ function createTempWorkspace(params?: {
   }
 
   return rootDir;
+}
+
+function buildWorkspaceConfigYaml(configYaml?: string | null): string | undefined {
+  if (configYaml === null) {
+    return undefined;
+  }
+
+  const defaultAppConfig = ['app:', '  packageName: org.wikipedia'].join('\n');
+  if (configYaml === undefined) {
+    return `${defaultAppConfig}\n`;
+  }
+  if (/^app:/m.test(configYaml)) {
+    return configYaml;
+  }
+  const trimmedConfig = configYaml.trimEnd();
+  return `${trimmedConfig}\n${defaultAppConfig}\n`;
 }
 
 function runCli(args: string[], cwd: string, envOverrides?: NodeJS.ProcessEnv) {
@@ -146,6 +163,28 @@ function createDoctorDependencies(params: {
   };
 }
 
+async function findAvailablePort(): Promise<number> {
+  const net = await import('node:net');
+  return await new Promise<number>((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('No ephemeral port allocated.')));
+        return;
+      }
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+  });
+}
+
 test('finalrun check works without --env when dev.yaml exists', async () => {
   const rootDir = createTempWorkspace({
     envFiles: {
@@ -156,6 +195,7 @@ test('finalrun check works without --env when dev.yaml exists', async () => {
   try {
     const result = runCli(['check'], rootDir);
     assert.equal(result.status, 0);
+    assert.match(result.stdout, /Using Android package: org\.wikipedia/);
     assert.match(result.stdout, /using env dev\./);
     assert.equal(result.stderr, '');
   } finally {
@@ -350,7 +390,7 @@ test('finalrun check reports an env ambiguity error instead of a parser error wh
   }
 });
 
-test('finalrun check works without --env when .finalrun/env is absent and the spec is env-free', async () => {
+test('finalrun check works without --env when .finalrun/env is absent and the test is env-free', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
   });
@@ -365,10 +405,10 @@ test('finalrun check works without --env when .finalrun/env is absent and the sp
   }
 });
 
-test('finalrun check fails with actionable binding guidance when .finalrun/env is absent and the spec references env bindings', async () => {
+test('finalrun check fails with actionable binding guidance when .finalrun/env is absent and the test references env bindings', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
+    testLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
   });
 
   try {
@@ -381,9 +421,9 @@ test('finalrun check fails with actionable binding guidance when .finalrun/env i
   }
 });
 
-test('finalrun check rejects specs with preconditions keys', async () => {
+test('finalrun check rejects tests with preconditions keys', async () => {
   const rootDir = createTempWorkspace({
-    specLines: [
+    testLines: [
       'name: login',
       'preconditions:',
       '  - App is installed.',
@@ -403,7 +443,7 @@ test('finalrun check rejects specs with preconditions keys', async () => {
 
 test('finalrun check accepts repeated selectors and comma-delimited selectors', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
       'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit the profile.'].join('\n'),
     },
@@ -412,12 +452,12 @@ test('finalrun check accepts repeated selectors and comma-delimited selectors', 
   try {
     const repeatedResult = runCli(['check', 'login.yaml', 'auth/profile/edit.yaml'], rootDir);
     assert.equal(repeatedResult.status, 0);
-    assert.match(repeatedResult.stdout, /Validated 2 spec\(s\)/);
+    assert.match(repeatedResult.stdout, /Validated 2 test\(s\)/);
     assert.equal(repeatedResult.stderr, '');
 
     const commaResult = runCli(['check', 'login.yaml,auth/profile/edit.yaml'], rootDir);
     assert.equal(commaResult.status, 0);
-    assert.match(commaResult.stdout, /Validated 2 spec\(s\)/);
+    assert.match(commaResult.stdout, /Validated 2 test\(s\)/);
     assert.equal(commaResult.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -426,7 +466,7 @@ test('finalrun check accepts repeated selectors and comma-delimited selectors', 
 
 test('finalrun check validates suite manifests with --suite', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
       'dashboard/home.yaml': ['name: home', 'steps:', '  - Open dashboard.'].join('\n'),
     },
@@ -443,17 +483,17 @@ test('finalrun check validates suite manifests with --suite', async () => {
   try {
     const result = runCli(['check', '--suite', 'login_suite.yaml'], rootDir);
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /Validated 2 spec\(s\)/);
+    assert.match(result.stdout, /Validated 2 test\(s\)/);
     assert.equal(result.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('finalrun test resolves nested spec paths without requiring the .finalrun/tests prefix', async () => {
+test('finalrun test resolves nested test paths without requiring the .finalrun/tests prefix', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: google/gemini-3-flash-preview\n',
-    specs: {
+    testFiles: {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
   });
@@ -465,7 +505,7 @@ test('finalrun test resolves nested spec paths without requiring the .finalrun/t
       result.stderr,
       /API key is required for provider "google"\. Provide via --api-key or GOOGLE_API_KEY\./,
     );
-    assert.doesNotMatch(result.stderr, /Spec selector not found/);
+    assert.doesNotMatch(result.stderr, /Test selector not found/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -474,7 +514,7 @@ test('finalrun test resolves nested spec paths without requiring the .finalrun/t
 test('finalrun suite resolves suite manifests without requiring the .finalrun/suites prefix', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: google/gemini-3-flash-preview\n',
-    specs: {
+    testFiles: {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
     suites: {
@@ -498,7 +538,7 @@ test('finalrun suite resolves suite manifests without requiring the .finalrun/su
 test('finalrun suite matches the legacy test --suite invocation', async () => {
   const rootDir = createTempWorkspace({
     configYaml: 'model: google/gemini-3-flash-preview\n',
-    specs: {
+    testFiles: {
       'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
     },
     suites: {
@@ -741,7 +781,7 @@ test('finalrun test prints blocked Android preflight failures raw and does not c
 
   try {
     const result = runCli(
-      ['test', 'login.yaml', '--platform', 'android', '--model', 'openai/gpt-4o'],
+      ['test', 'login.yaml', '--platform', 'android', '--model', 'openai/gpt-5.4-mini'],
       rootDir,
       {
         OPENAI_API_KEY: 'test-key',
@@ -760,15 +800,15 @@ test('finalrun test prints blocked Android preflight failures raw and does not c
   }
 });
 
-test('finalrun test prints missing spec selector failures raw and does not create a run', async () => {
+test('finalrun test prints missing test selector failures raw and does not create a run', async () => {
   const rootDir = createTempWorkspace();
 
   try {
-    const result = runCli(['test', 'missing.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['test', 'missing.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Spec selector not found:/);
+    assert.match(result.stderr, /Test selector not found:/);
     assertNoRunOutput(result);
     await assertNoRunArtifacts(rootDir);
   } finally {
@@ -782,7 +822,7 @@ test('finalrun suite prints missing manifest failures raw and does not create a 
   });
 
   try {
-    const result = runCli(['suite', 'missing_suite.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['suite', 'missing_suite.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -796,13 +836,13 @@ test('finalrun suite prints missing manifest failures raw and does not create a 
 
 test('finalrun test prints invalid YAML failures raw and does not create a run', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'login.yaml': 'name: login\nsteps: [\n',
     },
   });
 
   try {
-    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -817,11 +857,11 @@ test('finalrun test prints invalid YAML failures raw and does not create a run',
 test('finalrun test prints unresolved env binding failures raw and does not create a run', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
+    testLines: ['name: login', 'steps:', '  - Enter ${secrets.email} on the login screen.'],
   });
 
   try {
-    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-4o'], rootDir, {
+    const result = runCli(['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini'], rootDir, {
       OPENAI_API_KEY: 'test-key',
     });
     assert.equal(result.status, 1);
@@ -840,7 +880,7 @@ test('finalrun test prints unsupported app override failures raw and does not cr
 
   try {
     const result = runCli(
-      ['test', 'login.yaml', '--model', 'openai/gpt-4o', '--app', badAppPath],
+      ['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini', '--app', badAppPath],
       rootDir,
       {
         OPENAI_API_KEY: 'test-key',
@@ -860,7 +900,7 @@ test('finalrun test prints device setup failures raw and does not create a run',
 
   try {
     const result = runCli(
-      ['test', 'login.yaml', '--model', 'openai/gpt-4o', '--platform', 'android'],
+      ['test', 'login.yaml', '--model', 'openai/gpt-5.4-mini', '--platform', 'android'],
       rootDir,
       {
         OPENAI_API_KEY: 'test-key',
@@ -870,6 +910,7 @@ test('finalrun test prints device setup failures raw and does not create a run',
       },
     );
     assert.equal(result.status, 1);
+    assert.match(result.stdout, /Using Android package: org\.wikipedia/);
     assert.match(result.stderr, /Run setup failed before execution:/);
     assert.match(result.stderr, /No runnable devices or startable targets were found\./);
     assertNoRunOutput(result);
@@ -879,25 +920,66 @@ test('finalrun test prints device setup failures raw and does not create a run',
   }
 });
 
-test('finalrun start-server reports a workspace error outside a FinalRun repo', async () => {
+test('finalrun start-server reports guidance outside a FinalRun repo when --workspace is omitted', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-workspace-'));
 
   try {
     const result = runCli(['start-server'], rootDir);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Could not find a \.finalrun workspace/);
+    assert.match(result.stderr, /Pass --workspace <path> to target a FinalRun workspace explicitly/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('finalrun report serve remains available as a compatibility alias', async () => {
+test('finalrun start-server ignores a parent .finalrun home directory without tests', async () => {
+  const fakeHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-fake-home-'));
+  const outsideDir = path.join(fakeHomeDir, 'projects', 'outside');
+  fs.mkdirSync(path.join(fakeHomeDir, '.finalrun'), { recursive: true });
+  fs.mkdirSync(outsideDir, { recursive: true });
+
+  try {
+    const result = runCli(['start-server'], outsideDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Pass --workspace <path> to target a FinalRun workspace explicitly/);
+    assert.doesNotMatch(result.stderr, /Missing \.finalrun\/tests directory/);
+  } finally {
+    await fsp.rm(fakeHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun start-server --help shows --workspace and top-level stop/status commands are available', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const startHelp = runCli(['start-server', '--help'], rootDir);
+    const stopHelp = runCli(['stop-server', '--help'], rootDir);
+    const statusHelp = runCli(['server-status', '--help'], rootDir);
+
+    assert.equal(startHelp.status, 0);
+    assert.match(startHelp.stdout, /--workspace <path>/);
+    assert.equal(stopHelp.status, 0);
+    assert.match(stopHelp.stdout, /stop the local finalrun report server/i);
+    assert.match(stopHelp.stdout, /--workspace <path>/);
+    assert.equal(statusHelp.status, 0);
+    assert.match(statusHelp.stdout, /show the local finalrun report server status/i);
+    assert.match(statusHelp.stdout, /--workspace <path>/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun report serve is rejected after the breaking command removal', async () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-no-report-workspace-'));
 
   try {
     const result = runCli(['report', 'serve'], rootDir);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Could not find a \.finalrun workspace/);
+    assert.match(result.stderr, /unknown command 'report'/i);
+
+    const reportHelp = runCli(['report', '--help'], rootDir);
+    assert.equal(reportHelp.status, 0);
+    assert.doesNotMatch(reportHelp.stdout, /^\s+report\b/m);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -924,9 +1006,9 @@ test('finalrun runs --json prints the saved runs index', async () => {
             durationMs: 10000,
             envName: 'dev',
             platform: 'android',
-            modelLabel: 'openai/gpt-4o',
+            modelLabel: 'openai/gpt-5.4-mini',
             appLabel: 'repo app',
-            specCount: 1,
+            testCount: 1,
             passedCount: 0,
             failedCount: 1,
             stepCount: 1,
@@ -974,9 +1056,9 @@ test('finalrun runs prints a console summary and suggests starting the local rep
             durationMs: 10000,
             envName: 'dev',
             platform: 'android',
-            modelLabel: 'openai/gpt-4o',
+            modelLabel: 'openai/gpt-5.4-mini',
             appLabel: 'repo app',
-            specCount: 2,
+            testCount: 2,
             passedCount: 2,
             failedCount: 0,
             stepCount: 4,
@@ -997,9 +1079,226 @@ test('finalrun runs prints a console summary and suggests starting the local rep
     const result = runCli(['runs'], rootDir);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /PASS/);
-    assert.match(result.stdout, /finalrun start-server/);
+    assert.match(
+      result.stdout,
+      /finalrun start-server --workspace "/,
+    );
+    assert.match(
+      result.stdout,
+      new RegExp(`${path.basename(workspace.rootDir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\"`),
+    );
     assert.equal(result.stderr, '');
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun start-server rejects malformed and out-of-range --port values', async () => {
+  const rootDir = createTempWorkspace();
+
+  try {
+    const malformedPortResult = runCli(
+      ['start-server', '--port', '4173foo'],
+      rootDir,
+      { FINALRUN_DISABLE_BROWSER: '1' },
+    );
+    assert.equal(malformedPortResult.status, 1);
+    assert.match(malformedPortResult.stderr, /Invalid --port value "4173foo"/);
+
+    const outOfRangePortResult = runCli(
+      ['start-server', '--port', '70000'],
+      rootDir,
+      { FINALRUN_DISABLE_BROWSER: '1' },
+    );
+    assert.equal(outOfRangePortResult.status, 1);
+    assert.match(outOfRangePortResult.stderr, /Invalid --port value "70000"/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs --workspace works from outside any workspace', async () => {
+  const workspaceRoot = createTempWorkspace();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-outside-runs-'));
+  const workspace = await resolveWorkspaceForHome(workspaceRoot, CLI_TEST_HOME);
+  await fsp.mkdir(workspace.artifactsDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(workspace.artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [
+          {
+            runId: '2026-03-23T18-00-00.000Z-dev-android',
+            success: true,
+            status: 'success',
+            startedAt: '2026-03-23T18:00:00.000Z',
+            completedAt: '2026-03-23T18:00:10.000Z',
+            durationMs: 10000,
+            envName: 'dev',
+            platform: 'android',
+            modelLabel: 'openai/gpt-5.4-mini',
+            appLabel: 'repo app',
+            testCount: 1,
+            passedCount: 1,
+            failedCount: 0,
+            stepCount: 1,
+            paths: {
+              runJson: '2026-03-23T18-00-00.000Z-dev-android/run.json',
+              log: '2026-03-23T18-00-00.000Z-dev-android/runner.log',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const result = runCli(['runs', '--workspace', workspaceRoot, '--json'], outsideDir);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /"runId": "2026-03-23T18-00-00.000Z-dev-android"/);
+    assert.equal(result.stderr, '');
+  } finally {
+    await fsp.rm(workspaceRoot, { recursive: true, force: true });
+    await fsp.rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs --workspace overrides the current workspace', async () => {
+  const currentWorkspaceRoot = createTempWorkspace();
+  const targetWorkspaceRoot = createTempWorkspace();
+  const currentWorkspace = await resolveWorkspaceForHome(currentWorkspaceRoot, CLI_TEST_HOME);
+  const targetWorkspace = await resolveWorkspaceForHome(targetWorkspaceRoot, CLI_TEST_HOME);
+  await fsp.mkdir(currentWorkspace.artifactsDir, { recursive: true });
+  await fsp.mkdir(targetWorkspace.artifactsDir, { recursive: true });
+  await fsp.writeFile(
+    path.join(currentWorkspace.artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+  await fsp.writeFile(
+    path.join(targetWorkspace.artifactsDir, 'runs.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-23T18:00:00.000Z',
+        runs: [
+          {
+            runId: '2026-03-23T19-00-00.000Z-dev-ios',
+            success: true,
+            status: 'success',
+            startedAt: '2026-03-23T19:00:00.000Z',
+            completedAt: '2026-03-23T19:00:20.000Z',
+            durationMs: 20000,
+            envName: 'dev',
+            platform: 'ios',
+            modelLabel: 'openai/gpt-5.4-mini',
+            appLabel: 'repo app',
+            testCount: 2,
+            passedCount: 2,
+            failedCount: 0,
+            stepCount: 2,
+            paths: {
+              runJson: '2026-03-23T19-00-00.000Z-dev-ios/run.json',
+              log: '2026-03-23T19-00-00.000Z-dev-ios/runner.log',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  try {
+    const result = runCli(
+      ['runs', '--workspace', targetWorkspaceRoot, '--json'],
+      currentWorkspaceRoot,
+    );
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /2026-03-23T19-00-00.000Z-dev-ios/);
+    assert.doesNotMatch(result.stdout, /"runs": \[\]/);
+  } finally {
+    await fsp.rm(currentWorkspaceRoot, { recursive: true, force: true });
+    await fsp.rm(targetWorkspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('finalrun runs reports a clear error for an invalid explicit workspace path', async () => {
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-invalid-workspace-'));
+
+  try {
+    const result = runCli(
+      ['runs', '--workspace', path.join(outsideDir, 'missing-workspace')],
+      outsideDir,
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Path is not inside a FinalRun workspace/);
+  } finally {
+    await fsp.rm(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun start-server, server-status, and stop-server work from outside a workspace with --workspace', async () => {
+  const workspaceRoot = createTempWorkspace();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-server-outside-'));
+  const port = await findAvailablePort();
+  const workspace = await resolveWorkspaceForHome(workspaceRoot, CLI_TEST_HOME);
+
+  try {
+    const startResult = runCli(
+      ['start-server', '--workspace', workspaceRoot, '--port', String(port)],
+      outsideDir,
+      {
+        FINALRUN_DISABLE_BROWSER: '1',
+      },
+    );
+    assert.equal(startResult.status, 0);
+    assert.match(startResult.stdout, new RegExp(`http://127\\.0\\.0\\.1:${port}`));
+
+    const statusResult = runCli(['server-status', '--workspace', workspaceRoot], outsideDir, {
+      FINALRUN_DISABLE_BROWSER: '1',
+    });
+    assert.equal(statusResult.status, 0);
+    assert.match(statusResult.stdout, /FinalRun report server status/);
+    assert.match(statusResult.stdout, new RegExp(`Workspace root: ${workspaceRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(statusResult.stdout, new RegExp(`URL: http://127\\.0\\.0\\.1:${port}`));
+    assert.match(statusResult.stdout, /Healthy: yes/);
+
+    const stopResult = runCli(['stop-server', '--workspace', workspaceRoot], outsideDir, {
+      FINALRUN_DISABLE_BROWSER: '1',
+    });
+    assert.equal(stopResult.status, 0);
+    assert.match(stopResult.stdout, /Stopped FinalRun report server/);
+    await assert.rejects(() => fsp.stat(path.join(workspace.artifactsDir, '.server.json')));
+
+    const stoppedStatusResult = runCli(
+      ['server-status', '--workspace', workspaceRoot],
+      outsideDir,
+      {
+        FINALRUN_DISABLE_BROWSER: '1',
+      },
+    );
+    assert.equal(stoppedStatusResult.status, 0);
+    assert.match(stoppedStatusResult.stdout, /is not running/);
+  } finally {
+    runCli(['stop-server', '--workspace', workspaceRoot], outsideDir, {
+      FINALRUN_DISABLE_BROWSER: '1',
+    });
+    await fsp.rm(workspaceRoot, { recursive: true, force: true });
+    await fsp.rm(outsideDir, { recursive: true, force: true });
   }
 });

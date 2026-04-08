@@ -27,6 +27,7 @@ packages/*/coverage/
 # Local environment files
 .env
 .env.*
+!.env.example
 
 # Logs
 npm-debug.log*
@@ -44,3 +45,17 @@ pnpm-debug.log*
 .claude/
 .codex/
 .cursor/
+
+.fab-*
+
+/.agents
+
+/.claude
+
+/.cursor
+
+/.opencode
+
+/.codex
+
+/.gemini

@@ -3,11 +3,16 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from './checkRunner.js';
 import {
   ensureWorkspaceDirectories,
+  resolveWorkspaceArtifactsDir,
+  resolveWorkspaceArtifactsRootDir,
   resolveWorkspace,
+  resolveWorkspaceFromPath,
+  resolveWorkspaceForCommand,
   validateAppOverride,
 } from './workspace.js';
 
@@ -16,8 +21,8 @@ function createTempWorkspace(params?: {
   envFiles?: Record<string, string>;
   includeEnvDir?: boolean;
   includeSuitesDir?: boolean;
-  configYaml?: string;
-  specs?: Record<string, string>;
+  configYaml?: string | null;
+  testFiles?: Record<string, string>;
   suites?: Record<string, string>;
 }): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-workspace-'));
@@ -35,10 +40,11 @@ function createTempWorkspace(params?: {
     fs.mkdirSync(suitesDir, { recursive: true });
   }
 
-  if (params?.configYaml !== undefined) {
+  const configYaml = buildWorkspaceConfigYaml(params?.configYaml);
+  if (configYaml !== undefined) {
     fs.writeFileSync(
       path.join(rootDir, '.finalrun', 'config.yaml'),
-      params.configYaml,
+      configYaml,
       'utf-8',
     );
   }
@@ -52,10 +58,10 @@ function createTempWorkspace(params?: {
     }
   }
 
-  const specs = params?.specs ?? {
+  const testFiles = params?.testFiles ?? {
     'login.yaml': ['name: login', 'steps:', '  - Open the login screen.'].join('\n'),
   };
-  for (const [relativePath, contents] of Object.entries(specs)) {
+  for (const [relativePath, contents] of Object.entries(testFiles)) {
     const targetPath = path.join(testsDir, relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, contents, 'utf-8');
@@ -68,6 +74,22 @@ function createTempWorkspace(params?: {
   }
 
   return rootDir;
+}
+
+function buildWorkspaceConfigYaml(configYaml?: string | null): string | undefined {
+  if (configYaml === null) {
+    return undefined;
+  }
+
+  const defaultAppConfig = ['app:', '  packageName: org.wikipedia'].join('\n');
+  if (configYaml === undefined) {
+    return `${defaultAppConfig}\n`;
+  }
+  if (/^app:/m.test(configYaml)) {
+    return configYaml;
+  }
+  const trimmedConfig = configYaml.trimEnd();
+  return `${trimmedConfig}\n${defaultAppConfig}\n`;
 }
 
 async function withTempHome<T>(callback: (homeDir: string) => Promise<T>): Promise<T> {
@@ -99,7 +121,7 @@ test('runCheck resolves the nearest .finalrun workspace and runtime bindings fro
       'variables:',
       '  language: Spanish',
     ].join('\n'),
-    specs: {
+    testFiles: {
       'auth/login.yaml': [
         'name: login',
         'steps:',
@@ -119,8 +141,8 @@ test('runCheck resolves the nearest .finalrun workspace and runtime bindings fro
     });
 
     assert.equal(result.workspace.rootDir, rootDir);
-    assert.equal(result.specs.length, 1);
-    assert.equal(result.specs[0]?.relativePath, 'auth/login.yaml');
+    assert.equal(result.tests.length, 1);
+    assert.equal(result.tests[0]?.relativePath, 'auth/login.yaml');
     assert.equal(result.environment.bindings.variables.language, 'Spanish');
     assert.equal(result.environment.bindings.secrets.email, 'person@example.com');
     assert.equal(result.environment.secretReferences[0]?.envVar, secretEnvVar);
@@ -140,7 +162,7 @@ test('runCheck defaults to dev when envName is omitted and dev.yaml exists', asy
       'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
       'staging.yaml': ['variables:', '  language: German'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -165,7 +187,7 @@ test('runCheck uses .finalrun/config.yaml env when --env is omitted', async () =
       'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
       'staging.yaml': ['variables:', '  language: German'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -190,7 +212,7 @@ test('runCheck prefers explicit envName over .finalrun/config.yaml env', async (
       'dev.yaml': ['variables:', '  language: Spanish'].join('\n'),
       'staging.yaml': ['variables:', '  language: German'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -211,7 +233,7 @@ test('runCheck prefers explicit envName over .finalrun/config.yaml env', async (
 test('runCheck succeeds with empty bindings when envName is omitted and .finalrun/env is absent', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
     },
   });
@@ -228,7 +250,7 @@ test('runCheck succeeds with empty bindings when envName is omitted and .finalru
 test('runCheck succeeds with empty bindings when envName is omitted and .finalrun/env exists but has no env files', async () => {
   const rootDir = createTempWorkspace({
     envFiles: {},
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
     },
   });
@@ -247,7 +269,7 @@ test('runCheck falls back to the sole env file when envName is omitted and dev.y
     envFiles: {
       'qa.yaml': ['variables:', '  locale: en-GB'].join('\n'),
     },
-    specs: {
+    testFiles: {
       'locale.yaml': [
         'name: locale',
         'steps:',
@@ -283,10 +305,10 @@ test('runCheck fails with an actionable ambiguity error when envName is omitted 
   }
 });
 
-test('runCheck fails with actionable guidance when a spec references env bindings but .finalrun/env is absent', async () => {
+test('runCheck fails with actionable guidance when a test references env bindings but .finalrun/env is absent', async () => {
   const rootDir = createTempWorkspace({
     includeEnvDir: false,
-    specs: {
+    testFiles: {
       'language.yaml': [
         'name: language',
         'steps:',
@@ -338,24 +360,156 @@ test('runCheck preserves the missing-env error when .finalrun/config.yaml points
   }
 });
 
-test('runCheck rejects legacy env app keys', async () => {
+test('runCheck requires app config in .finalrun/config.yaml', async () => {
   const rootDir = createTempWorkspace({
-    envYaml: ['app:', '  android:', '    packageName: org.wikipedia'].join('\n'),
+    configYaml: null,
   });
 
   try {
     await assert.rejects(
-      () => runCheck({ envName: 'dev', cwd: rootDir }),
-      /contains unsupported key "app"/,
+      () => runCheck({ cwd: rootDir }),
+      /\.finalrun\/config\.yaml must define app\.packageName and\/or app\.bundleId/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
 });
 
-test('runCheck rejects specs with preconditions keys', async () => {
+test('runCheck accepts env app overrides and resolves the env-specific identifier', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    configYaml: ['env: staging', 'app:', '  packageName: org.wikipedia'].join('\n'),
+    envFiles: {
+      'staging.yaml': ['app:', '  packageName: org.wikipedia.beta'].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'staging');
+    assert.equal(result.resolvedApp.platform, 'android');
+    assert.equal(result.resolvedApp.identifier, 'org.wikipedia.beta');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck fails when both Android and iOS apps are configured without an explicit platform', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: [
+      'app:',
+      '  packageName: org.wikipedia',
+      '  bundleId: org.wikipedia',
+    ].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /Both Android and iOS app identifiers are configured\. Pass --platform android or --platform ios\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck fails when the requested platform is missing from the app config', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['app:', '  packageName: org.wikipedia'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir, platform: 'ios' }),
+      /No app config found for platform "ios"/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck fails when an iOS app override bundle ID does not match config', async () => {
+  const rootDir = createTempWorkspace({
+    includeEnvDir: false,
+    configYaml: ['app:', '  bundleId: org.wikipedia'].join('\n'),
+  });
+  const appBundlePath = path.join(rootDir, 'Wikipedia.app');
+  fs.mkdirSync(appBundlePath, { recursive: true });
+  fs.writeFileSync(
+    path.join(appBundlePath, 'Info.plist'),
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+      '<plist version="1.0">',
+      '<dict>',
+      '  <key>CFBundleIdentifier</key>',
+      '  <string>org.wikipedia.beta</string>',
+      '</dict>',
+      '</plist>',
+    ].join('\n'),
+    'utf-8',
+  );
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir, appPath: appBundlePath }),
+      /Configured iOS bundle ID is "org\.wikipedia", but the override app resolved to "org\.wikipedia\.beta"/,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects nested app config and points to the flat schema', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['app:', '  android:', '    packageName: org.wikipedia'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /\.finalrun\/config\.yaml app uses an unsupported nested format\. Use app\.name, app\.packageName, and app\.bundleId\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects empty app identifiers in workspace config', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['app:', '  packageName: ""'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /\.finalrun\/config\.yaml app packageName must not be empty\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck treats env app config as a full replacement', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['env: staging', 'app:', '  packageName: org.wikipedia', '  bundleId: org.wikipedia.ios'].join('\n'),
+    envFiles: {
+      'staging.yaml': ['app:', '  packageName: org.wikipedia.beta'].join('\n'),
+    },
+  });
+
+  try {
+    const result = await runCheck({ cwd: rootDir });
+    assert.equal(result.environment.envName, 'staging');
+    assert.equal(result.resolvedApp.platform, 'android');
+    assert.equal(result.resolvedApp.identifier, 'org.wikipedia.beta');
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects tests with preconditions keys', async () => {
+  const rootDir = createTempWorkspace({
+    testFiles: {
       'login.yaml': [
         'name: login',
         'preconditions:',
@@ -384,7 +538,7 @@ test('runCheck ignores invalid model formats in .finalrun/config.yaml', async ()
   try {
     const result = await runCheck({ cwd: rootDir });
     assert.equal(result.environment.envName, 'dev');
-    assert.equal(result.specs.length, 1);
+    assert.equal(result.tests.length, 1);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -398,7 +552,7 @@ test('runCheck ignores unsupported model providers in .finalrun/config.yaml', as
   try {
     const result = await runCheck({ cwd: rootDir });
     assert.equal(result.environment.envName, 'dev');
-    assert.equal(result.specs.length, 1);
+    assert.equal(result.tests.length, 1);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -427,7 +581,7 @@ test('runCheck rejects unknown keys in .finalrun/config.yaml', async () => {
   try {
     await assert.rejects(
       () => runCheck({ cwd: rootDir }),
-      /config\.yaml contains unsupported key "region"\. Supported keys: env, model\./,
+      /config\.yaml contains unsupported key "region"\. Supported keys: env, model, app\./,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -486,7 +640,7 @@ test('runCheck accepts empty-string secret environment values when the variable 
 
   const rootDir = createTempWorkspace({
     envYaml: ['secrets:', `  otp: \${${secretEnvVar}}`].join('\n'),
-    specs: {
+    testFiles: {
       'otp.yaml': ['name: otp', 'steps:', '  - Enter ${secrets.otp}.'].join('\n'),
     },
   });
@@ -511,7 +665,7 @@ test('runCheck resolves secrets from workspace-root .env.<env> without process.e
 
   const rootDir = createTempWorkspace({
     envYaml: ['secrets:', `  token: \${${secretEnvVar}}`].join('\n'),
-    specs: {
+    testFiles: {
       'auth.yaml': [
         'name: auth',
         'steps:',
@@ -546,7 +700,7 @@ test('runCheck loads workspace-root .env.<env> when cwd is nested under the work
 
   const rootDir = createTempWorkspace({
     envYaml: ['secrets:', `  token: \${${secretEnvVar}}`].join('\n'),
-    specs: {
+    testFiles: {
       'auth.yaml': ['name: auth', 'steps:', '  - Open login.'].join('\n'),
     },
   });
@@ -585,7 +739,7 @@ test('runCheck rejects selectors that escape .finalrun/tests', async () => {
           cwd: rootDir,
           selectors: ['../outside.yaml'],
         }),
-      /Spec selector must stay inside/,
+      /Test selector must stay inside/,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -594,7 +748,7 @@ test('runCheck rejects selectors that escape .finalrun/tests', async () => {
 
 test('runCheck expands multiple selectors with comma splitting and de-duplicates first-seen matches', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
       'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
       'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
@@ -611,7 +765,7 @@ test('runCheck expands multiple selectors with comma splitting and de-duplicates
     });
 
     assert.deepEqual(
-      result.specs.map((spec) => spec.relativePath),
+      result.tests.map((t) => t.relativePath),
       [
         'smoke.yaml',
         'auth/login.yaml',
@@ -627,7 +781,7 @@ test('runCheck expands multiple selectors with comma splitting and de-duplicates
 
 test('runCheck treats raw directory selectors as recursive and * as shallow while ** is recursive', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
       'auth/profile/edit.yaml': ['name: edit', 'steps:', '  - Edit profile.'].join('\n'),
       'auth/profile/view.yaml': ['name: view', 'steps:', '  - View profile.'].join('\n'),
@@ -653,7 +807,7 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
     });
 
     assert.deepEqual(
-      recursiveDirectory.specs.map((spec) => spec.relativePath),
+      recursiveDirectory.tests.map((t) => t.relativePath),
       [
         'auth/login.yaml',
         'auth/profile/edit.yaml',
@@ -662,11 +816,11 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
       ],
     );
     assert.deepEqual(
-      shallowGlob.specs.map((spec) => spec.relativePath),
+      shallowGlob.tests.map((t) => t.relativePath),
       ['auth/login.yaml', 'auth/settings.yaml'],
     );
     assert.deepEqual(
-      recursiveGlob.specs.map((spec) => spec.relativePath),
+      recursiveGlob.tests.map((t) => t.relativePath),
       [
         'auth/login.yaml',
         'auth/profile/edit.yaml',
@@ -679,9 +833,9 @@ test('runCheck treats raw directory selectors as recursive and * as shallow whil
   }
 });
 
-test('runCheck resolves suite manifests into an ordered shared spec list', async () => {
+test('runCheck resolves suite manifests into an ordered shared test list', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'smoke.yaml': ['name: smoke', 'steps:', '  - Open the app.'].join('\n'),
       'auth/login.yaml': ['name: login', 'steps:', '  - Open login.'].join('\n'),
       'auth/settings.yaml': ['name: settings', 'steps:', '  - Open settings.'].join('\n'),
@@ -713,7 +867,7 @@ test('runCheck resolves suite manifests into an ordered shared spec list', async
     assert.equal(result.suite?.name, 'login suite');
     assert.equal(result.suite?.description, 'Covers login entry points.');
     assert.deepEqual(
-      result.specs.map((spec) => spec.relativePath),
+      result.tests.map((t) => t.relativePath),
       ['smoke.yaml', 'auth/login.yaml', 'auth/settings.yaml'],
     );
   } finally {
@@ -811,9 +965,9 @@ test('runCheck requires at least one selector when requireSelection is enabled',
   }
 });
 
-test('runCheck rejects specs with empty steps arrays', async () => {
+test('runCheck rejects tests with empty steps arrays', async () => {
   const rootDir = createTempWorkspace({
-    specs: {
+    testFiles: {
       'broken.yaml': ['name: broken', 'steps: []'].join('\n'),
     },
   });
@@ -895,6 +1049,245 @@ test('ensureWorkspaceDirectories creates a hashed external artifacts directory a
       assert.equal(metadata.workspaceHash.length, 16);
     } finally {
       await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspace refreshes lastUsedAt for direct callers', async () => {
+  await withTempHome(async () => {
+    const rootDir = createTempWorkspace();
+    const existingLastUsedAt = '2020-01-01T00:00:00.000Z';
+
+    try {
+      const artifactsDir = await resolveWorkspaceArtifactsDir(rootDir);
+      const metadataPath = path.join(artifactsDir, '..', 'workspace.json');
+      await fsp.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fsp.writeFile(
+        metadataPath,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            workspaceRoot: rootDir,
+            canonicalWorkspaceRoot: await fsp.realpath(rootDir),
+            workspaceHash: 'seeded-workspace-hash',
+            artifactsDir,
+            lastUsedAt: existingLastUsedAt,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      const workspace = await resolveWorkspace(rootDir);
+      const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
+        lastUsedAt?: string;
+      };
+
+      assert.equal(workspace.rootDir, rootDir);
+      assert.ok(Date.parse(metadata.lastUsedAt ?? '') > Date.parse(existingLastUsedAt));
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceForCommand resolves an explicit workspace path, persists a derived display name, and refreshes lastUsedAt', async () => {
+  await withTempHome(async () => {
+    const rootDir = createTempWorkspace();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-outside-workspace-'));
+    const existingLastUsedAt = '2020-01-01T00:00:00.000Z';
+    fs.writeFileSync(
+      path.join(rootDir, 'package.json'),
+      JSON.stringify({ name: 'sample/mobile-app' }, null, 2),
+      'utf-8',
+    );
+    const nestedWorkspacePath = path.join(rootDir, 'packages', 'mobile');
+    fs.mkdirSync(nestedWorkspacePath, { recursive: true });
+
+    try {
+      const seededWorkspace = await resolveWorkspace(rootDir);
+      const metadataPath = path.join(seededWorkspace.artifactsDir, '..', 'workspace.json');
+      await fsp.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fsp.writeFile(
+        metadataPath,
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            workspaceRoot: rootDir,
+            canonicalWorkspaceRoot: await fsp.realpath(rootDir),
+            workspaceHash: 'seeded-workspace-hash',
+            artifactsDir: seededWorkspace.artifactsDir,
+            lastUsedAt: existingLastUsedAt,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      const workspace = await resolveWorkspaceForCommand({
+        cwd: outsideDir,
+        workspacePath: nestedWorkspacePath,
+        io: {
+          input: new PassThrough(),
+          output: new PassThrough(),
+          isTTY: false,
+        },
+      });
+
+      assert.equal(workspace.rootDir, rootDir);
+      const metadata = JSON.parse(await fsp.readFile(metadataPath, 'utf-8')) as {
+        displayName?: string;
+        lastUsedAt?: string;
+      };
+      assert.equal(metadata.displayName, 'sample/mobile-app');
+      assert.match(metadata.lastUsedAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+      assert.ok(Date.parse(metadata.lastUsedAt ?? '') > Date.parse(existingLastUsedAt));
+    } finally {
+      await fsp.rm(rootDir, { recursive: true, force: true });
+      await fsp.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceForCommand shows the TTY picker, ignores stale and malformed registry entries, and persists runtime-derived labels', async () => {
+  await withTempHome(async () => {
+    const alphaRoot = createTempWorkspace();
+    const bravoRoot = createTempWorkspace();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-picker-outside-'));
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let outputText = '';
+    output.on('data', (chunk: Buffer | string) => {
+      outputText += String(chunk);
+    });
+
+    fs.writeFileSync(
+      path.join(alphaRoot, 'package.json'),
+      JSON.stringify({ name: 'alpha/mobile-app' }, null, 2),
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(bravoRoot, 'package.json'),
+      JSON.stringify({ name: 'bravo/mobile-app' }, null, 2),
+      'utf-8',
+    );
+
+    try {
+      await ensureWorkspaceDirectories(await resolveWorkspaceFromPath(alphaRoot));
+      await ensureWorkspaceDirectories(await resolveWorkspaceFromPath(bravoRoot));
+
+      const staleMetadataDir = path.join(resolveWorkspaceArtifactsRootDir(), 'stale-workspace');
+      await fsp.mkdir(staleMetadataDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(staleMetadataDir, 'workspace.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          workspaceRoot: path.join(outsideDir, 'missing-workspace'),
+          canonicalWorkspaceRoot: path.join(outsideDir, 'missing-workspace'),
+          workspaceHash: 'stale-workspace',
+          artifactsDir: path.join(staleMetadataDir, 'artifacts'),
+        }),
+        'utf-8',
+      );
+
+      const malformedMetadataDir = path.join(resolveWorkspaceArtifactsRootDir(), 'malformed-workspace');
+      await fsp.mkdir(malformedMetadataDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(malformedMetadataDir, 'workspace.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          workspaceRoot: 42,
+          canonicalWorkspaceRoot: bravoRoot,
+          workspaceHash: 'malformed-workspace',
+          artifactsDir: path.join(malformedMetadataDir, 'artifacts'),
+        }),
+        'utf-8',
+      );
+
+      input.write('0\n');
+      setTimeout(() => {
+        input.write('2\n');
+        input.end();
+      }, 25);
+
+      const selectedWorkspace = await resolveWorkspaceForCommand({
+        cwd: outsideDir,
+        io: {
+          input,
+          output,
+          isTTY: true,
+        },
+      });
+
+      assert.equal(selectedWorkspace.rootDir, bravoRoot);
+      assert.match(outputText, /Select a FinalRun workspace/);
+      assert.match(outputText, /1\. alpha\/mobile-app/);
+      assert.match(outputText, new RegExp(alphaRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.match(outputText, /2\. bravo\/mobile-app/);
+      assert.match(outputText, /Invalid selection/);
+      assert.doesNotMatch(outputText, /stale-workspace/);
+
+      const alphaMetadata = JSON.parse(
+        await fsp.readFile(path.join(await resolveWorkspaceArtifactsDir(alphaRoot), '..', 'workspace.json'), 'utf-8'),
+      ) as { displayName?: string };
+      const bravoMetadata = JSON.parse(
+        await fsp.readFile(path.join(await resolveWorkspaceArtifactsDir(bravoRoot), '..', 'workspace.json'), 'utf-8'),
+      ) as { displayName?: string };
+      assert.equal(alphaMetadata.displayName, 'alpha/mobile-app');
+      assert.equal(bravoMetadata.displayName, 'bravo/mobile-app');
+    } finally {
+      await fsp.rm(alphaRoot, { recursive: true, force: true });
+      await fsp.rm(bravoRoot, { recursive: true, force: true });
+      await fsp.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceForCommand fails with guidance outside a workspace when no TTY or explicit workspace is available', async () => {
+  await withTempHome(async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-missing-workspace-'));
+
+    try {
+      await assert.rejects(
+        () =>
+          resolveWorkspaceForCommand({
+            cwd: outsideDir,
+            io: {
+              input: new PassThrough(),
+              output: new PassThrough(),
+              isTTY: false,
+            },
+          }),
+        /Pass --workspace <path> to target a FinalRun workspace explicitly/,
+      );
+    } finally {
+      await fsp.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('resolveWorkspaceFromPath reports a clear error for invalid explicit workspace paths', async () => {
+  await withTempHome(async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-invalid-workspace-'));
+
+    try {
+      await assert.rejects(
+        () =>
+          resolveWorkspaceForCommand({
+            cwd: outsideDir,
+            workspacePath: path.join(outsideDir, 'missing'),
+            io: {
+              input: new PassThrough(),
+              output: new PassThrough(),
+              isTTY: false,
+            },
+          }),
+        /Path is not inside a FinalRun workspace/,
+      );
+    } finally {
+      await fsp.rm(outsideDir, { recursive: true, force: true });
     }
   });
 });

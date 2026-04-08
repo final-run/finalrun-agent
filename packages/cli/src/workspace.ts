@@ -1,9 +1,16 @@
 import * as crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
+import {
+  PLATFORM_ANDROID,
+  PLATFORM_IOS,
+  type AppConfig,
+} from '@finalrun/common';
 import YAML from 'yaml';
+import { readAppConfig } from './appConfig.js';
 import { resolveFinalRunRootDir } from './runtimePaths.js';
+import { promptForWorkspaceSelection, type WorkspaceSelectionIO } from './workspacePicker.js';
 
 export interface FinalRunWorkspace {
   rootDir: string;
@@ -17,11 +24,13 @@ export interface FinalRunWorkspace {
 export interface AppOverrideValidationResult {
   appPath: string;
   inferredPlatform: string;
+  resolvedIdentifier?: string;
 }
 
 export interface WorkspaceConfig {
   env?: string;
   model?: string;
+  app?: AppConfig;
 }
 
 export interface ResolvedEnvironmentFile {
@@ -31,37 +40,109 @@ export interface ResolvedEnvironmentFile {
   usesEmptyBindings: boolean;
 }
 
-const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model']);
+export interface WorkspaceMetadataRecord {
+  schemaVersion: number;
+  workspaceRoot: string;
+  canonicalWorkspaceRoot: string;
+  workspaceHash: string;
+  artifactsDir: string;
+  displayName?: string;
+  lastUsedAt?: string;
+}
+
+export interface RegisteredWorkspaceEntry {
+  workspace: FinalRunWorkspace;
+  displayName: string;
+  lastUsedAt?: string;
+  metadataPath: string;
+}
+
+const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app']);
 const WORKSPACE_HASH_LENGTH = 16;
 
 export async function resolveWorkspace(
   cwd: string = process.cwd(),
 ): Promise<FinalRunWorkspace> {
-  let currentDir = path.resolve(cwd);
-
-  while (true) {
-    const finalrunDir = path.join(currentDir, '.finalrun');
-    if (await pathExists(finalrunDir)) {
-      return {
-        rootDir: currentDir,
-        finalrunDir,
-        testsDir: path.join(finalrunDir, 'tests'),
-        suitesDir: path.join(finalrunDir, 'suites'),
-        envDir: path.join(finalrunDir, 'env'),
-        artifactsDir: await resolveWorkspaceArtifactsDir(currentDir),
-      };
-    }
-
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {
-      break;
-    }
-    currentDir = parentDir;
+  const workspaceRoot = await findWorkspaceRoot(cwd);
+  if (workspaceRoot) {
+    return finalizeResolvedWorkspace(await buildWorkspace(workspaceRoot));
   }
-
   throw new Error(
     'Could not find a .finalrun workspace. Run the CLI from a repository containing .finalrun/.',
   );
+}
+
+export async function resolveWorkspaceFromPath(
+  workspacePath: string,
+  options?: { requireSelectableWorkspace?: boolean },
+): Promise<FinalRunWorkspace> {
+  const normalizedPath = workspacePath.trim();
+  if (normalizedPath.length === 0) {
+    throw new Error('Missing workspace path. Pass --workspace <path>.');
+  }
+
+  const resolvedPath = path.resolve(normalizedPath);
+  const workspaceRoot = await findWorkspaceRoot(
+    resolvedPath,
+    options?.requireSelectableWorkspace ? isSelectableWorkspaceRoot : isWorkspaceRootCandidate,
+  );
+  if (workspaceRoot) {
+    return buildWorkspace(workspaceRoot);
+  }
+
+  throw new Error(
+    `Path is not inside a FinalRun workspace: ${resolvedPath}. Pass --workspace <path> that points to a repository containing .finalrun/.`,
+  );
+}
+
+export async function resolveWorkspaceForCommand(params?: {
+  cwd?: string;
+  workspacePath?: string;
+  io?: WorkspaceSelectionIO;
+}): Promise<FinalRunWorkspace> {
+  const cwd = params?.cwd ?? process.cwd();
+  const explicitWorkspacePath = params?.workspacePath?.trim();
+  let workspace: FinalRunWorkspace | undefined;
+
+  if (explicitWorkspacePath) {
+    workspace = await resolveWorkspaceFromPath(explicitWorkspacePath, {
+      requireSelectableWorkspace: true,
+    });
+  } else {
+    workspace = await tryResolveWorkspace(cwd, {
+      requireSelectableWorkspace: true,
+    });
+    if (!workspace && params?.io?.isTTY) {
+      const registeredWorkspaces = await listRegisteredWorkspaces();
+      if (registeredWorkspaces.length > 0) {
+        const selection = await promptForWorkspaceSelection({
+          heading: 'Select a FinalRun workspace',
+          entries: registeredWorkspaces.map((entry) => ({
+            label: entry.displayName,
+            workspaceRoot: entry.workspace.rootDir,
+          })),
+          io: params.io,
+        });
+        workspace = await resolveWorkspaceFromPath(selection.workspaceRoot);
+      }
+    }
+  }
+
+  if (!workspace) {
+    throw new Error(
+      `Could not find a .finalrun workspace from ${path.resolve(cwd)}. Pass --workspace <path> to target a FinalRun workspace explicitly.`,
+    );
+  }
+
+  return finalizeResolvedWorkspace(workspace);
+}
+
+async function finalizeResolvedWorkspace(
+  workspace: FinalRunWorkspace,
+): Promise<FinalRunWorkspace> {
+  await ensureWorkspaceDirectories(workspace);
+  await refreshWorkspaceUsageMetadata(workspace);
+  return workspace;
 }
 
 export async function ensureWorkspaceDirectories(
@@ -73,6 +154,61 @@ export async function ensureWorkspaceDirectories(
 
   await fs.mkdir(workspace.artifactsDir, { recursive: true });
   await writeWorkspaceArtifactMetadata(workspace);
+}
+
+export async function listRegisteredWorkspaces(): Promise<RegisteredWorkspaceEntry[]> {
+  const workspaceRegistryRoot = resolveWorkspaceArtifactsRootDir();
+  const entries = await fs.readdir(workspaceRegistryRoot, { withFileTypes: true }).catch(() => []);
+  const registeredWorkspaces: RegisteredWorkspaceEntry[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const metadataPath = path.join(workspaceRegistryRoot, entry.name, 'workspace.json');
+    const metadata = await readWorkspaceMetadataFromPath(metadataPath);
+    if (!metadata?.workspaceRoot) {
+      continue;
+    }
+
+    const workspace = await buildWorkspace(metadata.workspaceRoot);
+    if (!(await isSelectableRegisteredWorkspace(workspace))) {
+      continue;
+    }
+
+    let displayName = normalizeMetadataString(metadata.displayName);
+    if (!displayName) {
+      displayName = await deriveWorkspaceDisplayName(workspace.rootDir);
+      await writeWorkspaceArtifactMetadata(workspace, {
+        displayName,
+        lastUsedAt: metadata.lastUsedAt,
+      });
+    }
+
+    registeredWorkspaces.push({
+      workspace,
+      displayName,
+      lastUsedAt: normalizeMetadataString(metadata.lastUsedAt),
+      metadataPath,
+    });
+  }
+
+  registeredWorkspaces.sort(compareRegisteredWorkspaces);
+  return registeredWorkspaces;
+}
+
+export async function refreshWorkspaceUsageMetadata(
+  workspace: FinalRunWorkspace,
+): Promise<WorkspaceMetadataRecord> {
+  const existingMetadata = await readWorkspaceArtifactMetadata(workspace);
+  const displayName =
+    normalizeMetadataString(existingMetadata?.displayName) ??
+    (await deriveWorkspaceDisplayName(workspace.rootDir));
+  return writeWorkspaceArtifactMetadata(workspace, {
+    displayName,
+    lastUsedAt: new Date().toISOString(),
+  });
 }
 
 export async function createWorkspaceHash(workspaceRoot: string): Promise<string> {
@@ -107,7 +243,7 @@ export function assertPathWithinRoot(
   }
 }
 
-export function sanitizeSpecId(relativePath: string): string {
+export function sanitizeId(relativePath: string): string {
   return relativePath
     .replace(/\.[^.]+$/, '')
     .replace(/[\\/]+/g, '__')
@@ -284,6 +420,7 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
     model: readOptionalTrimmedString(parsed['model'], `${configPath} model`, {
       allowEmpty: true,
     }),
+    app: readAppConfig(parsed['app'], `${configPath} app`),
   };
 }
 
@@ -307,19 +444,34 @@ async function pathExists(candidatePath: string): Promise<boolean> {
   }
 }
 
-async function writeWorkspaceArtifactMetadata(workspace: FinalRunWorkspace): Promise<void> {
+async function writeWorkspaceArtifactMetadata(
+  workspace: FinalRunWorkspace,
+  updates: Partial<Pick<WorkspaceMetadataRecord, 'displayName' | 'lastUsedAt'>> = {},
+): Promise<WorkspaceMetadataRecord> {
   const canonicalWorkspaceRoot = await resolveCanonicalWorkspaceRoot(workspace.rootDir);
   const workspaceHash = await createWorkspaceHash(workspace.rootDir);
-  const metadataPath = path.join(workspace.artifactsDir, '..', 'workspace.json');
-  const metadata = {
+  const metadataPath = getWorkspaceMetadataPath(workspace);
+  const existingMetadata = await readWorkspaceMetadataFromPath(metadataPath);
+  const metadata: WorkspaceMetadataRecord = {
     schemaVersion: 1,
     workspaceRoot: workspace.rootDir,
     canonicalWorkspaceRoot,
     workspaceHash,
     artifactsDir: workspace.artifactsDir,
   };
+  const displayName = normalizeMetadataString(updates.displayName ?? existingMetadata?.displayName);
+  const lastUsedAt = normalizeMetadataString(updates.lastUsedAt ?? existingMetadata?.lastUsedAt);
 
+  if (displayName) {
+    metadata.displayName = displayName;
+  }
+  if (lastUsedAt) {
+    metadata.lastUsedAt = lastUsedAt;
+  }
+
+  await fs.mkdir(path.dirname(metadataPath), { recursive: true });
   await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2) + '\n', 'utf-8');
+  return metadata;
 }
 
 async function resolveCanonicalWorkspaceRoot(workspaceRoot: string): Promise<string> {
@@ -333,6 +485,234 @@ async function resolveCanonicalWorkspaceRoot(workspaceRoot: string): Promise<str
 
 function normalizeWorkspaceRootForHash(workspaceRoot: string): string {
   return process.platform === 'win32' ? workspaceRoot.toLowerCase() : workspaceRoot;
+}
+
+async function tryResolveWorkspace(
+  cwd: string,
+  options?: { requireSelectableWorkspace?: boolean },
+): Promise<FinalRunWorkspace | undefined> {
+  const workspaceRoot = await findWorkspaceRoot(
+    cwd,
+    options?.requireSelectableWorkspace ? isSelectableWorkspaceRoot : isWorkspaceRootCandidate,
+  );
+  return workspaceRoot ? buildWorkspace(workspaceRoot) : undefined;
+}
+
+async function buildWorkspace(workspaceRoot: string): Promise<FinalRunWorkspace> {
+  const rootDir = path.resolve(workspaceRoot);
+  const finalrunDir = path.join(rootDir, '.finalrun');
+  return {
+    rootDir,
+    finalrunDir,
+    testsDir: path.join(finalrunDir, 'tests'),
+    suitesDir: path.join(finalrunDir, 'suites'),
+    envDir: path.join(finalrunDir, 'env'),
+    artifactsDir: await resolveWorkspaceArtifactsDir(rootDir),
+  };
+}
+
+async function findWorkspaceRoot(
+  startPath: string,
+  isWorkspaceRoot: (candidateRoot: string) => Promise<boolean> = isWorkspaceRootCandidate,
+): Promise<string | undefined> {
+  const resolvedStartPath = path.resolve(startPath);
+  const stats = await fs.stat(resolvedStartPath).catch(() => null);
+  let currentDir = stats?.isFile() ? path.dirname(resolvedStartPath) : resolvedStartPath;
+
+  while (true) {
+    if (await isWorkspaceRoot(currentDir)) {
+      return currentDir;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      return undefined;
+    }
+    currentDir = parentDir;
+  }
+}
+
+async function readWorkspaceArtifactMetadata(
+  workspace: FinalRunWorkspace,
+): Promise<WorkspaceMetadataRecord | undefined> {
+  return readWorkspaceMetadataFromPath(getWorkspaceMetadataPath(workspace));
+}
+
+async function readWorkspaceMetadataFromPath(
+  metadataPath: string,
+): Promise<WorkspaceMetadataRecord | undefined> {
+  try {
+    const raw = await fs.readFile(metadataPath, 'utf-8');
+    return parseWorkspaceMetadataRecord(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+}
+
+function getWorkspaceMetadataPath(workspace: FinalRunWorkspace): string {
+  return path.join(workspace.artifactsDir, '..', 'workspace.json');
+}
+
+async function isSelectableRegisteredWorkspace(
+  workspace: FinalRunWorkspace,
+): Promise<boolean> {
+  return isSelectableWorkspaceRoot(workspace.rootDir);
+}
+
+async function isDirectory(candidatePath: string): Promise<boolean> {
+  try {
+    return (await fs.stat(candidatePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function isWorkspaceRootCandidate(candidateRoot: string): Promise<boolean> {
+  return isDirectory(path.join(candidateRoot, '.finalrun'));
+}
+
+async function isSelectableWorkspaceRoot(candidateRoot: string): Promise<boolean> {
+  return (await isWorkspaceRootCandidate(candidateRoot)) &&
+    (await isDirectory(path.join(candidateRoot, '.finalrun', 'tests')));
+}
+
+function compareRegisteredWorkspaces(
+  left: RegisteredWorkspaceEntry,
+  right: RegisteredWorkspaceEntry,
+): number {
+  const leftTimestamp = Date.parse(left.lastUsedAt ?? '');
+  const rightTimestamp = Date.parse(right.lastUsedAt ?? '');
+  const normalizedLeftTimestamp = Number.isNaN(leftTimestamp) ? 0 : leftTimestamp;
+  const normalizedRightTimestamp = Number.isNaN(rightTimestamp) ? 0 : rightTimestamp;
+
+  if (normalizedRightTimestamp !== normalizedLeftTimestamp) {
+    return normalizedRightTimestamp - normalizedLeftTimestamp;
+  }
+
+  const labelOrder = left.displayName.localeCompare(right.displayName);
+  if (labelOrder !== 0) {
+    return labelOrder;
+  }
+
+  return left.workspace.rootDir.localeCompare(right.workspace.rootDir);
+}
+
+async function deriveWorkspaceDisplayName(workspaceRoot: string): Promise<string> {
+  const packageName = await readWorkspacePackageName(workspaceRoot);
+  if (packageName) {
+    return packageName;
+  }
+
+  const originSlug = readWorkspaceOriginRepoSlug(workspaceRoot);
+  if (originSlug) {
+    return originSlug;
+  }
+
+  return path.basename(workspaceRoot);
+}
+
+async function readWorkspacePackageName(workspaceRoot: string): Promise<string | undefined> {
+  const packageJsonPath = path.join(workspaceRoot, 'package.json');
+  try {
+    const raw = await fs.readFile(packageJsonPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { name?: unknown };
+    return typeof parsed.name === 'string' && parsed.name.trim().length > 0
+      ? parsed.name.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readWorkspaceOriginRepoSlug(workspaceRoot: string): string | undefined {
+  const result = spawnSync('git', ['config', '--get', 'remote.origin.url'], {
+    cwd: workspaceRoot,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+  if (result.status !== 0) {
+    return undefined;
+  }
+  return parseGitOriginRepoSlug(result.stdout);
+}
+
+function parseGitOriginRepoSlug(remoteUrl: string): string | undefined {
+  const normalizedRemoteUrl = remoteUrl.trim();
+  if (normalizedRemoteUrl.length === 0) {
+    return undefined;
+  }
+
+  try {
+    return normalizeRepoSlugPath(new URL(normalizedRemoteUrl).pathname);
+  } catch {
+    const scpStyleMatch = /^(?:.+@)?[^:]+:(.+)$/.exec(normalizedRemoteUrl);
+    if (scpStyleMatch) {
+      return normalizeRepoSlugPath(scpStyleMatch[1]);
+    }
+    return undefined;
+  }
+}
+
+function normalizeRepoSlugPath(value: string): string | undefined {
+  const normalizedValue = value.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/, '');
+  return normalizedValue.length > 0 ? normalizedValue : undefined;
+}
+
+function normalizeMetadataString(value: string | undefined): string | undefined {
+  const normalizedValue = value?.trim();
+  return normalizedValue && normalizedValue.length > 0 ? normalizedValue : undefined;
+}
+
+function parseWorkspaceMetadataRecord(value: unknown): WorkspaceMetadataRecord | undefined {
+  if (!isObjectRecord(value)) {
+    return undefined;
+  }
+
+  const workspaceRoot = readMetadataPathString(value.workspaceRoot);
+  const canonicalWorkspaceRoot = readMetadataPathString(value.canonicalWorkspaceRoot);
+  const workspaceHash = readMetadataString(value.workspaceHash);
+  const artifactsDir = readMetadataPathString(value.artifactsDir);
+  if (!workspaceRoot || !canonicalWorkspaceRoot || !workspaceHash || !artifactsDir) {
+    return undefined;
+  }
+
+  const schemaVersion = typeof value.schemaVersion === 'number' &&
+      Number.isInteger(value.schemaVersion) &&
+      value.schemaVersion > 0
+    ? value.schemaVersion
+    : 1;
+
+  const metadata: WorkspaceMetadataRecord = {
+    schemaVersion,
+    workspaceRoot,
+    canonicalWorkspaceRoot,
+    workspaceHash,
+    artifactsDir,
+  };
+
+  const displayName = readMetadataString(value.displayName);
+  const lastUsedAt = readMetadataString(value.lastUsedAt);
+  if (displayName) {
+    metadata.displayName = displayName;
+  }
+  if (lastUsedAt) {
+    metadata.lastUsedAt = lastUsedAt;
+  }
+
+  return metadata;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readMetadataString(value: unknown): string | undefined {
+  return typeof value === 'string' ? normalizeMetadataString(value) : undefined;
+}
+
+function readMetadataPathString(value: unknown): string | undefined {
+  const normalizedValue = readMetadataString(value);
+  return normalizedValue ? path.resolve(normalizedValue) : undefined;
 }
 
 async function listEnvironmentFiles(
@@ -369,10 +749,10 @@ function formatMissingEnvironmentError(
   envDirExists: boolean,
 ): string {
   if (!envDirExists) {
-    return `Environment "${requestedEnvName}" was requested, but ${envDir} does not exist. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free specs.`;
+    return `Environment "${requestedEnvName}" was requested, but ${envDir} does not exist. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free tests.`;
   }
   if (availableEnvNames.length === 0) {
-    return `Environment "${requestedEnvName}" was not found in ${envDir}, and no environment files are available there. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free specs.`;
+    return `Environment "${requestedEnvName}" was not found in ${envDir}, and no environment files are available there. Create .finalrun/env/${requestedEnvName}.yaml or omit --env for env-free tests.`;
   }
 
   return `Environment "${requestedEnvName}" was not found in ${envDir}. Available environments: ${availableEnvNames.join(', ')}`;
