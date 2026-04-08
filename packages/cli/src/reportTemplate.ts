@@ -576,8 +576,8 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     }
 
     .log-filter-chip[data-log-level="error"].is-active {
-      background: #ee5d50;
-      border-color: #ee5d50;
+      background: #d32f2f;
+      border-color: #d32f2f;
     }
 
     .log-filter-chip[data-log-level="warn"].is-active {
@@ -637,11 +637,13 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     }
 
     .device-log-line[data-log-level="error"] {
-      border-left-color: rgba(238, 93, 80, 0.5);
+      border-left: 3px solid #d32f2f;
+      background: rgba(211, 47, 47, 0.06);
+      padding-left: 13px;
     }
 
     .device-log-line[data-log-level="warn"] {
-      border-left-color: rgba(232, 167, 53, 0.5);
+      border-left-color: rgba(232, 167, 53, 0.6);
     }
 
     .device-log-line[data-log-ts=""] {
