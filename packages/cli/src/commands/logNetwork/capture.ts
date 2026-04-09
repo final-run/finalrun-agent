@@ -15,9 +15,7 @@ export interface CapturedEntry {
   statusMessage: string;
   requestHeaders: Record<string, string>;
   responseHeaders: Record<string, string>;
-  requestBodyText: string | undefined;
   requestBodySize: number;
-  responseBodyText: string | undefined;
   responseBodySize: number;
   durationMs: number;
   responseSize: number;
@@ -42,7 +40,7 @@ export class NetworkCapture {
   private _entries: CapturedEntry[] = [];
   private _tlsErrors: TlsError[] = [];
   private _port = 0;
-  private _pendingRequests = new Map<string, { startedAt: Date; method: string; url: string; headers: Record<string, string>; bodyText: string | undefined; bodySize: number }>();
+  private _pendingRequests = new Map<string, { startedAt: Date; method: string; url: string; headers: Record<string, string>; bodySize: number }>();
 
   get port(): number { return this._port; }
   get entries(): readonly CapturedEntry[] { return this._entries; }
@@ -55,16 +53,12 @@ export class NetworkCapture {
     this._port = this._server.port;
 
     await this._server.on('request', (req) => {
-      const bodyBuffer = req.body?.buffer;
-      const contentType = flattenHeaderValue(req.headers['content-type']);
-      const isText = isTextMime(contentType);
       this._pendingRequests.set(req.id, {
         startedAt: new Date(),
         method: req.method,
         url: req.url,
         headers: flattenHeaders(req.headers),
-        bodyText: isText && bodyBuffer ? Buffer.from(bodyBuffer).toString('utf8').slice(0, 512 * 1024) : undefined,
-        bodySize: bodyBuffer?.byteLength ?? 0,
+        bodySize: req.body?.buffer?.byteLength ?? 0,
       });
     });
 
@@ -73,9 +67,7 @@ export class NetworkCapture {
       const pending = this._pendingRequests.get(response.id);
       this._pendingRequests.delete(response.id);
 
-      const respBuffer = response.body?.buffer;
-      const respContentType = flattenHeaderValue(response.headers['content-type']);
-      const isText = isTextMime(respContentType);
+      const respSize = response.body?.buffer?.byteLength ?? 0;
 
       const entry: CapturedEntry = {
         startedAt: pending?.startedAt ?? completedAt,
@@ -86,12 +78,10 @@ export class NetworkCapture {
         statusMessage: response.statusMessage ?? '',
         requestHeaders: pending?.headers ?? {},
         responseHeaders: flattenHeaders(response.headers),
-        requestBodyText: pending?.bodyText,
         requestBodySize: pending?.bodySize ?? 0,
-        responseBodyText: isText && respBuffer ? Buffer.from(respBuffer).toString('utf8').slice(0, 512 * 1024) : undefined,
-        responseBodySize: respBuffer?.byteLength ?? 0,
+        responseBodySize: respSize,
         durationMs: completedAt.getTime() - (pending?.startedAt ?? completedAt).getTime(),
-        responseSize: respBuffer?.byteLength ?? 0,
+        responseSize: respSize,
       };
       this._entries.push(entry);
       callbacks.onEntry(entry);
@@ -136,9 +126,6 @@ export class NetworkCapture {
             httpVersion: 'HTTP/1.1',
             headers: headersToHar(e.requestHeaders),
             queryString: parseQueryString(e.url),
-            ...(e.requestBodyText !== undefined
-              ? { postData: { mimeType: e.requestHeaders['content-type'] ?? 'application/octet-stream', text: e.requestBodyText } }
-              : {}),
             bodySize: e.requestBodySize,
             headersSize: -1,
           },
@@ -150,7 +137,6 @@ export class NetworkCapture {
             content: {
               size: e.responseSize,
               mimeType: e.responseHeaders['content-type'] ?? 'application/octet-stream',
-              ...(e.responseBodyText !== undefined ? { text: e.responseBodyText } : {}),
             },
             bodySize: e.responseSize,
             headersSize: -1,
@@ -171,17 +157,6 @@ function flattenHeaders(headers: Record<string, string | string[] | undefined>):
     flat[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : v;
   }
   return flat;
-}
-
-function flattenHeaderValue(v: string | string[] | undefined): string {
-  if (!v) return '';
-  return Array.isArray(v) ? v[0] ?? '' : v;
-}
-
-function isTextMime(ct: string): boolean {
-  if (!ct) return false;
-  const l = ct.toLowerCase();
-  return l.includes('json') || l.includes('text') || l.includes('xml') || l.includes('html') || l.includes('javascript') || l.includes('css') || l.includes('form-urlencoded');
 }
 
 function headersToHar(headers: Record<string, string>): Array<{ name: string; value: string }> {

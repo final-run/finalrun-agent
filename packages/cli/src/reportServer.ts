@@ -318,10 +318,6 @@ export async function buildReportRunManifestViewModel(
         responseSize: ((e['response'] as Record<string, unknown>)?.['content'] as Record<string, unknown>)?.['size'] ?? (e['response'] as Record<string, unknown>)?.['bodySize'] ?? 0,
         requestHeaders: (e['request'] as Record<string, unknown>)?.['headers'],
         responseHeaders: (e['response'] as Record<string, unknown>)?.['headers'],
-        requestBodyText: ((e['request'] as Record<string, unknown>)?.['postData'] as Record<string, unknown>)?.['text'],
-        requestBodyMimeType: ((e['request'] as Record<string, unknown>)?.['postData'] as Record<string, unknown>)?.['mimeType'],
-        responseBodyText: ((e['response'] as Record<string, unknown>)?.['content'] as Record<string, unknown>)?.['text'],
-        responseBodyMimeType: ((e['response'] as Record<string, unknown>)?.['content'] as Record<string, unknown>)?.['mimeType'],
       }));
       const tlsErrors = har?.log?._tlsErrors ?? [];
       return { entries, tlsErrors };

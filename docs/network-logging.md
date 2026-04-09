@@ -91,10 +91,10 @@ A **Network** tab appears alongside the existing Recording, Device Logs, and Act
 - **Request table** — method, URL path, status code, duration, response size
 - **Status filter chips** — All / 2xx / 3xx / 4xx / 5xx
 - **Search** — filter by URL
-- **Click a row** — detail panel slides in with three tabs:
-  - **Headers** — all request and response headers
-  - **Request Body** — formatted JSON or raw text (for POST/PUT requests)
-  - **Response Body** — formatted JSON or raw text
+- **Click a row** — detail panel slides in showing:
+  - General info (full URL, status, duration, size)
+  - All response headers
+  - All request headers
 - **Video sync** — click a request row and the recording seeks to that moment
 - **Download** — link to the full `.har` file
 
@@ -136,8 +136,8 @@ Press Ctrl+C to stop — writes a `.har` file to the current directory. Useful f
 | Full URL (scheme, host, path, query) | Yes |
 | All request headers | Yes |
 | All response headers | Yes |
-| Request body (text, up to 512 KB) | Yes |
-| Response body (text, up to 512 KB) | Yes |
+| Request body | Not yet |
+| Response body | Not yet |
 | Response status code and text | Yes |
 | Response size | Yes |
 | Request timing (start, duration) | Yes |

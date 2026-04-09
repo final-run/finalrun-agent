@@ -31,10 +31,6 @@ export interface NetworkLogEntry {
   responseSize: number;
   requestHeaders?: Array<{ name: string; value: string }>;
   responseHeaders?: Array<{ name: string; value: string }>;
-  requestBodyText?: string;
-  requestBodyMimeType?: string;
-  responseBodyText?: string;
-  responseBodyMimeType?: string;
 }
 
 export interface NetworkTlsErrorEntry {
@@ -1577,13 +1573,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     function renderNetDetailContent(detail, entry, tab) {
       var body = detail.querySelector('.network-log-detail-body');
       if (!body) return;
-      if (tab === 'headers') {
-        body.innerHTML = renderHeaderSection('Response Headers', entry.responseHeaders) + renderHeaderSection('Request Headers', entry.requestHeaders) + renderHeaderSection('General', [{ name: 'URL', value: entry.url || '' }, { name: 'Status', value: (entry.status || '') + ' ' + (entry.statusText || '') }, { name: 'Duration', value: (entry.time || 0) + 'ms' }, { name: 'Size', value: formatNetBytes(entry.responseSize || 0) }]);
-      } else if (tab === 'request') {
-        body.innerHTML = entry.requestBodyText ? '<pre>' + escapeHtmlJS(formatBodyText(entry.requestBodyText, entry.requestBodyMimeType)) + '</pre>' : '<div style="color:var(--text-muted);padding:20px">No request body</div>';
-      } else if (tab === 'response') {
-        body.innerHTML = entry.responseBodyText ? '<pre>' + escapeHtmlJS(formatBodyText(entry.responseBodyText, entry.responseBodyMimeType)) + '</pre>' : '<div style="color:var(--text-muted);padding:20px">No response body' + (entry.responseSize > 0 ? ' (binary, ' + formatNetBytes(entry.responseSize) + ')' : '') + '</div>';
-      }
+      body.innerHTML = renderHeaderSection('General', [{ name: 'URL', value: entry.url || '' }, { name: 'Status', value: (entry.status || '') + ' ' + (entry.statusText || '') }, { name: 'Duration', value: (entry.time || 0) + 'ms' }, { name: 'Size', value: formatNetBytes(entry.responseSize || 0) }]) + renderHeaderSection('Response Headers', entry.responseHeaders) + renderHeaderSection('Request Headers', entry.requestHeaders);
     }
 
     function renderHeaderSection(title, headers) {
@@ -1593,14 +1583,6 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
         html += '<div class="header-row"><span class="header-name">' + escapeHtmlJS(headers[i].name) + '</span><span class="header-value">' + escapeHtmlJS(headers[i].value) + '</span></div>';
       }
       return html + '</div>';
-    }
-
-    function formatBodyText(text, mimeType) {
-      if (!text) return '';
-      if (mimeType && mimeType.indexOf('json') !== -1) {
-        try { return JSON.stringify(JSON.parse(text), null, 2); } catch(e) { return text; }
-      }
-      return text;
     }
 
     function formatNetBytes(b) {
@@ -2208,8 +2190,6 @@ function renderSpecDetailSection(
                       <div class="network-log-detail-header"></div>
                       <div class="network-log-detail-tabs">
                         <button class="net-detail-tab is-active" data-detail-tab="headers" onclick="switchNetDetailTab(this)" type="button">Headers</button>
-                        <button class="net-detail-tab" data-detail-tab="request" onclick="switchNetDetailTab(this)" type="button">Request</button>
-                        <button class="net-detail-tab" data-detail-tab="response" onclick="switchNetDetailTab(this)" type="button">Response</button>
                       </div>
                       <div class="network-log-detail-body"></div>
                     </div>
@@ -2240,10 +2220,6 @@ function renderNetworkLogRows(entries: NonNullable<ReportManifestTestRecord['net
       responseSize: entry.responseSize,
       requestHeaders: entry.requestHeaders,
       responseHeaders: entry.responseHeaders,
-      requestBodyText: entry.requestBodyText,
-      requestBodyMimeType: entry.requestBodyMimeType,
-      responseBodyText: entry.responseBodyText,
-      responseBodyMimeType: entry.responseBodyMimeType,
     }));
     html += `<div class="network-log-row ${statusClass}" data-network-ts="${escapeHtml(entry.startedDateTime)}" data-net-status-code="${entry.status}" onclick="handleNetRowClick(this)" data-entry='${entryJson}'>
       <span class="net-method">${escapeHtml(entry.method)}</span>

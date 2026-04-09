@@ -39,9 +39,7 @@ export interface NetworkCapturedEntry {
   statusMessage: string;
   requestHeaders: Record<string, string>;
   responseHeaders: Record<string, string>;
-  requestBodyText: string | undefined;
   requestBodySize: number;
-  responseBodyText: string | undefined;
   responseBodySize: number;
   durationMs: number;
 }
@@ -65,8 +63,6 @@ export interface DeviceNetworkCaptureController {
 
 const MAP_KEY_DELIMITER = '###';
 const TEMP_DIR = path.join(os.tmpdir(), 'finalrun-network');
-const MAX_TEXT_BODY_BYTES = 512 * 1024; // 512 KB
-
 export class NetworkCaptureManager implements DeviceNetworkCaptureController {
   private _server: Mockttp | null = null;
   private _entries: NetworkCapturedEntry[] = [];
@@ -81,7 +77,7 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
   // Pending requests (waiting for response).
   private readonly _pendingRequests = new Map<
     string,
-    { startedAt: Date; method: string; url: string; headers: Record<string, string>; bodyText: string | undefined; bodySize: number }
+    { startedAt: Date; method: string; url: string; headers: Record<string, string>; bodySize: number }
   >();
 
   get proxyPort(): number {
@@ -114,19 +110,14 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
       await this._server.start();
       this._proxyPort = this._server.port;
 
-      // Subscribe to request events — store full request data.
+      // Subscribe to request events — store request metadata (no body).
       await this._server.on('request', (req) => {
-        const bodyBuffer = req.body?.buffer;
-        const contentType = flattenHeaderValue(req.headers['content-type']);
-        const isText = isTextContentType(contentType);
-
         this._pendingRequests.set(req.id, {
           startedAt: new Date(),
           method: req.method,
           url: req.url,
           headers: flattenHeaders(req.headers),
-          bodyText: isText && bodyBuffer ? truncateBody(Buffer.from(bodyBuffer).toString('utf8')) : undefined,
-          bodySize: bodyBuffer?.byteLength ?? 0,
+          bodySize: req.body?.buffer?.byteLength ?? 0,
         });
       });
 
@@ -135,10 +126,6 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
         const completedAt = new Date();
         const pending = this._pendingRequests.get(response.id);
         this._pendingRequests.delete(response.id);
-
-        const responseBuffer = response.body?.buffer;
-        const responseContentType = flattenHeaderValue(response.headers['content-type']);
-        const isText = isTextContentType(responseContentType);
 
         const entry: NetworkCapturedEntry = {
           startedAt: pending?.startedAt ?? completedAt,
@@ -149,10 +136,8 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
           statusMessage: response.statusMessage ?? '',
           requestHeaders: pending?.headers ?? {},
           responseHeaders: flattenHeaders(response.headers),
-          requestBodyText: pending?.bodyText,
           requestBodySize: pending?.bodySize ?? 0,
-          responseBodyText: isText && responseBuffer ? truncateBody(Buffer.from(responseBuffer).toString('utf8')) : undefined,
-          responseBodySize: responseBuffer?.byteLength ?? 0,
+          responseBodySize: response.body?.buffer?.byteLength ?? 0,
           durationMs: completedAt.getTime() - (pending?.startedAt ?? completedAt).getTime(),
         };
         this._entries.push(entry);
@@ -320,14 +305,6 @@ function buildHar(entries: NetworkCapturedEntry[], tlsErrors: NetworkTlsError[])
           httpVersion: 'HTTP/1.1',
           headers: headersToHar(e.requestHeaders),
           queryString: parseQueryString(e.url),
-          ...(e.requestBodyText !== undefined
-            ? {
-                postData: {
-                  mimeType: e.requestHeaders['content-type'] ?? 'application/octet-stream',
-                  text: e.requestBodyText,
-                },
-              }
-            : {}),
           bodySize: e.requestBodySize,
           headersSize: -1,
         },
@@ -339,7 +316,6 @@ function buildHar(entries: NetworkCapturedEntry[], tlsErrors: NetworkTlsError[])
           content: {
             size: e.responseBodySize,
             mimeType: e.responseHeaders['content-type'] ?? 'application/octet-stream',
-            ...(e.responseBodyText !== undefined ? { text: e.responseBodyText } : {}),
           },
           bodySize: e.responseBodySize,
           headersSize: -1,
@@ -376,11 +352,6 @@ function flattenHeaders(headers: Record<string, string | string[] | undefined>):
   return flat;
 }
 
-function flattenHeaderValue(value: string | string[] | undefined): string {
-  if (value === undefined) return '';
-  return Array.isArray(value) ? value[0] ?? '' : value;
-}
-
 function headersToHar(headers: Record<string, string>): Array<{ name: string; value: string }> {
   return Object.entries(headers).map(([name, value]) => ({ name, value }));
 }
@@ -392,25 +363,6 @@ function parseQueryString(url: string): Array<{ name: string; value: string }> {
   } catch {
     return [];
   }
-}
-
-function isTextContentType(contentType: string): boolean {
-  if (!contentType) return false;
-  const ct = contentType.toLowerCase();
-  return (
-    ct.includes('json') ||
-    ct.includes('text') ||
-    ct.includes('xml') ||
-    ct.includes('html') ||
-    ct.includes('javascript') ||
-    ct.includes('css') ||
-    ct.includes('form-urlencoded')
-  );
-}
-
-function truncateBody(text: string): string {
-  if (text.length <= MAX_TEXT_BODY_BYTES) return text;
-  return text.slice(0, MAX_TEXT_BODY_BYTES);
 }
 
 function sanitizeForFilename(value: string): string {

@@ -782,14 +782,6 @@ export class ReportWriter {
           redactHarHeaders(entry.request?.headers);
           redactHarHeaders(entry.response?.headers);
           redactHarQueryParams(entry.request?.queryString);
-          if (entry.request?.postData?.text) {
-            const redacted = redactResolvedValue(entry.request.postData.text, bindings);
-            if (redacted !== undefined) entry.request.postData.text = redacted;
-          }
-          if (entry.response?.content?.text) {
-            const redacted = redactResolvedValue(entry.response.content.text, bindings);
-            if (redacted !== undefined) entry.response.content.text = redacted;
-          }
         }
       }
       await fsp.writeFile(targetPath, JSON.stringify(har, null, 2), 'utf-8');
