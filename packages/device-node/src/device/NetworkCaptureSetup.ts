@@ -6,7 +6,6 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as https from 'node:https';
 import * as path from 'node:path';
 import { Logger } from '@finalrun/common';
 
@@ -19,8 +18,6 @@ export interface NetworkProxySetup {
   configureProxy(proxyPort: number): Promise<void>;
   /** Restore original proxy settings. */
   restoreProxy(): Promise<void>;
-  /** Test if the CA cert is trusted by making a request through the proxy. */
-  verifyCATrusted(proxyPort: number, caCert: string): Promise<boolean>;
 }
 
 // ── Android ──────────────────────────────────────────────────────────────────
@@ -44,12 +41,9 @@ export class AndroidNetworkProxySetup implements NetworkProxySetup {
     // Save previous proxy.
     this._previousProxy = await this._getGlobalProxy();
 
-    // Push CA cert to device.
-    const caDir = path.join(process.env['HOME'] ?? '/tmp', '.finalrun', 'ca');
-    const certDerPath = path.join(caDir, 'root.crt');
-    if (fs.existsSync(certDerPath)) {
-      await this._adb('push', certDerPath, '/sdcard/Download/finalrun-ca.crt');
-    }
+    // CA cert is NOT pushed here — that's the job of `finalrun log-network`
+    // (the setup tool). Pushing during a test run can cause
+    // CertPathValidatorException if the app is already running.
 
     // Set proxy target.
     let proxyTarget: string;
@@ -63,7 +57,7 @@ export class AndroidNetworkProxySetup implements NetworkProxySetup {
     }
 
     await this._setGlobalProxy(proxyTarget);
-    Logger.d(`Android proxy set to ${proxyTarget}`);
+    Logger.i(`Android proxy set to ${proxyTarget}`);
   }
 
   async restoreProxy(): Promise<void> {
@@ -85,10 +79,6 @@ export class AndroidNetworkProxySetup implements NetworkProxySetup {
       }
       this._reverseActive = false;
     }
-  }
-
-  async verifyCATrusted(proxyPort: number, caCert: string): Promise<boolean> {
-    return testProxyHttps(proxyPort, caCert);
   }
 
   private async _getGlobalProxy(): Promise<string | null> {
@@ -146,7 +136,7 @@ export class IOSNetworkProxySetup implements NetworkProxySetup {
 
     // Set autoproxy URL.
     await setAutoproxyUrl(this._networkService, this._pacServer.url);
-    Logger.d(`iOS proxy set via PAC on ${this._networkService}: ${this._pacServer.url}`);
+    Logger.i(`iOS proxy set via PAC on ${this._networkService}: ${this._pacServer.url}`);
   }
 
   async restoreProxy(): Promise<void> {
@@ -166,10 +156,6 @@ export class IOSNetworkProxySetup implements NetworkProxySetup {
       }
       this._pacServer = null;
     }
-  }
-
-  async verifyCATrusted(proxyPort: number, caCert: string): Promise<boolean> {
-    return testProxyHttps(proxyPort, caCert);
   }
 
   private async _xcrun(...args: string[]): Promise<string> {
@@ -257,30 +243,28 @@ async function findActiveNetworkService(): Promise<string | null> {
   return services[0] ?? null;
 }
 
-// ── Shared: connectivity test ────────────────────────────────────────────────
+// ── Shared: traffic-based CA verification ────────────────────────────────────
 
-async function testProxyHttps(proxyPort: number, caCert: string): Promise<boolean> {
+/**
+ * Wait briefly for background traffic, then check if the proxy saw any
+ * successful requests vs TLS errors. This tests the DEVICE's trust of the
+ * CA, not the host's.
+ *
+ * Returns 'verified' if successful entries exist, 'untrusted' if only TLS
+ * errors, 'unknown' if no traffic observed (app might not have made requests).
+ */
+export async function checkProxyTraffic(
+  getEntryCount: () => number,
+  getTlsErrorCount: () => number,
+  waitMs: number = 3000,
+): Promise<'verified' | 'untrusted' | 'unknown'> {
   return new Promise((resolve) => {
-    const req = https.request(
-      {
-        hostname: 'example.com',
-        port: 443,
-        path: '/',
-        method: 'HEAD',
-        agent: new https.Agent({
-          host: '127.0.0.1',
-          port: proxyPort,
-          ca: caCert,
-        } as https.AgentOptions),
-        timeout: 5000,
-      },
-      (res) => {
-        res.resume();
-        resolve(res.statusCode !== undefined);
-      },
-    );
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.end();
+    setTimeout(() => {
+      const entries = getEntryCount();
+      const tlsErrors = getTlsErrorCount();
+      if (entries > 0) resolve('verified');
+      else if (tlsErrors > 0) resolve('untrusted');
+      else resolve('unknown');
+    }, waitMs);
   });
 }

@@ -369,6 +369,14 @@ export class Device implements DeviceAgent {
     return this._networkCaptureController.proxyPort;
   }
 
+  getNetworkEntryCount(): number {
+    return this._networkCaptureController.entryCount;
+  }
+
+  getNetworkTlsErrorCount(): number {
+    return this._networkCaptureController.tlsErrorCount;
+  }
+
   uninstallDriver(): void {
     Logger.d(`Uninstall driver for device: ${this._deviceInfo.deviceUUID}`);
   }

@@ -59,6 +59,8 @@ export interface DeviceNetworkCaptureController {
   stopTestCapture(runId: string, testId: string): Promise<DeviceNodeResponse>;
   abortTestCapture(runId: string): Promise<void>;
   get proxyPort(): number;
+  get entryCount(): number;
+  get tlsErrorCount(): number;
 }
 
 const MAP_KEY_DELIMITER = '###';
@@ -84,6 +86,14 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
 
   get proxyPort(): number {
     return this._proxyPort;
+  }
+
+  get entryCount(): number {
+    return this._entries.length;
+  }
+
+  get tlsErrorCount(): number {
+    return this._tlsErrors.length;
   }
 
   async startSession(params: NetworkCaptureSessionParams): Promise<DeviceNodeResponse> {
@@ -161,7 +171,7 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
         });
       });
 
-      Logger.d(`Network capture proxy started on port ${this._proxyPort}`);
+      Logger.i(`Network capture proxy started on port ${this._proxyPort}`);
       return new DeviceNodeResponse({
         success: true,
         message: `Network capture proxy started on port ${this._proxyPort}`,

@@ -35,6 +35,7 @@ export type {
 export {
   AndroidNetworkProxySetup,
   IOSNetworkProxySetup,
+  checkProxyTraffic,
 } from './device/NetworkCaptureSetup.js';
 export type { NetworkProxySetup } from './device/NetworkCaptureSetup.js';
 export type {

@@ -66,6 +66,8 @@ export interface DeviceAgent {
   networkCaptureCleanUp(): Promise<void>;
   abortNetworkCapture(runId: string): Promise<void>;
   getNetworkProxyPort(): number;
+  getNetworkEntryCount(): number;
+  getNetworkTlsErrorCount(): number;
 
   // Dart: void uninstallDriver()
   uninstallDriver(): void;
