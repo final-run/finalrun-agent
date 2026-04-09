@@ -38,6 +38,12 @@ import {
   resolveWorkspace,
   type FinalRunWorkspace,
 } from './workspace.js';
+import { loadOrGenerateCA } from './commands/logNetwork/ca.js';
+import {
+  AndroidNetworkProxySetup,
+  IOSNetworkProxySetup,
+  type NetworkProxySetup,
+} from '@finalrun/device-node';
 
 export interface TestRunnerOptions extends CheckRunnerOptions {
   apiKey: string;
@@ -231,6 +237,54 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
       });
     }
 
+    // ── Session-level network proxy setup ──────────────────────────────
+    let networkCaptureAvailable = false;
+    let networkProxySetup: NetworkProxySetup | undefined;
+
+    if (options.networkCapture && goalSession) {
+      try {
+        const ca = await loadOrGenerateCA();
+        const sessionResponse = await goalSession.device.startNetworkSession({
+          cert: ca.cert,
+          key: ca.key,
+        });
+
+        if (sessionResponse.success) {
+          const proxyPort = goalSession.device.getNetworkProxyPort();
+          const deviceInfo = goalSession.device.getDeviceInfo();
+          const deviceId = deviceInfo.id ?? deviceInfo.deviceUUID;
+          const platform = goalSession.platform;
+
+          if (platform === 'android') {
+            const adbPath = (await new (await import('./filePathUtil.js')).CliFilePathUtil(undefined, undefined, { downloadAssets: false }).getADBPath()) ?? 'adb';
+            networkProxySetup = new AndroidNetworkProxySetup(adbPath, deviceId);
+          } else {
+            networkProxySetup = new IOSNetworkProxySetup(deviceId);
+          }
+
+          await networkProxySetup.configureProxy(proxyPort);
+          const caTrusted = await networkProxySetup.verifyCATrusted(proxyPort, ca.cert);
+
+          if (caTrusted) {
+            networkCaptureAvailable = true;
+            Logger.i('Network capture proxy started and CA verified');
+          } else {
+            console.log(`\n\x1b[33m  ⚠ Network capture unavailable — CA certificate not trusted on device.\x1b[0m`);
+            console.log(`\x1b[2m    To set up: run \`finalrun log-network --platform=${goalSession.platform}\`\x1b[0m`);
+            console.log(`\x1b[2m    See: docs/network-capture.md\x1b[0m`);
+            console.log(`\x1b[2m    Continuing test without network logs.\x1b[0m\n`);
+            await networkProxySetup.restoreProxy();
+            await goalSession.device.stopNetworkSession();
+            networkProxySetup = undefined;
+          }
+        } else {
+          Logger.w(`Failed to start network capture session: ${sessionResponse.message}`);
+        }
+      } catch (error) {
+        Logger.w('Network capture setup failed:', error);
+      }
+    }
+
     try {
       for (const test of checked.tests) {
         if (runAborted) {
@@ -303,7 +357,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
               testId: test.testId!,
               keepPartialOnFailure: true,
             },
-            ...(options.networkCapture
+            ...(networkCaptureAvailable
               ? {
                   networkCapture: {
                     runId: path.basename(runDir),
@@ -380,6 +434,21 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
         testResults,
       };
     } finally {
+      // Clean up network proxy before device cleanup.
+      if (networkProxySetup) {
+        try {
+          await networkProxySetup.restoreProxy();
+        } catch (error) {
+          Logger.w('Failed to restore network proxy:', error);
+        }
+      }
+      if (goalSession && networkCaptureAvailable) {
+        try {
+          await goalSession.device.stopNetworkSession();
+        } catch (error) {
+          Logger.w('Failed to stop network capture session:', error);
+        }
+      }
       if (goalSession) {
         try {
           await goalSession.cleanup();
