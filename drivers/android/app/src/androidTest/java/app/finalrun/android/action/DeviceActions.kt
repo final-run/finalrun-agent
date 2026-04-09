@@ -233,8 +233,9 @@ object DeviceActions {
     fun enterText(text: String, shouldClearText: Boolean, eraseCount: Int) {
         if (shouldClearText) clearTextFromFocusNode(eraseCount)
 
-        val isAsciiOnly = text.all { it.code < 128 }
-        if (isAsciiOnly) {
+        val shellMetachars = setOf('&', '|', ';', '<', '>', '$', '`', '\\', '"', '\'', '(', ')', '{', '}', '!', '#', '~', '*', '?', '[', ']')
+        val isSafeForShell = text.all { it.code < 128 && it !in shellMetachars }
+        if (isSafeForShell) {
             val escaped = text.replace(" ", "%s")
             uiDevice.executeShellCommand("input text $escaped")
         } else {
@@ -243,18 +244,42 @@ object DeviceActions {
     }
 
     private fun pasteText(text: String) {
-        val latch = java.util.concurrent.CountDownLatch(1)
+        var previousClip: android.content.ClipData? = null
+        val setLatch = java.util.concurrent.CountDownLatch(1)
         Handler(Looper.getMainLooper()).post {
             try {
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
                         as android.content.ClipboardManager
+                previousClip = try { cm.primaryClip } catch (_: Exception) { null }
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("", text))
             } finally {
-                latch.countDown()
+                setLatch.countDown()
             }
         }
-        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        val clipboardSet = setLatch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        if (!clipboardSet) {
+            throw IllegalStateException("pasteText: timed out waiting for clipboard to be set")
+        }
         uiDevice.executeShellCommand("input keyevent 279")
+
+        val restoreLatch = java.util.concurrent.CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                val saved = previousClip
+                if (saved != null) {
+                    cm.setPrimaryClip(saved)
+                } else {
+                    cm.clearPrimaryClip()
+                }
+            } finally {
+                restoreLatch.countDown()
+            }
+        }
+        if (!restoreLatch.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+            errorLog("pasteText: timed out waiting for clipboard restore")
+        }
     }
 
     fun enterTextOnFocusNode(text: String, shouldClearText: Boolean) = runBlocking {
