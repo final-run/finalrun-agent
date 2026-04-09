@@ -31,6 +31,7 @@ The workspace config defines defaults used by the CLI when flags are omitted.
 | `app.bundleId` | iOS bundle identifier (e.g. `com.example.myapp`) |
 | `env` | Default environment name (used when `--env` is omitted) |
 | `model` | Default AI model in `provider/model` format (used when `--model` is omitted) |
+| `network.capture` | Enable HTTP/HTTPS network capture during test runs (`true` / `false`, default `false`). Requires one-time setup — see [Network Logging](network-logging.md). |
 
 At least one of `app.packageName` or `app.bundleId` is required.
 

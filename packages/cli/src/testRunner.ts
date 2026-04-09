@@ -42,7 +42,6 @@ import { loadOrGenerateCA } from './commands/logNetwork/ca.js';
 import {
   AndroidNetworkProxySetup,
   IOSNetworkProxySetup,
-  checkProxyTraffic,
   type NetworkProxySetup,
 } from '@finalrun/device-node';
 
@@ -264,33 +263,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
           }
 
           await networkProxySetup.configureProxy(proxyPort);
-
-          // Wait for background device traffic to verify the proxy is working.
-          // We check actual traffic through the proxy rather than making a
-          // host-side test request (which tests the wrong thing).
-          Logger.i('Network capture proxy configured, waiting for device traffic to verify CA...');
-          const trafficResult = await checkProxyTraffic(
-            () => goalSession!.device.getNetworkEntryCount(),
-            () => goalSession!.device.getNetworkTlsErrorCount(),
-            3000,
-          );
-
-          if (trafficResult === 'untrusted') {
-            console.log(`\n\x1b[33m  ⚠ Network capture unavailable — CA certificate not trusted on device.\x1b[0m`);
-            console.log(`\x1b[2m    To set up: run \`finalrun log-network --platform=${goalSession.platform}\`\x1b[0m`);
-            console.log(`\x1b[2m    See: docs/network-capture.md\x1b[0m`);
-            console.log(`\x1b[2m    Continuing test without network logs.\x1b[0m\n`);
-            await networkProxySetup.restoreProxy();
-            await goalSession.device.stopNetworkSession();
-            networkProxySetup = undefined;
-          } else {
-            networkCaptureAvailable = true;
-            if (trafficResult === 'verified') {
-              Logger.i('Network capture active — CA verified via device traffic');
-            } else {
-              Logger.i('Network capture active — no traffic observed yet, proceeding optimistically');
-            }
-          }
+          networkCaptureAvailable = true;
         } else {
           Logger.w(`Failed to start network capture session: ${sessionResponse.message}`);
         }
