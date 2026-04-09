@@ -46,6 +46,7 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
   maxIterations?: number;
   debug?: boolean;
   invokedCommand?: 'test' | 'suite';
+  networkCapture?: boolean;
 }
 
 export interface TestRunnerResult {
@@ -302,6 +303,14 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
               testId: test.testId!,
               keepPartialOnFailure: true,
             },
+            ...(options.networkCapture
+              ? {
+                  networkCapture: {
+                    runId: path.basename(runDir),
+                    testId: test.testId!,
+                  },
+                }
+              : {}),
           });
 
           const testRecord = await reportWriter.writeTestRecord(

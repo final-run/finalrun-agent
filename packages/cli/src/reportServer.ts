@@ -26,6 +26,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.log': 'text/plain; charset=utf-8',
+  '.har': 'application/json; charset=utf-8',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
@@ -302,6 +303,32 @@ export async function buildReportRunManifestViewModel(
     }
     return await cached;
   };
+  const readNetworkHar = async (networkLogPath: string): Promise<{ entries: unknown[]; tlsErrors: unknown[] } | undefined> => {
+    const content = await readRunArtifactText(artifactsDir, runId, networkLogPath);
+    if (!content) return undefined;
+    try {
+      const har = JSON.parse(content);
+      const entries = (har?.log?.entries ?? []).map((e: Record<string, unknown>) => ({
+        startedDateTime: e['startedDateTime'],
+        method: (e['request'] as Record<string, unknown>)?.['method'],
+        url: (e['request'] as Record<string, unknown>)?.['url'],
+        status: (e['response'] as Record<string, unknown>)?.['status'],
+        statusText: (e['response'] as Record<string, unknown>)?.['statusText'],
+        time: e['time'],
+        responseSize: ((e['response'] as Record<string, unknown>)?.['content'] as Record<string, unknown>)?.['size'] ?? (e['response'] as Record<string, unknown>)?.['bodySize'] ?? 0,
+        requestHeaders: (e['request'] as Record<string, unknown>)?.['headers'],
+        responseHeaders: (e['response'] as Record<string, unknown>)?.['headers'],
+        requestBodyText: ((e['request'] as Record<string, unknown>)?.['postData'] as Record<string, unknown>)?.['text'],
+        requestBodyMimeType: ((e['request'] as Record<string, unknown>)?.['postData'] as Record<string, unknown>)?.['mimeType'],
+        responseBodyText: ((e['response'] as Record<string, unknown>)?.['content'] as Record<string, unknown>)?.['text'],
+        responseBodyMimeType: ((e['response'] as Record<string, unknown>)?.['content'] as Record<string, unknown>)?.['mimeType'],
+      }));
+      const tlsErrors = har?.log?._tlsErrors ?? [];
+      return { entries, tlsErrors };
+    } catch {
+      return undefined;
+    }
+  };
   const readDeviceLogTail = async (deviceLogPath: string): Promise<string | undefined> => {
     const content = await readRunArtifactText(artifactsDir, runId, deviceLogPath);
     if (!content) {
@@ -337,7 +364,7 @@ export async function buildReportRunManifestViewModel(
       ),
     },
     tests: await Promise.all(
-      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText, readDeviceLogTail)),
+      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText, readDeviceLogTail, readNetworkHar)),
     ),
     paths: {
       ...manifest.paths,
@@ -375,7 +402,9 @@ async function toTestViewModel(
   test: TestResult,
   readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
   readDeviceLogTail: (deviceLogPath: string) => Promise<string | undefined>,
+  readNetworkHar: (networkLogPath: string) => Promise<{ entries: unknown[]; tlsErrors: unknown[] } | undefined>,
 ): Promise<ReportManifestTestRecord> {
+  const networkHar = test.networkLogFile ? await readNetworkHar(test.networkLogFile) : undefined;
   return {
     ...test,
     snapshotYamlPath: test.snapshotYamlPath
@@ -393,6 +422,11 @@ async function toTestViewModel(
     deviceLogTailText: test.deviceLogFile
       ? await readDeviceLogTail(test.deviceLogFile)
       : undefined,
+    networkLogFile: test.networkLogFile
+      ? buildRunScopedArtifactPath(runId, test.networkLogFile)
+      : undefined,
+    networkLogEntries: networkHar?.entries as ReportManifestTestRecord['networkLogEntries'],
+    networkTlsErrors: networkHar?.tlsErrors as ReportManifestTestRecord['networkTlsErrors'],
     previewScreenshotPath: test.previewScreenshotPath
       ? buildRunScopedArtifactPath(runId, test.previewScreenshotPath)
       : undefined,

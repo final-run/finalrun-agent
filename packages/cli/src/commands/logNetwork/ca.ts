@@ -72,8 +72,10 @@ export async function loadOrGenerateCA(dir: string = defaultCaDir()): Promise<Lo
   }
 
   const { cert, key } = await generateCACertificate({
-    commonName: 'FinalRun Local CA',
-    organizationName: 'FinalRun',
+    subject: {
+      commonName: 'FinalRun Local CA',
+      organizationName: 'FinalRun',
+    },
     bits: 2048,
   });
 

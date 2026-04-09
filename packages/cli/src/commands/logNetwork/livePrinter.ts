@@ -1,6 +1,6 @@
 // Formats captured request entries as compact, colorized CLI lines.
 
-import chalk from 'chalk';
+import { colors as chalk } from './colors.js';
 import type { CapturedEntry, TlsError } from './capture.js';
 
 const METHOD_WIDTH = 7;

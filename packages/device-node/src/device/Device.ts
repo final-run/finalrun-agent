@@ -38,6 +38,10 @@ import {
   defaultLogCaptureManager,
   type DeviceLogCaptureController,
 } from './LogCaptureManager.js';
+import {
+  NetworkCaptureManager,
+  type DeviceNetworkCaptureController,
+} from './NetworkCaptureManager.js';
 import type {
   DeviceRuntime,
   DeviceScreenshotAndHierarchy,
@@ -56,17 +60,20 @@ export class Device implements DeviceAgent {
   private _disconnectionCallback: ((deviceUUID: string, reason: string) => void) | null = null;
   private _recordingController: DeviceRecordingController;
   private _logCaptureController: DeviceLogCaptureController;
+  private _networkCaptureController: DeviceNetworkCaptureController;
 
   constructor(params: {
     deviceInfo: DeviceInfo;
     runtime: DeviceRuntime;
     recordingController?: DeviceRecordingController;
     logCaptureController?: DeviceLogCaptureController;
+    networkCaptureController?: DeviceNetworkCaptureController;
   }) {
     this._deviceInfo = params.deviceInfo;
     this._runtime = params.runtime;
     this._recordingController = params.recordingController ?? defaultRecordingManager;
     this._logCaptureController = params.logCaptureController ?? defaultLogCaptureManager;
+    this._networkCaptureController = params.networkCaptureController ?? new NetworkCaptureManager();
   }
 
   async setUp(_options?: { reuseAddress?: boolean }): Promise<DeviceNodeResponse> {
@@ -192,6 +199,11 @@ export class Device implements DeviceAgent {
       await this.logCaptureCleanUp();
     } catch (error) {
       Logger.w('Failed to clean up log capture resources:', error);
+    }
+    try {
+      await this.networkCaptureCleanUp();
+    } catch (error) {
+      Logger.w('Failed to clean up network capture resources:', error);
     }
     await this._runtime.close();
   }
@@ -325,6 +337,36 @@ export class Device implements DeviceAgent {
       platform: this._deviceInfo.getPlatform(),
       keepOutput: false,
     });
+  }
+
+  // ── Network capture ──────────────────────────────────────────────────
+
+  async startNetworkSession(params: { cert: string; key: string }): Promise<DeviceNodeResponse> {
+    return await this._networkCaptureController.startSession(params);
+  }
+
+  async stopNetworkSession(): Promise<void> {
+    await this._networkCaptureController.stopSession();
+  }
+
+  async startNetworkCapture(request: { runId: string; testId: string }): Promise<DeviceNodeResponse> {
+    return await this._networkCaptureController.startTestCapture(request);
+  }
+
+  async stopNetworkCapture(runId: string, testId: string): Promise<DeviceNodeResponse> {
+    return await this._networkCaptureController.stopTestCapture(runId, testId);
+  }
+
+  async networkCaptureCleanUp(): Promise<void> {
+    await this._networkCaptureController.stopSession();
+  }
+
+  async abortNetworkCapture(runId: string): Promise<void> {
+    await this._networkCaptureController.abortTestCapture(runId);
+  }
+
+  getNetworkProxyPort(): number {
+    return this._networkCaptureController.proxyPort;
   }
 
   uninstallDriver(): void {

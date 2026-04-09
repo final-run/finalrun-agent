@@ -343,6 +343,7 @@ async function runTestCommand(params: {
       maxIterations: parseInt(params.options.maxIterations, 10) || 110,
       debug,
       invokedCommand: params.invokedCommand,
+      networkCapture: workspaceConfig.network?.capture === true,
     });
 
     const runUrl = reportServer

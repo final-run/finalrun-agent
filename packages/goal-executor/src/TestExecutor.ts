@@ -98,6 +98,7 @@ export interface TestExecutionResult {
   completedAt: string;
   recording?: TestRecordingResult;
   deviceLog?: import('@finalrun/common').DeviceLogCaptureResult;
+  networkLog?: import('@finalrun/common').NetworkLogCaptureResult;
   steps: AgentActionResult[];
   totalIterations: number;
 }

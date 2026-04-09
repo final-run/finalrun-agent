@@ -24,6 +24,19 @@ export type {
 export type { LogCaptureProvider } from './device/LogCaptureProvider.js';
 export { AndroidLogcatProvider } from './device/AndroidLogcatProvider.js';
 export { IOSLogProvider } from './device/IOSLogProvider.js';
+export { NetworkCaptureManager } from './device/NetworkCaptureManager.js';
+export type {
+  DeviceNetworkCaptureController,
+  NetworkCaptureSessionParams,
+  NetworkCaptureTestParams,
+  NetworkCapturedEntry,
+  NetworkTlsError,
+} from './device/NetworkCaptureManager.js';
+export {
+  AndroidNetworkProxySetup,
+  IOSNetworkProxySetup,
+} from './device/NetworkCaptureSetup.js';
+export type { NetworkProxySetup } from './device/NetworkCaptureSetup.js';
 export type {
   DeviceRecordingController,
   RecordingSessionStartParams,

@@ -61,6 +61,9 @@ export interface TestResult {
   deviceLogFile?: string;
   deviceLogStartedAt?: string;
   deviceLogCompletedAt?: string;
+  networkLogFile?: string;
+  networkLogStartedAt?: string;
+  networkLogCompletedAt?: string;
   steps: AgentAction[];
   workspaceSourcePath?: string;
   snapshotYamlPath?: string;

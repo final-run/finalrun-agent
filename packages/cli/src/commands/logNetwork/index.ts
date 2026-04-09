@@ -6,7 +6,7 @@ import { promises as fsp } from 'node:fs';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import path from 'node:path';
-import chalk from 'chalk';
+import { colors as chalk } from './colors.js';
 import { loadOrGenerateCA } from './ca.js';
 import {
   resolveAdbPath,

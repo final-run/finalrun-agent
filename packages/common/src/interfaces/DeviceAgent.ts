@@ -58,6 +58,15 @@ export interface DeviceAgent {
   logCaptureCleanUp(): Promise<void>;
   abortLogCapture(runId: string, keepOutput?: boolean): Promise<void>;
 
+  // Network capture methods (session-scoped proxy + per-test entries)
+  startNetworkSession(params: { cert: string; key: string }): Promise<DeviceNodeResponse>;
+  stopNetworkSession(): Promise<void>;
+  startNetworkCapture(request: { runId: string; testId: string }): Promise<DeviceNodeResponse>;
+  stopNetworkCapture(runId: string, testId: string): Promise<DeviceNodeResponse>;
+  networkCaptureCleanUp(): Promise<void>;
+  abortNetworkCapture(runId: string): Promise<void>;
+  getNetworkProxyPort(): number;
+
   // Dart: void uninstallDriver()
   uninstallDriver(): void;
 }
