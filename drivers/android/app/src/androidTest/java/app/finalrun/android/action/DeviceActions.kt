@@ -231,9 +231,29 @@ object DeviceActions {
     fun tap(x: Int, y: Int): Boolean = uiDevice.clickNoSync(x, y)
 
     fun enterText(text: String, shouldClearText: Boolean, eraseCount: Int) {
-        val replaceSpace = text.replace(" ", "%s")
-        if(shouldClearText) clearTextFromFocusNode(eraseCount)
-        uiDevice.executeShellCommand("input text $replaceSpace")
+        if (shouldClearText) clearTextFromFocusNode(eraseCount)
+
+        if (text.all { it.code < 128 }) {
+            val escaped = text.replace(" ", "%s")
+            uiDevice.executeShellCommand("input text $escaped")
+        } else {
+            pasteText(text)
+        }
+    }
+
+    private fun pasteText(text: String) {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("", text))
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        uiDevice.executeShellCommand("input keyevent 279")
     }
 
     fun enterTextOnFocusNode(text: String, shouldClearText: Boolean) = runBlocking {
