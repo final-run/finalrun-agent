@@ -63,7 +63,7 @@ export class AndroidNetworkProxySetup implements NetworkProxySetup {
     }
 
     await this._setGlobalProxy(proxyTarget);
-    Logger.i(`Android proxy set to ${proxyTarget}`);
+    Logger.d(`Android proxy set to ${proxyTarget}`);
   }
 
   async restoreProxy(): Promise<void> {
@@ -146,7 +146,7 @@ export class IOSNetworkProxySetup implements NetworkProxySetup {
 
     // Set autoproxy URL.
     await setAutoproxyUrl(this._networkService, this._pacServer.url);
-    Logger.i(`iOS proxy set via PAC on ${this._networkService}: ${this._pacServer.url}`);
+    Logger.d(`iOS proxy set via PAC on ${this._networkService}: ${this._pacServer.url}`);
   }
 
   async restoreProxy(): Promise<void> {

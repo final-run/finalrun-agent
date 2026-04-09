@@ -263,11 +263,17 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
           }
 
           await networkProxySetup.configureProxy(proxyPort);
+
+          // Suppress logger during CA verification — mockttp logs internal
+          // "Failed to handle request" errors that are expected when the CA
+          // isn't trusted. We don't want those leaking to the user.
+          Logger.init({ level: LogLevel.ERROR });
           const caTrusted = await networkProxySetup.verifyCATrusted(proxyPort, ca.cert);
+          Logger.init({ level: options.debug ? LogLevel.DEBUG : LogLevel.INFO });
 
           if (caTrusted) {
             networkCaptureAvailable = true;
-            Logger.i('Network capture proxy started and CA verified');
+            Logger.i(`Network capture active (proxy on 127.0.0.1:${proxyPort}, CA verified)`);
           } else {
             console.log(`\n\x1b[33m  ⚠ Network capture unavailable — CA certificate not trusted on device.\x1b[0m`);
             console.log(`\x1b[2m    To set up: run \`finalrun log-network --platform=${goalSession.platform}\`\x1b[0m`);

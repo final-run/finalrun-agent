@@ -435,7 +435,7 @@ export async function executeTestOnSession(
                 ? (netResponse.data['startedAt'] as string)
                 : new Date().toISOString(),
           };
-          Logger.i(`Network capture started for test ${config.networkCapture.testId}`);
+          Logger.d(`Network capture marker set for test ${config.networkCapture.testId}`);
         } else {
           Logger.w(
             `Unable to start network capture for test ${config.networkCapture.testId}: ` +

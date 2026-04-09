@@ -161,7 +161,7 @@ export class NetworkCaptureManager implements DeviceNetworkCaptureController {
         });
       });
 
-      Logger.i(`Network capture proxy started on port ${this._proxyPort}`);
+      Logger.d(`Network capture proxy started on port ${this._proxyPort}`);
       return new DeviceNodeResponse({
         success: true,
         message: `Network capture proxy started on port ${this._proxyPort}`,
