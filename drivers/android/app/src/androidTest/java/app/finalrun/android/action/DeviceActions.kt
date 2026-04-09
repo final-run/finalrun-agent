@@ -233,7 +233,8 @@ object DeviceActions {
     fun enterText(text: String, shouldClearText: Boolean, eraseCount: Int) {
         if (shouldClearText) clearTextFromFocusNode(eraseCount)
 
-        if (text.all { it.code < 128 }) {
+        val isAsciiOnly = text.all { it.code < 128 }
+        if (isAsciiOnly) {
             val escaped = text.replace(" ", "%s")
             uiDevice.executeShellCommand("input text $escaped")
         } else {
