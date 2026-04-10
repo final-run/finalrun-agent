@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as net from 'node:net';
 import {
   DEFAULT_GRPC_PORT_START,
   Logger,
@@ -7,6 +8,16 @@ import {
 } from '@finalrun/common';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Range of host ports the AdbClient is allowed to use for the gRPC driver
+ * forward. Each device gets one port from this pool, used as both the
+ * host-side and device-side port (forward target = forward source).
+ *
+ * Mirrors the Dart device_node port pool (6100-6200, 100 slots).
+ */
+const PORT_RANGE_START = DEFAULT_GRPC_PORT_START;
+const PORT_RANGE_END = PORT_RANGE_START + 100;
 
 type ExecFileFn = (
   file: string,
@@ -116,30 +127,43 @@ export function isUndeclaredPermissionGrantFailure(stderrOrMessage: string): boo
 }
 
 export class AdbClient {
-  private _nextPort: number = DEFAULT_GRPC_PORT_START;
+  /** deviceSerial -> port currently allocated for that device */
   private _portMap: Map<string, number> = new Map();
+  /** ports currently in use across all devices (set of allocated values) */
+  private _allocatedPorts: Set<number> = new Set();
   private _execFileFn: ExecFileFn;
 
   constructor(params?: { execFileFn?: ExecFileFn }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
   }
 
+  /**
+   * Set up the host->device port forward and return the allocated host port.
+   *
+   * The same port is used on BOTH sides of the forward (`tcp:N -> tcp:N`)
+   * so the driver app's `-e port N` argument lines up with the forward
+   * destination. The `devicePort` argument is ignored and kept for backwards
+   * compatibility — earlier versions hardcoded it to DEFAULT_GRPC_PORT_START
+   * which caused host/device port drift across runs.
+   */
   async forwardPort(
     adbPath: string,
     deviceSerial: string,
-    devicePort: number,
+    _devicePort?: number,
   ): Promise<number> {
-    const localPort = this._allocatePort(deviceSerial);
+    const localPort = await this._allocatePort(deviceSerial);
 
     await this._execFileFn(adbPath, [
       '-s',
       deviceSerial,
       'forward',
       `tcp:${localPort}`,
-      `tcp:${devicePort}`,
+      `tcp:${localPort}`,
     ]);
 
-    Logger.d(`Port forwarded: localhost:${localPort} -> ${deviceSerial}:${devicePort}`);
+    Logger.d(
+      `Port forwarded: localhost:${localPort} -> ${deviceSerial}:${localPort}`,
+    );
     return localPort;
   }
 
@@ -161,7 +185,31 @@ export class AdbClient {
       // Ignore best-effort cleanup failures.
     }
 
-    this._portMap.delete(deviceSerial);
+    this._releasePort(deviceSerial);
+  }
+
+  /**
+   * Nuke every adb forward across all attached devices. Call this on process
+   * startup to clean up stale forwards left behind by a previous crashed
+   * device-node process. Mirrors Dart's removeAllPortForwards.
+   */
+  async removeAllPortForwards(adbPath: string): Promise<void> {
+    try {
+      await this._execFileFn(adbPath, ['forward', '--remove-all']);
+      Logger.d('Removed all stale adb forwards');
+    } catch (error) {
+      // "no devices/emulators found" is expected at cold startup — adb
+      // requires a target device for `forward --remove-all`. Anything else
+      // is unusual but still best-effort.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/no devices\/emulators found/i.test(message)) {
+        Logger.w('Failed to remove all adb forwards (ignoring)', error as Error);
+      }
+    }
+    // Reset in-memory pool too — the OS state was just wiped (or there's
+    // nothing to reset because no devices are attached)
+    this._portMap.clear();
+    this._allocatedPorts.clear();
   }
 
   getForwardedPort(deviceSerial: string): number | undefined {
@@ -843,15 +891,53 @@ export class AdbClient {
     );
   }
 
-  private _allocatePort(deviceSerial: string): number {
+  /**
+   * Pick the lowest free port in [PORT_RANGE_START, PORT_RANGE_END) that is
+   * BOTH not currently assigned to a known device AND actually bindable on
+   * the host. Mirrors the Dart device_node getNewPort() pool semantics.
+   */
+  private async _allocatePort(deviceSerial: string): Promise<number> {
     const existingPort = this._portMap.get(deviceSerial);
     if (existingPort !== undefined) {
       return existingPort;
     }
 
-    const port = this._nextPort++;
-    this._portMap.set(deviceSerial, port);
-    return port;
+    for (let port = PORT_RANGE_START; port < PORT_RANGE_END; port++) {
+      if (this._allocatedPorts.has(port)) continue;
+      if (!(await this._isPortBindable(port))) continue;
+
+      this._allocatedPorts.add(port);
+      this._portMap.set(deviceSerial, port);
+      Logger.d(`Allocated port ${port} for ${deviceSerial}`);
+      return port;
+    }
+
+    throw new Error(
+      `No ports available in range ${PORT_RANGE_START}-${PORT_RANGE_END}`,
+    );
+  }
+
+  /** Return a port to the pool. Called from removePortForward. */
+  private _releasePort(deviceSerial: string): void {
+    const port = this._portMap.get(deviceSerial);
+    if (port === undefined) return;
+    this._portMap.delete(deviceSerial);
+    this._allocatedPorts.delete(port);
+    Logger.d(`Released port ${port} for ${deviceSerial}`);
+  }
+
+  /**
+   * Probe whether the host kernel can actually bind this port right now.
+   * If anything else on the host is squatting on it, skip and try the next.
+   */
+  private _isPortBindable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(false));
+      server.listen(port, '127.0.0.1', () => {
+        server.close(() => resolve(true));
+      });
+    });
   }
 
   private async _runAdb(

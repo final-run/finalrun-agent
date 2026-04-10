@@ -54,6 +54,11 @@ export class DeviceNode {
   /**
    * Initialize the device node with a file path utility.
    * Must be called before any other method.
+   *
+   * Also fires off a best-effort cleanup of any stale adb forwards left
+   * behind by a previous device-node process. Without this, after a crash
+   * or hard restart the in-memory port pool can drift away from the OS
+   * state and cause "port already in use" errors.
    */
   init(filePathUtil: FilePathUtil): void {
     this._grpcDriverSetup = new GrpcDriverSetup({
@@ -62,6 +67,19 @@ export class DeviceNode {
       filePathUtil,
     });
     this._initialized = true;
+
+    // Fire-and-forget: clean up stale adb forwards from prior runs.
+    void this._cleanupStaleAdbForwards(filePathUtil);
+  }
+
+  private async _cleanupStaleAdbForwards(filePathUtil: FilePathUtil): Promise<void> {
+    try {
+      const adbPath = await filePathUtil.getADBPath();
+      if (!adbPath) return;
+      await this._adbClient.removeAllPortForwards(adbPath);
+    } catch {
+      // best-effort
+    }
   }
 
   /**
