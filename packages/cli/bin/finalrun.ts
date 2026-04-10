@@ -17,7 +17,7 @@ import {
   startOrReuseWorkspaceReportServer,
   stopWorkspaceReportServer,
 } from '../src/reportServerManager.js';
-import { normalizeSpecSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
 import { runCloud } from '../src/cloudRunner.js';
 import { PreExecutionFailureError, runTests } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
@@ -182,7 +182,7 @@ program
   .action(async (selectors: string[] | undefined, options: CloudCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
-      const normalizedSelectors = normalizeSpecSelectors(selectors);
+      const normalizedSelectors = normalizeTestSelectors(selectors);
       if (normalizedSelectors.length === 0 && !options.suite) {
         throw new Error(TEST_SELECTION_REQUIRED_ERROR);
       }
