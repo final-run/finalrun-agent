@@ -230,15 +230,14 @@ Explicit `.finalrun/tests/...` and `.finalrun/suites/...` paths still work for c
 
 - Executes one or more YAML specs from `.finalrun/tests`.
 - Requires a model from `--model <provider/model>` or `.finalrun/config.yaml`.
-- Supports `--env`, `--platform`, `--app`, `--suite`, and `--api-key`, with CLI flags taking precedence over config.
+- Supports `--env`, `--platform`, `--app`, and `--api-key`, with CLI flags taking precedence over config.
+- To run a suite, use `finalrun suite <path>` — `--suite` is no longer accepted on `finalrun test`.
 
 `finalrun suite`
 
 - Executes a suite manifest from `.finalrun/suites`.
 - Requires a model from `--model <provider/model>` or `.finalrun/config.yaml`.
 - Supports `--env`, `--platform`, `--app`, and `--api-key`, with CLI flags taking precedence over config.
-
-`finalrun test --suite <path>` remains supported as a compatibility path, but `finalrun suite <path>` is the preferred standard.
 
 `finalrun doctor`
 

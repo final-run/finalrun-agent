@@ -475,7 +475,7 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
         suitePath: 'login_suite.yaml',
       },
       cli: {
-        command: 'finalrun test --suite login_suite.yaml',
+        command: 'finalrun suite login_suite.yaml',
         selectors: [],
         suitePath: 'login_suite.yaml',
         debug: false,

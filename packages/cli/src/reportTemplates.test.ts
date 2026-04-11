@@ -187,7 +187,7 @@ function createSuiteRunManifest(): ReportRunManifest {
         },
       ],
       cli: {
-        command: 'finalrun test --suite login_suite.yaml',
+        command: 'finalrun suite login_suite.yaml',
         selectors: [],
         suitePath: 'login_suite.yaml',
         debug: false,
@@ -888,7 +888,7 @@ async function writeRunManifest(
         })),
         cli: {
           command: params.target.type === 'suite'
-            ? `finalrun test --suite ${params.target.suitePath || 'suite.yaml'}`
+            ? `finalrun suite ${params.target.suitePath || 'suite.yaml'}`
             : `finalrun test ${params.selectedTests.map((t) => t.relativePath).join(' ')}`,
           selectors: params.target.type === 'direct'
             ? params.selectedTests.map((t) => t.relativePath)

@@ -128,7 +128,6 @@ program
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
   .option('--app <path>', 'Optional app override (.apk or .app)')
-  .option('--suite <path>', 'Suite manifest under .finalrun/suites')
   .option('--api-key <key>', 'API key for the LLM provider')
   .option(
     '--model <provider/model>',
@@ -240,10 +239,13 @@ program
 
 program.parse();
 
-interface CheckCommandOptions {
+interface CommonCommandOptions {
   env?: string;
   platform?: string;
   app?: string;
+}
+
+interface CheckCommandOptions extends CommonCommandOptions {
   suite?: string;
 }
 
@@ -251,7 +253,7 @@ interface DoctorCommandOptions {
   platform?: string;
 }
 
-interface TestCommandOptions extends CheckCommandOptions {
+interface TestCommandOptions extends CommonCommandOptions {
   apiKey?: string;
   model?: string;
   debug?: boolean;
@@ -288,10 +290,7 @@ async function runTestCommand(params: {
 }): Promise<void> {
   try {
     const normalizedSelectors = normalizeTestSelectors(params.selectors);
-    const normalizedSuitePath = params.suitePath?.trim() || params.options.suite;
-    if (normalizedSuitePath && normalizedSelectors.length > 0) {
-      throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
-    }
+    const normalizedSuitePath = params.suitePath?.trim();
     if (normalizedSelectors.length === 0 && !normalizedSuitePath) {
       throw new Error(TEST_SELECTION_REQUIRED_ERROR);
     }
