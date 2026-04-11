@@ -46,6 +46,7 @@
   <img alt="FinalRun demo" src="https://raw.githubusercontent.com/final-run/finalrun-agent/main/.github/resources/finalrun-demo.gif" />
 </p>
 
+
 ## Install
 
 ```sh
@@ -54,15 +55,20 @@ curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scrip
 
 Sets up Node.js, the CLI, AI coding agent skills, and platform tools. Run `finalrun doctor` to verify host readiness.
 
+
 ## Write and Run Your First Test Using AI Agents
 
 FinalRun ships [skills](https://github.com/vercel-labs/skills) that let your AI coding agent generate tests, validate workspaces, and run tests — all from chat.
 
-### Generate tests with `/finalrun-generate-test`
+### Generate tests
 
-This skill reads your app's source code, infers the app identity, and generates complete test specs with setup, steps, and expected state — organized by feature folder.
+`/finalrun-generate-test` skill reads your app's source code, infers the app identity, and generates complete test specs with setup, steps, and expected state — organized by feature folder.
 
-> `/finalrun-generate-test` Generate tests for the authentication feature — cover login with valid credentials, login with wrong password, and logout
+Example:
+
+```sh
+/finalrun-generate-test Generate tests for the authentication feature — cover login with valid credentials, login with wrong password, and logout
+```
 
 The agent will:
 1. Read your source code to understand the UI and infer the app's package name / bundle ID
@@ -71,13 +77,21 @@ The agent will:
 4. Generate YAML specs under `.finalrun/tests/auth/` and a suite under `.finalrun/suites/`
 5. Run `finalrun check` to validate everything
 
-> `/finalrun-generate-test` Add a smoke test that verifies the app launches and the home screen is visible
+### Run tests
 
-### Run tests with `/finalrun-use-cli`
+`/finalrun-generate-test` skill validates and run the test once your tests are generated.
 
-Once your tests are generated, use this skill to validate and run them.
+Example:
 
-> `/finalrun-use-cli` Run the auth tests on Android
+```sh
+/finalrun-use-cli Run the auth tests on Android
+```
+
+
+## How to auto trigger Finalrun to generate and test once feature development is completed
+
+Add this **[content](docs/autotrigger-finalrun.md)** to your **AGENTS.md** to auto-trigger Finalrun, so you don’t have to explicitly ask your agent to generate and run tests everytime. This will also let your agent fix issues if there is any error while development
+
 
 ## API Keys (BYOK — Bring Your Own Key)
 
@@ -95,7 +109,8 @@ echo "GOOGLE_API_KEY=your-key-here" > .env
 
 > Test runs consume API tokens from your configured provider — standard API billing applies.
 
-## Running Tests
+
+## Running Tests manually with [CLI](docs/cli-reference.md)
 
 ```sh
 finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
@@ -105,13 +120,16 @@ finalrun test smoke.yaml --platform android --model google/gemini-3-flash-previe
 finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-preview
 ```
 
+
 ## Documentation
 
+- [Autotrigger FinalRun tests (AI agents)](docs/autotrigger-finalrun.md) — when coding agents should generate, validate, and run tests after UI work
 - [YAML Tests](docs/yaml-tests.md) — test format, fields, suites, and environment placeholders
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, and report tools
 - [Configuration](docs/configuration.md) — workspace config, app identity, `--app` flag, and per-environment overrides
 - [Environment & Secrets](docs/environment.md) — dotenv load order, provider keys, and platform prerequisites
 - [Troubleshooting](docs/troubleshooting.md) — common errors and fixes
+
 
 ## Development
 
