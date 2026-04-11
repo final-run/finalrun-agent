@@ -2,7 +2,7 @@
 // Uses Vercel AI SDK for direct LLM calls instead of backend API.
 // Dart: FinalRunAgent → TypeScript: AIAgent
 
-import { generateText } from 'ai';
+import { generateText, Output } from 'ai';
 import {
   createOpenAI,
   type OpenAILanguageModelResponsesOptions,
@@ -53,7 +53,7 @@ import {
   startTracePhase,
   type LLMTrace,
 } from '../trace.js';
-import { classifyFatalProviderError } from './providerFailure.js';
+import { classifyFatalProviderError, FatalProviderError } from './providerFailure.js';
 
 // ============================================================================
 // Types
@@ -119,6 +119,8 @@ type AIAgentProviderOptions = {
   openai?: OpenAILanguageModelResponsesOptions;
   anthropic?: AnthropicLanguageModelOptions;
 };
+
+const MAX_LLM_ATTEMPTS = 2;
 
 // ============================================================================
 // AIAgent
@@ -195,68 +197,107 @@ export class AIAgent {
     userParts.push({ type: 'text', text: textPrompt });
 
     const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
-    const llmPhase = startTracePhase(
-      request.traceStep,
-      'planning.llm',
-      `provider=${this._provider} model=${this._modelName}`,
-    );
-    const llmStartedAt = performance.now();
 
-    let rawResult: string;
-    try {
-      rawResult = await this._callLLM(systemPrompt, userParts, 'planner');
-    } catch (error) {
-      finishTracePhase(
-        llmPhase,
-        'failure',
-        error instanceof Error ? error.message : String(error),
+    const maxAttempts = MAX_LLM_ATTEMPTS;
+    let lastError: unknown;
+    let parsedResponse: PlannerResponse | undefined;
+    let llmMs = 0;
+    let parseMs = 0;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const llmPhase = startTracePhase(
+        request.traceStep,
+        'planning.llm',
+        `provider=${this._provider} model=${this._modelName} attempt=${attempt}/${maxAttempts}`,
       );
-      throw error;
-    }
+      const llmStartedAt = performance.now();
 
-    const llmMs = roundDuration(performance.now() - llmStartedAt);
-    finishTracePhase(
-      llmPhase,
-      'success',
-      describeLLMTrace({
-        promptBuildMs,
-        llmMs,
-      }),
-    );
-
-    const parsePhase = startTracePhase(request.traceStep, 'planning.parse');
-    const parseStartedAt = performance.now();
-    try {
-      const parsed = this._parsePlannerResponse(rawResult);
-      const parseMs = roundDuration(performance.now() - parseStartedAt);
-      finishTracePhase(parsePhase, 'success');
-
-      if (request.traceStep !== undefined) {
-        Logger.i(formatPlannerReasoning({
-          step: request.traceStep,
-          thought: parsed.thought,
-          action: parsed.act,
-          reason: parsed.reason,
-        }));
+      let rawOutput: unknown;
+      let rawText: string;
+      try {
+        const llmResult = await this._callLLM(systemPrompt, userParts, 'planner');
+        rawOutput = llmResult.output;
+        rawText = llmResult.text;
+      } catch (error) {
+        finishTracePhase(
+          llmPhase,
+          'failure',
+          error instanceof Error ? error.message : String(error),
+        );
+        if (FatalProviderError.isInstance(error)) {
+          throw error;
+        }
+        lastError = error;
+        if (attempt < maxAttempts) {
+          Logger.w(
+            `Planner attempt ${attempt}/${maxAttempts} failed (llm), retrying: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          continue;
+        }
+        throw error;
       }
 
-      return {
-        ...parsed,
-        trace: {
-          totalMs: promptBuildMs + llmMs + parseMs,
-          promptBuildMs,
-          llmMs,
-          parseMs,
-        },
-      };
-    } catch (error) {
+      llmMs = roundDuration(performance.now() - llmStartedAt);
       finishTracePhase(
-        parsePhase,
-        'failure',
-        error instanceof Error ? error.message : String(error),
+        llmPhase,
+        'success',
+        describeLLMTrace({ promptBuildMs, llmMs }),
       );
-      throw error;
+
+      const parsePhase = startTracePhase(
+        request.traceStep,
+        'planning.parse',
+        `attempt=${attempt}/${maxAttempts}`,
+      );
+      const parseStartedAt = performance.now();
+      try {
+        parsedResponse = this._parsePlannerResponse(rawOutput, rawText);
+        parseMs = roundDuration(performance.now() - parseStartedAt);
+        finishTracePhase(parsePhase, 'success');
+        break;
+      } catch (error) {
+        finishTracePhase(
+          parsePhase,
+          'failure',
+          error instanceof Error ? error.message : String(error),
+        );
+        lastError = error;
+        if (attempt < maxAttempts) {
+          Logger.w(
+            `Planner attempt ${attempt}/${maxAttempts} failed (parse), retrying: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          continue;
+        }
+        throw error;
+      }
     }
+
+    if (!parsedResponse) {
+      throw lastError ?? new Error('Planner failed after all retry attempts');
+    }
+
+    if (request.traceStep !== undefined) {
+      Logger.i(formatPlannerReasoning({
+        step: request.traceStep,
+        thought: parsedResponse.thought,
+        action: parsedResponse.act,
+        reason: parsedResponse.reason,
+      }));
+    }
+
+    return {
+      ...parsedResponse,
+      trace: {
+        totalMs: promptBuildMs + llmMs + parseMs,
+        promptBuildMs,
+        llmMs,
+        parseMs,
+      },
+    };
   }
 
   /**
@@ -274,11 +315,6 @@ export class AIAgent {
     }
 
     const phaseName = request.tracePhase ?? 'action.ground';
-    const phase = startTracePhase(
-      request.traceStep,
-      phaseName,
-      `feature=${request.feature}`,
-    );
     const promptBuildStartedAt = performance.now();
     const promptKey = this._getPromptKeyForFeature(request.feature);
     const systemPrompt = this._loadPrompt(promptKey);
@@ -307,80 +343,125 @@ export class AIAgent {
     userParts.push({ type: 'text', text });
 
     const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
-    const llmStartedAt = performance.now();
 
-    let rawResult: string;
-    try {
-      rawResult = await this._callLLM(systemPrompt, userParts, 'grounder');
-    } catch (error) {
-      finishTracePhase(
-        phase,
-        'failure',
-        error instanceof Error ? error.message : String(error),
+    const maxAttempts = MAX_LLM_ATTEMPTS;
+    let lastError: unknown;
+    let parsed: GrounderResponse | undefined;
+    let llmMs = 0;
+    let parseMs = 0;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const phase = startTracePhase(
+        request.traceStep,
+        phaseName,
+        `feature=${request.feature} attempt=${attempt}/${maxAttempts}`,
       );
-      throw error;
-    }
+      const llmStartedAt = performance.now();
 
-    const llmMs = roundDuration(performance.now() - llmStartedAt);
-    const parseStartedAt = performance.now();
-
-    try {
-      const parsed = this._parseGrounderResponse(rawResult);
-      const parseMs = roundDuration(performance.now() - parseStartedAt);
-      finishTracePhase(
-        phase,
-        'success',
-        describeLLMTrace({
-          promptBuildMs,
-          llmMs,
-          parseMs,
-          extraDetail: `feature=${request.feature}`,
-        }),
-      );
-
-      if (request.traceStep !== undefined) {
-        let bounds: [number, number, number, number] | null = null;
-        const idx = parsed.output['index'];
-        if (typeof idx === 'number' && request.hierarchy) {
-          const node = request.hierarchy.flattenedHierarchy[idx];
-          bounds = node?.bounds ?? null;
+      let rawOutput: unknown;
+      let rawText: string;
+      try {
+        const llmResult = await this._callLLM(systemPrompt, userParts, 'grounder');
+        rawOutput = llmResult.output;
+        rawText = llmResult.text;
+      } catch (error) {
+        finishTracePhase(
+          phase,
+          'failure',
+          error instanceof Error ? error.message : String(error),
+        );
+        if (FatalProviderError.isInstance(error)) {
+          throw error;
         }
-        Logger.i(formatGrounderResult({
-          step: request.traceStep,
-          output: parsed.output,
-          bounds,
-        }));
+        lastError = error;
+        if (attempt < maxAttempts) {
+          Logger.w(
+            `Grounder attempt ${attempt}/${maxAttempts} failed (llm) for feature=${request.feature}, retrying: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          continue;
+        }
+        throw error;
       }
 
-      return {
-        ...parsed,
-        trace: {
-          totalMs: promptBuildMs + llmMs + parseMs,
-          promptBuildMs,
-          llmMs,
-          parseMs,
-        },
-      };
-    } catch (error) {
-      finishTracePhase(
-        phase,
-        'failure',
-        error instanceof Error ? error.message : String(error),
-      );
-      throw error;
+      llmMs = roundDuration(performance.now() - llmStartedAt);
+      const parseStartedAt = performance.now();
+
+      try {
+        parsed = this._parseGrounderResponse(rawOutput, rawText);
+        parseMs = roundDuration(performance.now() - parseStartedAt);
+        finishTracePhase(
+          phase,
+          'success',
+          describeLLMTrace({
+            promptBuildMs,
+            llmMs,
+            parseMs,
+            extraDetail: `feature=${request.feature}`,
+          }),
+        );
+        break;
+      } catch (error) {
+        finishTracePhase(
+          phase,
+          'failure',
+          error instanceof Error ? error.message : String(error),
+        );
+        lastError = error;
+        if (attempt < maxAttempts) {
+          Logger.w(
+            `Grounder attempt ${attempt}/${maxAttempts} failed (parse) for feature=${request.feature}, retrying: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          continue;
+        }
+        throw error;
+      }
     }
+
+    if (!parsed) {
+      throw lastError ?? new Error('Grounder failed after all retry attempts');
+    }
+
+    if (request.traceStep !== undefined) {
+      let bounds: [number, number, number, number] | null = null;
+      const idx = parsed.output['index'];
+      if (typeof idx === 'number' && request.hierarchy) {
+        const node = request.hierarchy.flattenedHierarchy[idx];
+        bounds = node?.bounds ?? null;
+      }
+      Logger.i(formatGrounderResult({
+        step: request.traceStep,
+        output: parsed.output,
+        bounds,
+      }));
+    }
+
+    return {
+      ...parsed,
+      trace: {
+        totalMs: promptBuildMs + llmMs + parseMs,
+        promptBuildMs,
+        llmMs,
+        parseMs,
+      },
+    };
   }
 
   // ---------- private ----------
 
   /**
-   * Call an LLM via Vercel AI SDK.
+   * Call an LLM via Vercel AI SDK. Uses Output.json() so the provider emits
+   * strict JSON (Google response_mime_type, OpenAI response_format, Anthropic
+   * structuredOutputMode), matching the Kotlin backend's behavior.
    */
   private async _callLLM(
     systemPrompt: string,
     userParts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }>,
     phase: LLMPhase,
-  ): Promise<string> {
+  ): Promise<{ output: unknown; text: string }> {
     const model = this._getModel();
     const providerOptions = this._getProviderOptions(phase);
 
@@ -392,17 +473,23 @@ export class AIAgent {
       return { type: 'text' as const, text: part.text };
     });
 
-    let result: Awaited<ReturnType<typeof generateText>>;
+    let output: unknown;
+    let text: string;
+    let reasoningText: string | undefined;
     try {
-      result = await generateText({
+      const result = await generateText({
         model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
-        maxOutputTokens: 4096,
+        output: Output.json(),
+        maxOutputTokens: phase === 'planner' ? 8192 : 4096,
         providerOptions,
       });
+      output = result.output;
+      text = result.text;
+      reasoningText = result.reasoningText;
     } catch (error) {
       throw (
         classifyFatalProviderError(error, {
@@ -412,16 +499,16 @@ export class AIAgent {
       );
     }
 
-    if (result.reasoningText) {
+    if (reasoningText) {
       Logger.d(
-        `LLM reasoning [${phase}] (${this._provider}/${this._modelName}):\n${result.reasoningText}`,
+        `LLM reasoning [${phase}] (${this._provider}/${this._modelName}):\n${reasoningText}`,
       );
     }
 
     Logger.d(
-      `LLM response [${phase}] (${this._provider}/${this._modelName}):\n${result.text || '<empty response>'}`,
+      `LLM response [${phase}] (${this._provider}/${this._modelName}):\n${text || '<empty response>'}`,
     );
-    return result.text;
+    return { output, text };
   }
 
   /**
@@ -526,64 +613,42 @@ export class AIAgent {
   }
 
   /**
-   * Parse the planner LLM response into PlannerResponse.
-   * The planner prompt returns JSON like:
-   * {"output":{"thought":{...},"action":{"action_type":"tap"},"remember":[]}}
+   * Parse the planner LLM response into PlannerResponse. The SDK has already
+   * parsed the JSON via Output.json(), so we just normalize the shape.
    */
-  private _parsePlannerResponse(raw: string): PlannerResponse {
-    const json = this._extractJson(raw);
-    if (!json) {
+  private _parsePlannerResponse(output: unknown, rawText: string): PlannerResponse {
+    const record = asRecord(output);
+    if (!record) {
       throw new Error(
-        `Failed to parse planner response with top-level output: ${raw.substring(0, 200)}`,
+        `Planner response is not a JSON object: ${rawText.substring(0, 200)}`,
       );
     }
 
-    const normalized = normalizePlannerResponse(json);
+    const normalized = normalizePlannerResponse(record);
     if (!normalized.act) {
-      throw new Error(`Planner response missing actionable action_type: ${raw.substring(0, 300)}`);
+      throw new Error(
+        `Planner response missing actionable action_type: ${rawText.substring(0, 300)}`,
+      );
     }
 
     return normalized;
   }
 
   /**
-   * Parse the grounder LLM response into GrounderResponse.
-   * The grounder returns JSON like: {"output": {"index": 42, "reason": "..."}}
+   * Parse the grounder LLM response into GrounderResponse. The SDK has already
+   * parsed the JSON via Output.json(), so we just unwrap the `output` key when
+   * present.
    */
-  private _parseGrounderResponse(raw: string): GrounderResponse {
-    const json = this._extractJson(raw);
-    if (!json) {
+  private _parseGrounderResponse(output: unknown, rawText: string): GrounderResponse {
+    const record = asRecord(output);
+    if (!record) {
       throw new Error(
-        `Failed to parse grounder response with top-level output: ${raw.substring(0, 200)}`,
+        `Grounder response is not a JSON object: ${rawText.substring(0, 200)}`,
       );
     }
 
-    const output = asRecord(json['output']) ?? json;
-    return { output, raw };
-  }
-
-  /**
-   * Extract JSON from LLM response, requiring a top-level output object.
-   */
-  private _extractJson(raw: string): JsonRecord | null {
-    const directParsed = tryParseJsonRecord(raw);
-    if (directParsed && asRecord(directParsed['output'])) {
-      return directParsed;
-    }
-
-    const extracted = extractJsonContainingOutput(raw);
-    if (!extracted) {
-      Logger.w('Failed to extract JSON with top-level output from LLM response');
-      return null;
-    }
-
-    const parsed = tryParseJsonRecord(extracted);
-    if (parsed && asRecord(parsed['output'])) {
-      return parsed;
-    }
-
-    Logger.w('Failed to parse extracted JSON with top-level output from LLM response');
-    return null;
+    const grounderOutput = asRecord(record['output']) ?? record;
+    return { output: grounderOutput, raw: rawText };
   }
 }
 
@@ -704,69 +769,6 @@ function normalizePromptAction(
         reason: `Planner returned unsupported action_type: ${actionType}`,
       };
   }
-}
-
-function tryParseJsonRecord(raw: string): JsonRecord | null {
-  try {
-    const parsed = JSON.parse(raw);
-    return asRecord(parsed) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function extractJsonContainingOutput(text: string): string | null {
-  const key = '"output"';
-  const keyIndex = text.indexOf(key);
-  if (keyIndex === -1) {
-    return null;
-  }
-
-  // Find the opening brace for the smallest object containing "output".
-  const openIndex = text.lastIndexOf('{', keyIndex);
-  if (openIndex === -1) {
-    return null;
-  }
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = openIndex; index < text.length; index += 1) {
-    const char = text[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (char === '\\') {
-      escaped = true;
-      continue;
-    }
-
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-
-    if (inString) {
-      continue;
-    }
-
-    if (char === '{') {
-      depth += 1;
-      continue;
-    }
-
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        return text.substring(openIndex, index + 1);
-      }
-    }
-  }
-
-  return null;
 }
 
 function asRecord(value: unknown): JsonRecord | undefined {
