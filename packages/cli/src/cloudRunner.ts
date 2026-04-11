@@ -12,7 +12,7 @@ export interface CloudRunnerOptions {
   suitePath?: string;
   envName?: string;
   platform?: string;
-  appPath?: string;
+  appPath: string;
 }
 
 export async function runCloud(options: CloudRunnerOptions): Promise<void> {
@@ -81,14 +81,43 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
 
   try {
     // 4. Upload to cloud service
-    const command = `finalrun cloud ${options.selectors.join(' ')}`;
-    Logger.i(`Submitting ${checked.tests.length} test(s) to cloud...`);
+    // Capture the raw CLI invocation, exactly as the user typed it (minus the
+    // node binary path). process.argv = [node, finalrun(.ts), ...userArgs].
+    const command = `finalrun ${process.argv.slice(2).join(' ')}`;
+
+    // Display name: suite name for suite runs, test name for single-test runs,
+    // "<first> + N more" for multi-test runs, null otherwise.
+    let runName: string | null = null;
+    if (options.suitePath) {
+      runName = checked.suite?.name ?? path.basename(options.suitePath, path.extname(options.suitePath));
+    } else if (checked.tests.length === 1) {
+      runName = checked.tests[0]?.name ?? null;
+    } else if (checked.tests.length > 1) {
+      const first = checked.tests[0]?.name ?? path.basename(checked.tests[0]?.relativePath ?? '');
+      const remaining = checked.tests.length - 1;
+      runName = `${first} + ${remaining} more`;
+    }
+
+    // Run type classification — based on user intent (selectors), not the
+    // expansion result. The server falls back to its own classification if
+    // this field is omitted.
+    const runType: 'folder' | 'single_test' | 'multi_test' | 'suite' = options.suitePath
+      ? 'suite'
+      : options.selectors.length === 0
+        ? 'folder'
+        : options.selectors.length === 1
+          ? checked.tests.length === 1 ? 'single_test' : 'folder'
+          : 'multi_test';
 
     const formData = new FormData();
     const zipBuffer = fs.readFileSync(zipPath);
     formData.append('file', new Blob([zipBuffer]), 'specs.zip');
     formData.append('command', command);
     formData.append('selectors', JSON.stringify(options.selectors));
+    formData.append('runType', runType);
+    if (runName) {
+      formData.append('name', runName);
+    }
     if (options.suitePath) {
       formData.append('suitePath', options.suitePath);
     }
@@ -98,23 +127,42 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     if (options.platform) {
       formData.append('platform', options.platform);
     }
-    if (options.appPath) {
-      const appBuffer = fs.readFileSync(options.appPath);
-      const appFileName = path.basename(options.appPath);
-      formData.append('appFile', new Blob([appBuffer]), appFileName);
-      Logger.i(`Uploading app: ${appFileName}`);
-    }
+
+    const appBuffer = fs.readFileSync(options.appPath);
+    const appFileName = path.basename(options.appPath);
+    const appSize = appBuffer.byteLength;
+    formData.append('appFile', new Blob([appBuffer]), appFileName);
+    formData.append('appFilename', appFileName);
+
+    const submissionLabel = options.suitePath
+      ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
+      : `${checked.tests.length} test(s)`;
+    const uploadStart = Date.now();
+    const { default: ora } = await import('ora');
+    const spinner = ora(
+      `Uploading ${appFileName} (${formatBytes(appSize)}) and submitting ${submissionLabel}...`,
+    ).start();
 
     const url = `${FINALRUN_CLOUD_URL}/api/v1/execute`;
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+    } catch (e) {
+      const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(1);
+      spinner.fail(`Upload failed after ${elapsed}s`);
+      throw e;
+    }
 
+    const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(1);
     if (!response.ok) {
+      spinner.fail(`Upload failed after ${elapsed}s (HTTP ${response.status})`);
       const body = await response.text();
       throw new Error(`Cloud service returned ${response.status}: ${body}`);
     }
+    spinner.succeed(`Uploaded ${formatBytes(appSize)} in ${elapsed}s`);
 
     const result = (await response.json()) as { success: boolean; runId?: string; error?: string };
     if (!result.success || !result.runId) {
@@ -229,4 +277,11 @@ function statusIcon(status: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }

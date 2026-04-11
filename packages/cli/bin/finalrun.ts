@@ -170,24 +170,44 @@ program
     });
   });
 
-program
+const cloud = program
   .command('cloud')
-  .description('Run tests on FinalRun cloud devices')
-  .option('--env <name>', 'Environment name')
+  .description('Run tests on FinalRun cloud devices');
+
+cloud
+  .command('test [selectors...]')
+  .description('Run repo-local FinalRun YAML tests from .finalrun/tests on cloud devices')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
-  .option('--app <path>', 'Optional app override (.apk or .app)')
-  .option('--suite <path>', 'Suite manifest under .finalrun/suites')
-  .argument('[selectors...]', 'Workspace-relative YAML files, directories, or globs under .finalrun/tests')
+  .requiredOption('--app <path>', 'Path to the .apk or .app to install on the cloud device')
   .action(async (selectors: string[] | undefined, options: CloudCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
       const normalizedSelectors = normalizeTestSelectors(selectors);
-      if (normalizedSelectors.length === 0 && !options.suite) {
+      if (normalizedSelectors.length === 0) {
         throw new Error(TEST_SELECTION_REQUIRED_ERROR);
       }
       await runCloud({
         selectors: normalizedSelectors,
-        suitePath: options.suite,
+        envName: options.env,
+        platform: options.platform,
+        appPath: options.app,
+      });
+    });
+  });
+
+cloud
+  .command('suite <suitePath>')
+  .description('Run a FinalRun suite manifest from .finalrun/suites on cloud devices')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .requiredOption('--app <path>', 'Path to the .apk or .app to install on the cloud device')
+  .action(async (suitePath: string, options: CloudCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      await runCloud({
+        selectors: [],
+        suitePath: suitePath.trim(),
         envName: options.env,
         platform: options.platform,
         appPath: options.app,
@@ -278,8 +298,7 @@ interface CheckCommandOptions extends CommonCommandOptions {
 interface CloudCommandOptions {
   env?: string;
   platform?: string;
-  app?: string;
-  suite?: string;
+  app: string;
 }
 
 interface DoctorCommandOptions {
