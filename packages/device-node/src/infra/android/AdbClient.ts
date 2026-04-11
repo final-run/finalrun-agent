@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile);
  * forward. Each device gets one port from this pool, used as both the
  * host-side and device-side port (forward target = forward source).
  *
- * Mirrors the Dart device_node port pool (6100-6200, 100 slots).
+ * 100 slots starting from DEFAULT_GRPC_PORT_START.
  */
 const PORT_RANGE_START = DEFAULT_GRPC_PORT_START;
 const PORT_RANGE_END = PORT_RANGE_START + 100;
@@ -222,7 +222,7 @@ export class AdbClient {
   /**
    * Nuke every adb forward across all attached devices. Call this on process
    * startup to clean up stale forwards left behind by a previous crashed
-   * device-node process. Mirrors Dart's removeAllPortForwards.
+   * device-node process.
    */
   async removeAllPortForwards(adbPath: string): Promise<void> {
     try {
@@ -928,7 +928,7 @@ export class AdbClient {
   /**
    * Pick the lowest free port in [PORT_RANGE_START, PORT_RANGE_END) that is
    * BOTH not currently assigned to a known device AND actually bindable on
-   * the host. Mirrors the Dart device_node getNewPort() pool semantics.
+   * the host.
    *
    * Serialized via the allocation mutex so concurrent forwardPort() calls
    * can't both observe the same port as free between the bindability probe

@@ -1,4 +1,3 @@
-// Port of device_node/lib/device_node.dart
 // Singleton entry point for device management.
 
 import type {
@@ -18,8 +17,6 @@ import { SimctlClient } from './infra/ios/SimctlClient.js';
 
 /**
  * Singleton manager for detecting, tracking, and providing access to connected devices.
- *
- * Dart equivalent: DeviceNode in device_node/lib/device_node.dart
  */
 export class DeviceNode {
   private static _instance: DeviceNode | null = null;
@@ -93,7 +90,6 @@ export class DeviceNode {
 
   /**
    * Detect all connected devices (Android + iOS).
-   * Dart: Future<List<DeviceInfo>> detectDevices()
    */
   async detectInventory(adbPath: string | null): Promise<DeviceInventoryReport> {
     const inventory = await this._deviceDiscoveryService.detectInventory(adbPath);
