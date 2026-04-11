@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as net from 'node:net';
 import {
   DEFAULT_GRPC_PORT_START,
   Logger,
@@ -7,6 +8,16 @@ import {
 } from '@finalrun/common';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Range of host ports the AdbClient is allowed to use for the gRPC driver
+ * forward. Each device gets one port from this pool, used as both the
+ * host-side and device-side port (forward target = forward source).
+ *
+ * 100 slots starting from DEFAULT_GRPC_PORT_START.
+ */
+const PORT_RANGE_START = DEFAULT_GRPC_PORT_START;
+const PORT_RANGE_END = PORT_RANGE_START + 100;
 
 type ExecFileFn = (
   file: string,
@@ -116,30 +127,74 @@ export function isUndeclaredPermissionGrantFailure(stderrOrMessage: string): boo
 }
 
 export class AdbClient {
-  private _nextPort: number = DEFAULT_GRPC_PORT_START;
+  /** deviceSerial -> port currently allocated for that device */
   private _portMap: Map<string, number> = new Map();
+  /** ports currently in use across all devices (set of allocated values) */
+  private _allocatedPorts: Set<number> = new Set();
+  /**
+   * Async mutex serializing port allocate/release/cleanup. Without this,
+   * two concurrent forwardPort() calls can both pass _isPortBindable() for
+   * the same port and both reserve it.
+   */
+  private _allocationMutex: Promise<void> = Promise.resolve();
   private _execFileFn: ExecFileFn;
 
   constructor(params?: { execFileFn?: ExecFileFn }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
   }
 
+  /**
+   * Run `fn` while holding the allocation mutex. Ensures only one
+   * allocate/release/cleanup runs at a time across all callers.
+   */
+  private async _withAllocationLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this._allocationMutex;
+    let releaseLock!: () => void;
+    this._allocationMutex = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    try {
+      await previous;
+      return await fn();
+    } finally {
+      releaseLock();
+    }
+  }
+
+  /**
+   * Set up the host->device port forward and return the allocated host port.
+   *
+   * The same port is used on BOTH sides of the forward (`tcp:N -> tcp:N`)
+   * so the driver app's `-e port N` argument lines up with the forward
+   * destination. The `devicePort` argument is ignored and kept for backwards
+   * compatibility — earlier versions hardcoded it to DEFAULT_GRPC_PORT_START
+   * which caused host/device port drift across runs.
+   */
   async forwardPort(
     adbPath: string,
     deviceSerial: string,
-    devicePort: number,
+    _devicePort?: number,
   ): Promise<number> {
-    const localPort = this._allocatePort(deviceSerial);
+    const localPort = await this._allocatePort(deviceSerial);
 
-    await this._execFileFn(adbPath, [
-      '-s',
-      deviceSerial,
-      'forward',
-      `tcp:${localPort}`,
-      `tcp:${devicePort}`,
-    ]);
+    try {
+      await this._execFileFn(adbPath, [
+        '-s',
+        deviceSerial,
+        'forward',
+        `tcp:${localPort}`,
+        `tcp:${localPort}`,
+      ]);
+    } catch (error) {
+      // adb forward failed — return the reservation to the pool so the
+      // port can be reused. The caller will see the rethrown error.
+      await this._releasePort(deviceSerial);
+      throw error;
+    }
 
-    Logger.d(`Port forwarded: localhost:${localPort} -> ${deviceSerial}:${devicePort}`);
+    Logger.d(
+      `Port forwarded: localhost:${localPort} -> ${deviceSerial}:${localPort}`,
+    );
     return localPort;
   }
 
@@ -161,7 +216,34 @@ export class AdbClient {
       // Ignore best-effort cleanup failures.
     }
 
-    this._portMap.delete(deviceSerial);
+    await this._releasePort(deviceSerial);
+  }
+
+  /**
+   * Nuke every adb forward across all attached devices. Call this on process
+   * startup to clean up stale forwards left behind by a previous crashed
+   * device-node process.
+   */
+  async removeAllPortForwards(adbPath: string): Promise<void> {
+    try {
+      await this._execFileFn(adbPath, ['forward', '--remove-all']);
+      Logger.d('Removed all stale adb forwards');
+    } catch (error) {
+      // "no devices/emulators found" is expected at cold startup — adb
+      // requires a target device for `forward --remove-all`. Anything else
+      // is unusual but still best-effort.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/no devices\/emulators found/i.test(message)) {
+        Logger.w('Failed to remove all adb forwards (ignoring)', error as Error);
+      }
+    }
+    // Reset in-memory pool too — the OS state was just wiped (or there's
+    // nothing to reset because no devices are attached). Take the lock so
+    // this can't race with an in-flight allocation.
+    await this._withAllocationLock(async () => {
+      this._portMap.clear();
+      this._allocatedPorts.clear();
+    });
   }
 
   getForwardedPort(deviceSerial: string): number | undefined {
@@ -843,15 +925,61 @@ export class AdbClient {
     );
   }
 
-  private _allocatePort(deviceSerial: string): number {
-    const existingPort = this._portMap.get(deviceSerial);
-    if (existingPort !== undefined) {
-      return existingPort;
-    }
+  /**
+   * Pick the lowest free port in [PORT_RANGE_START, PORT_RANGE_END) that is
+   * BOTH not currently assigned to a known device AND actually bindable on
+   * the host.
+   *
+   * Serialized via the allocation mutex so concurrent forwardPort() calls
+   * can't both observe the same port as free between the bindability probe
+   * and the reservation.
+   */
+  private async _allocatePort(deviceSerial: string): Promise<number> {
+    return this._withAllocationLock(async () => {
+      const existingPort = this._portMap.get(deviceSerial);
+      if (existingPort !== undefined) {
+        return existingPort;
+      }
 
-    const port = this._nextPort++;
-    this._portMap.set(deviceSerial, port);
-    return port;
+      for (let port = PORT_RANGE_START; port < PORT_RANGE_END; port++) {
+        if (this._allocatedPorts.has(port)) continue;
+        if (!(await this._isPortBindable(port))) continue;
+
+        this._allocatedPorts.add(port);
+        this._portMap.set(deviceSerial, port);
+        Logger.d(`Allocated port ${port} for ${deviceSerial}`);
+        return port;
+      }
+
+      throw new Error(
+        `No ports available in range ${PORT_RANGE_START}-${PORT_RANGE_END}`,
+      );
+    });
+  }
+
+  /** Return a port to the pool. Called from removePortForward. */
+  private async _releasePort(deviceSerial: string): Promise<void> {
+    await this._withAllocationLock(async () => {
+      const port = this._portMap.get(deviceSerial);
+      if (port === undefined) return;
+      this._portMap.delete(deviceSerial);
+      this._allocatedPorts.delete(port);
+      Logger.d(`Released port ${port} for ${deviceSerial}`);
+    });
+  }
+
+  /**
+   * Probe whether the host kernel can actually bind this port right now.
+   * If anything else on the host is squatting on it, skip and try the next.
+   */
+  private _isPortBindable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(false));
+      server.listen(port, '127.0.0.1', () => {
+        server.close(() => resolve(true));
+      });
+    });
   }
 
   private async _runAdb(
