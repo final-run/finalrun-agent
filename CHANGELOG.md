@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-11
+
+### Added
+
+- Per-test device log capture with a video-synced interactive UI, including search, log-level filter, and scrollbar
+- Non-ASCII character input support for `enterText` and `pasteText`
+- Curl-based install script for one-command FinalRun setup
+- GitHub star notifier workflow
+
+### Changed
+
+- Restructured README for an onboarding-first experience; moved YAML tests, CLI reference, and configuration into dedicated docs
+- Replaced `gpt-4o` with `gpt-5.4-mini` across the project
+- Simplified `finalrun doctor` output to a tick/cross format
+- Allocate, release, and clean up stale ports during test runs
+- Updated `finalrun-use-cli` skill to fail fast and use `finalrun test` instead of the removed suite command
+- Improved iOS gRPC driver recovery and log filtering
+- Dropped internal-implementation references from `device-node` comments
+
+### Removed
+
+- `--suite` flag from `finalrun test`
+- Redundant "launch the app" step from agent skills
+- `avdmanager` from Android preflight checks and optional helper docs
+
+### Fixed
+
+- Hardened `enterText`/`pasteText` against shell injection and clipboard leaks
+- Safer gRPC retry defaults, year inference, and log capture cleanup
+
 ## [0.1.4] - 2026-04-06
 
 ### Added

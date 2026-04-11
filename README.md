@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://finalrun.app/">
-    <img alt="FinalRun logo" height="90" src="./.github/resources/Logo.png">
+    <img alt="FinalRun logo" height="90" src="https://raw.githubusercontent.com/final-run/finalrun-agent/main/.github/resources/Logo.png">
   </a>
 </p>
 
@@ -43,7 +43,7 @@
 ## Demo
 
 <p align="center">
-  <img alt="FinalRun demo" src=".github/resources/finalrun-demo.gif" />
+  <img alt="FinalRun demo" src="https://raw.githubusercontent.com/final-run/finalrun-agent/main/.github/resources/finalrun-demo.gif" />
 </p>
 
 

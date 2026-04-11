@@ -335,7 +335,7 @@ async function writeRunManifest(
       })),
       cli: {
         command: params.target.type === 'suite'
-          ? `finalrun test --suite ${params.target.suitePath || 'suite.yaml'}`
+          ? `finalrun suite ${params.target.suitePath || 'suite.yaml'}`
           : `finalrun test ${params.selectedTests.map((t) => t.relativePath).join(' ')}`,
         selectors: params.target.type === 'direct'
           ? params.selectedTests.map((t) => t.relativePath)
