@@ -537,31 +537,17 @@ test('finalrun suite resolves suite manifests without requiring the .finalrun/su
   }
 });
 
-test('finalrun suite matches the legacy test --suite invocation', async () => {
+test('finalrun test rejects --suite flag as an unknown option', async () => {
   const rootDir = createTempWorkspace({
-    configYaml: 'model: google/gemini-3-flash-preview\n',
-    testFiles: {
-      'login/auth.yaml': ['name: auth login', 'steps:', '  - Open auth login.'].join('\n'),
-    },
     suites: {
-      'login/auth_suite.yaml': ['name: auth suite', 'tests:', '  - login/auth.yaml'].join('\n'),
+      'login_suite.yaml': ['name: login suite', 'tests:', '  - login.yaml'].join('\n'),
     },
   });
 
   try {
-    const suiteResult = runCli(
-      ['suite', 'login/auth_suite.yaml'],
-      rootDir,
-      EMPTY_PROVIDER_ENV_VARS,
-    );
-    const legacyResult = runCli(
-      ['test', '--suite', 'login/auth_suite.yaml'],
-      rootDir,
-      EMPTY_PROVIDER_ENV_VARS,
-    );
-    assert.equal(suiteResult.status, legacyResult.status);
-    assert.equal(suiteResult.stdout, legacyResult.stdout);
-    assert.equal(suiteResult.stderr, legacyResult.stderr);
+    const result = runCli(['test', '--suite', 'login_suite.yaml'], rootDir);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unknown option '--suite'/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }
@@ -574,26 +560,6 @@ test('finalrun test reports missing selectors before API key validation', async 
     const result = runCli(['test'], rootDir);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /At least one test selector is required/);
-    assert.doesNotMatch(result.stderr, /API key is required/);
-  } finally {
-    await fsp.rm(rootDir, { recursive: true, force: true });
-  }
-});
-
-test('finalrun test rejects mixing --suite with selectors before API key validation', async () => {
-  const rootDir = createTempWorkspace({
-    suites: {
-      'login_suite.yaml': ['name: login suite', 'tests:', '  - login.yaml'].join('\n'),
-    },
-  });
-
-  try {
-    const result = runCli(['test', '--suite', 'login_suite.yaml', 'login.yaml'], rootDir);
-    assert.equal(result.status, 1);
-    assert.match(
-      result.stderr,
-      /Pass either --suite <path> or positional test selectors, not both/,
-    );
     assert.doesNotMatch(result.stderr, /API key is required/);
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
