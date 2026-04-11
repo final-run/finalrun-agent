@@ -1,5 +1,4 @@
 import {
-  DEFAULT_GRPC_PORT_START,
   DeviceInfo,
   Logger,
   type FilePathUtil,
@@ -139,11 +138,10 @@ export class AndroidDeviceSetup {
       }
 
       await this._adbClient.removePortForward(adbPath, deviceSerial);
-      localPort = await this._adbClient.forwardPort(
-        adbPath,
-        deviceSerial,
-        DEFAULT_GRPC_PORT_START,
-      );
+      // forwardPort allocates a port from the AdbClient's pool and uses
+      // the same value on both sides of the forward. The driver app gets
+      // launched with `-e port localPort` so all references line up.
+      localPort = await this._adbClient.forwardPort(adbPath, deviceSerial);
 
       Logger.i('Starting Android driver instrumentation...');
       driverProcess = this._startAndroidDriverFn(adbPath, deviceSerial, localPort);

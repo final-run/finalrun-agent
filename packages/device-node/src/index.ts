@@ -13,6 +13,17 @@ export { DevicePool } from './device/DevicePool.js';
 export { AndroidRecordingProvider } from './device/AndroidRecordingProvider.js';
 export { IOSRecordingProvider } from './device/IOSRecordingProvider.js';
 export { RecordingManager, defaultRecordingManager } from './device/RecordingManager.js';
+export { LogCaptureManager, defaultLogCaptureManager } from './device/LogCaptureManager.js';
+export type {
+  DeviceLogCaptureController,
+  LogCaptureSessionStartParams,
+  LogCaptureStopOptions,
+  LogCaptureCleanupOptions,
+  LogCaptureAbortOptions,
+} from './device/LogCaptureManager.js';
+export type { LogCaptureProvider } from './device/LogCaptureProvider.js';
+export { AndroidLogcatProvider } from './device/AndroidLogcatProvider.js';
+export { IOSLogProvider } from './device/IOSLogProvider.js';
 export type {
   DeviceRecordingController,
   RecordingSessionStartParams,

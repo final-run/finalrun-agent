@@ -1,0 +1,23 @@
+{"action":"enter","driver":"fab-new","event":"stage-transition","stage":"intake","ts":"2026-04-05T23:37:56Z"}
+{"args":"Capture \u0026 Display Device Logs (Android logcat + iOS system log)","cmd":"fab-new","event":"command","ts":"2026-04-05T23:37:56Z"}
+{"delta":"+3.5","event":"confidence","score":3.5,"trigger":"calc-score","ts":"2026-04-05T23:39:04Z"}
+{"delta":"+0.0","event":"confidence","score":3.5,"trigger":"calc-score","ts":"2026-04-05T23:39:10Z"}
+{"cmd":"fab-new","event":"command","ts":"2026-04-05T23:39:35Z"}
+{"cmd":"fab-clarify","event":"command","ts":"2026-04-05T23:42:19Z"}
+{"delta":"+1.2","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:13:06Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:13:14Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:13:18Z"}
+{"cmd":"fab-ff","event":"command","ts":"2026-04-06T00:18:45Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"spec","ts":"2026-04-06T00:21:33Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:23:35Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:23:39Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:26:15Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:26:22Z"}
+{"delta":"+0.0","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-04-06T00:26:29Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"tasks","ts":"2026-04-06T00:26:50Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"apply","ts":"2026-04-06T00:30:49Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"review","ts":"2026-04-06T00:44:07Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"hydrate","ts":"2026-04-06T00:50:57Z"}
+{"event":"review","result":"passed","ts":"2026-04-06T00:50:57Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"ship","ts":"2026-04-06T00:53:16Z"}
+{"cmd":"fab-archive","event":"command","ts":"2026-04-07T17:51:51Z"}

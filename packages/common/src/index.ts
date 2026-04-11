@@ -35,6 +35,7 @@ export type {
   TimingInfo,
   SpanTiming,
 } from './models/Trace.js';
+export type { DeviceLogCaptureResult } from './models/DeviceLog.js';
 export type {
   PlannerThought,
   ActionPayload,

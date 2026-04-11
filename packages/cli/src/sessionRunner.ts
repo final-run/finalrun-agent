@@ -20,6 +20,7 @@ import {
   type TestRecordingResult,
 } from '@finalrun/goal-executor';
 import type { TestExecutionResult } from '@finalrun/goal-executor';
+import type { DeviceLogCaptureResult } from '@finalrun/common';
 import type { ResolvedAppConfig } from './appConfig.js';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
@@ -69,6 +70,11 @@ export interface TestSessionConfig {
     runId: string;
     testId: string;
     outputFilePath?: string;
+    keepPartialOnFailure?: boolean;
+  };
+  deviceLog?: {
+    runId: string;
+    testId: string;
     keepPartialOnFailure?: boolean;
   };
 }
@@ -290,6 +296,14 @@ export async function executeTestOnSession(
         keepPartialOnFailure: boolean;
       }
     | undefined;
+  let activeLogCapture:
+    | {
+        runId: string;
+        testId: string;
+        startedAt: string;
+        keepPartialOnFailure: boolean;
+      }
+    | undefined;
 
   try {
     const aiAgent = dependencies.createAiAgent({
@@ -363,6 +377,38 @@ export async function executeTestOnSession(
       }
     }
 
+    if (config.deviceLog) {
+      try {
+        const logResponse = await session.device.startLogCapture({
+          runId: config.deviceLog.runId,
+          testId: config.deviceLog.testId,
+          appIdentifier: session.app?.identifier,
+        });
+
+        if (logResponse.success) {
+          activeLogCapture = {
+            runId: config.deviceLog.runId,
+            testId: config.deviceLog.testId,
+            startedAt:
+              typeof logResponse.data?.['startedAt'] === 'string'
+                ? (logResponse.data['startedAt'] as string)
+                : new Date().toISOString(),
+            keepPartialOnFailure: config.deviceLog.keepPartialOnFailure ?? false,
+          };
+          Logger.i(
+            `Log capture started for test ${config.deviceLog.testId} at ${activeLogCapture.startedAt}`,
+          );
+        } else {
+          Logger.w(
+            `Unable to start log capture for test ${config.deviceLog.testId}: ` +
+            `${logResponse.message ?? 'unknown log capture error'}`,
+          );
+        }
+      } catch (error) {
+        Logger.w('Failed to start device log capture:', error);
+      }
+    }
+
     // Execute!
     let result = await executor.executeGoal((event) => renderer.onProgress(event));
 
@@ -422,7 +468,59 @@ export async function executeTestOnSession(
       activeRecording = undefined;
     }
 
-    const finalResult = recording ? { ...result, recording } : result;
+    let deviceLog: DeviceLogCaptureResult | undefined;
+    if (activeLogCapture) {
+      try {
+        const stopLogResponse = await session.device.stopLogCapture(
+          activeLogCapture.runId,
+          activeLogCapture.testId,
+        );
+        if (stopLogResponse.success) {
+          const filePath = stopLogResponse.data?.['filePath'];
+          if (typeof filePath === 'string') {
+            deviceLog = {
+              filePath,
+              startedAt:
+                typeof stopLogResponse.data?.['startedAt'] === 'string'
+                  ? (stopLogResponse.data['startedAt'] as string)
+                  : activeLogCapture.startedAt,
+              completedAt:
+                typeof stopLogResponse.data?.['completedAt'] === 'string'
+                  ? (stopLogResponse.data['completedAt'] as string)
+                  : new Date().toISOString(),
+            };
+          } else {
+            Logger.w(
+              `Log capture stopped for test ${activeLogCapture.testId} but no file path was returned.`,
+            );
+          }
+          activeLogCapture = undefined;
+        } else {
+          Logger.w(
+            `Unable to stop log capture for test ${activeLogCapture.testId}: ` +
+            `${stopLogResponse.message ?? 'unknown log capture error'}`,
+          );
+          try {
+            await session.device.abortLogCapture(
+              activeLogCapture.runId,
+              activeLogCapture.keepPartialOnFailure,
+            );
+          } catch (error) {
+            Logger.w('Failed to finalize log capture after stop failure:', error);
+          }
+          activeLogCapture = undefined;
+        }
+      } catch (error) {
+        Logger.w('Failed to stop device log capture:', error);
+        // Do NOT clear activeLogCapture here — let the finally block abort it
+      }
+    }
+
+    const finalResult = recording
+      ? { ...result, recording, ...(deviceLog ? { deviceLog } : {}) }
+      : deviceLog
+        ? { ...result, deviceLog }
+        : result;
     // Print summary
     renderer.printSummary(finalResult);
 
@@ -439,6 +537,16 @@ export async function executeTestOnSession(
         );
       } catch (error) {
         Logger.w('Failed to abort active recording during cleanup:', error);
+      }
+    }
+    if (activeLogCapture) {
+      try {
+        await session.device.abortLogCapture(
+          activeLogCapture.runId,
+          activeLogCapture.keepPartialOnFailure,
+        );
+      } catch (error) {
+        Logger.w('Failed to abort active log capture during cleanup:', error);
       }
     }
     renderer.destroy();

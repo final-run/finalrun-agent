@@ -24,6 +24,7 @@ import {
 } from '@finalrun/common';
 import {
   IOS_DRIVER_RUNNER_BUNDLE_ID,
+  type IOSDriverProcessHandle,
   type SimctlClient,
 } from '../../infra/ios/SimctlClient.js';
 import { CommonDriverActions } from '../shared/CommonDriverActions.js';
@@ -36,15 +37,21 @@ export class IOSSimulator implements DeviceRuntime {
   private _commonDriverActions: CommonDriverActions;
   private _simctlClient: SimctlClient;
   private _deviceId: string;
+  private _driverProcess: IOSDriverProcessHandle;
+  private _restartDriverFn: () => Promise<IOSDriverProcessHandle>;
 
   constructor(params: {
     commonDriverActions: CommonDriverActions;
     simctlClient: SimctlClient;
     deviceId: string;
+    driverProcess: IOSDriverProcessHandle;
+    restartDriver: () => Promise<IOSDriverProcessHandle>;
   }) {
     this._commonDriverActions = params.commonDriverActions;
     this._simctlClient = params.simctlClient;
     this._deviceId = params.deviceId;
+    this._driverProcess = params.driverProcess;
+    this._restartDriverFn = params.restartDriver;
   }
 
   setShouldEnsureStability(shouldEnsureStability: boolean | undefined): void {
@@ -56,27 +63,27 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async tap(action: TapAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.tap(action);
+    return this._withDriverRecovery('tap', () => this._commonDriverActions.tap(action));
   }
 
   async tapPercent(action: TapPercentAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.tapPercent(action);
+    return this._withDriverRecovery('tapPercent', () => this._commonDriverActions.tapPercent(action));
   }
 
   async longPress(action: LongPressAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.longPress(action);
+    return this._withDriverRecovery('longPress', () => this._commonDriverActions.longPress(action));
   }
 
   async enterText(action: EnterTextAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.enterText(action);
+    return this._withDriverRecovery('enterText', () => this._commonDriverActions.enterText(action));
   }
 
   async eraseText(action: EraseTextAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.eraseText(action);
+    return this._withDriverRecovery('eraseText', () => this._commonDriverActions.eraseText(action));
   }
 
   async scrollAbs(action: ScrollAbsAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.swipe(action);
+    return this._withDriverRecovery('scrollAbs', () => this._commonDriverActions.swipe(action));
   }
 
   async back(_action: BackAction): Promise<DeviceNodeResponse> {
@@ -90,11 +97,11 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async rotate(action: RotateAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.rotate(action);
+    return this._withDriverRecovery('rotate', () => this._commonDriverActions.rotate(action));
   }
 
   async hideKeyboard(_action: HideKeyboardAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.hideKeyboard();
+    return this._withDriverRecovery('hideKeyboard', () => this._commonDriverActions.hideKeyboard());
   }
 
   async pressKey(action: PressKeyAction): Promise<DeviceNodeResponse> {
@@ -105,7 +112,7 @@ export class IOSSimulator implements DeviceRuntime {
       );
     }
 
-    return await this._commonDriverActions.pressKey(action);
+    return this._withDriverRecovery('pressKey', () => this._commonDriverActions.pressKey(action));
   }
 
   async launchApp(action: LaunchAppAction): Promise<DeviceNodeResponse> {
@@ -158,7 +165,9 @@ export class IOSSimulator implements DeviceRuntime {
       return this._toResponse(permissionsResult);
     }
 
-    const launchResponse = await this._commonDriverActions.launchApp(action);
+    const launchResponse = await this._withDriverRecovery('launchApp',
+      () => this._commonDriverActions.launchApp(action),
+    );
     return this._mergeLaunchResponse(launchResponse, permissionsResult);
   }
 
@@ -205,11 +214,11 @@ export class IOSSimulator implements DeviceRuntime {
   async checkAppInForeground(
     action: CheckAppInForegroundAction,
   ): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.checkAppInForeground(action);
+    return this._withDriverRecovery('checkAppInForeground', () => this._commonDriverActions.checkAppInForeground(action));
   }
 
   async captureState(traceStep?: number | null): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.captureState(traceStep);
+    return this._withDriverRecovery('captureState', () => this._commonDriverActions.captureState(traceStep));
   }
 
   async getInstalledAppsResponse(): Promise<DeviceNodeResponse> {
@@ -227,15 +236,15 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async getScreenshot(action: GetScreenshotAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.getScreenshot(action);
+    return this._withDriverRecovery('getScreenshot', () => this._commonDriverActions.getScreenshot(action));
   }
 
   async getHierarchy(action: GetHierarchyAction): Promise<DeviceNodeResponse> {
-    return await this._commonDriverActions.getHierarchy(action);
+    return this._withDriverRecovery('getHierarchy', () => this._commonDriverActions.getHierarchy(action));
   }
 
   async getScreenshotAndHierarchy(): Promise<DeviceScreenshotAndHierarchy> {
-    return await this._commonDriverActions.getScreenshotAndHierarchy();
+    return this._withDriverRecovery('getScreenshotAndHierarchy', () => this._commonDriverActions.getScreenshotAndHierarchy());
   }
 
   async refreshInstalledAppIds(
@@ -243,7 +252,7 @@ export class IOSSimulator implements DeviceRuntime {
   ): Promise<void> {
     const appIds = await this._simctlClient.listInstalledAppIds(this._deviceId);
     Logger.i(`Sending ${appIds.length} iOS app IDs to driver...`);
-    const updateResponse = await this._commonDriverActions.updateAppIds(appIds);
+    const updateResponse = await this._withDriverRecovery('updateAppIds', () => this._commonDriverActions.updateAppIds(appIds));
     if (updateResponse.success) {
       return;
     }
@@ -262,6 +271,10 @@ export class IOSSimulator implements DeviceRuntime {
     } finally {
       this._commonDriverActions.close();
     }
+  }
+
+  async resolveLogFilterIdentifier(appIdentifier: string): Promise<string | null> {
+    return await this._simctlClient.getAppExecutableName(this._deviceId, appIdentifier);
   }
 
   killDriver(): void {
@@ -298,6 +311,38 @@ export class IOSSimulator implements DeviceRuntime {
       message: result.message,
       data: result.data,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Driver recovery — detects driver death via process state, restarts if needed
+  // ---------------------------------------------------------------------------
+
+  private _isDriverAlive(): boolean {
+    return this._driverProcess.exitCode === null && !this._driverProcess.killed;
+  }
+
+  private async _withDriverRecovery<T>(
+    opName: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      // Check process state — the source of truth, no error parsing
+      if (this._isDriverAlive()) throw error;
+
+      Logger.w(
+        `IOSSimulator.${opName}: driver process exited, attempting restart...`,
+      );
+      try {
+        this._driverProcess = await this._restartDriverFn();
+      } catch (restartError) {
+        Logger.e(`IOSSimulator.${opName}: driver restart failed`, restartError);
+        throw error;
+      }
+
+      return await fn();
+    }
   }
 
   private _mergeLaunchResponse(
