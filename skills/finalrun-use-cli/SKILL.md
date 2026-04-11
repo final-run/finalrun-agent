@@ -95,7 +95,34 @@ Why ask first:
 - test execution can take time and may consume provider credits
 - server commands can start background processes and open the browser
 
-Prefer `finalrun suite <path>` over `finalrun test --suite <path>`, but mention that `finalrun test --suite <path>` remains supported for compatibility.
+## Post-Execution
+
+After `finalrun test` or `finalrun suite` completes, the CLI prints a structured summary. The agent's response depends on the outcome.
+
+### On success
+
+The CLI prints a short confirmation with the artifact directory and report URL. The agent should:
+
+- Confirm success in plain language.
+- Include the report URL so the user can review the run.
+- Stop. Do not suggest follow-up runs, suite escalation, or additional checks.
+
+### On failure
+
+The CLI prints a failure summary listing each failed test with paths to its artifacts. The agent should:
+
+1. Read the failure output and identify which tests failed and why.
+2. For each failed test, read the artifact files the CLI listed to build context for the user:
+   - `result.json` — the test outcome, failure message, and step-level results.
+   - `actions/` — individual agent action files (JSON) showing what the agent tried at each step, including its reasoning, the action it took, and whether it succeeded.
+   - `screenshots/` — per-step screenshots showing the device screen at each action.
+   - `recording.mp4` or `recording.mov` — screen recording of the full test (if available).
+   - `device.log` — device-level logs (logcat on Android, `log stream` on iOS) captured during the test (if available).
+   - `runner.log` — the CLI's own log for the entire run (at the run directory root).
+3. Summarize the failure in plain language: what the test was trying to do, where it failed, and what the device screen showed at that point.
+4. Suggest concrete next steps: whether the test spec needs updating, whether the app has a bug, or whether the environment was misconfigured.
+
+**Do not ask the user to go find artifact files.** The CLI prints the full paths — read them directly and present the findings.
 
 ## Command Reference
 
