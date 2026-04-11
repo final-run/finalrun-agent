@@ -131,10 +131,34 @@ export class AdbClient {
   private _portMap: Map<string, number> = new Map();
   /** ports currently in use across all devices (set of allocated values) */
   private _allocatedPorts: Set<number> = new Set();
+  /**
+   * Async mutex serializing port allocate/release/cleanup. Without this,
+   * two concurrent forwardPort() calls can both pass _isPortBindable() for
+   * the same port and both reserve it.
+   */
+  private _allocationMutex: Promise<void> = Promise.resolve();
   private _execFileFn: ExecFileFn;
 
   constructor(params?: { execFileFn?: ExecFileFn }) {
     this._execFileFn = params?.execFileFn ?? execFileAsync;
+  }
+
+  /**
+   * Run `fn` while holding the allocation mutex. Ensures only one
+   * allocate/release/cleanup runs at a time across all callers.
+   */
+  private async _withAllocationLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this._allocationMutex;
+    let releaseLock!: () => void;
+    this._allocationMutex = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    try {
+      await previous;
+      return await fn();
+    } finally {
+      releaseLock();
+    }
   }
 
   /**
@@ -153,13 +177,20 @@ export class AdbClient {
   ): Promise<number> {
     const localPort = await this._allocatePort(deviceSerial);
 
-    await this._execFileFn(adbPath, [
-      '-s',
-      deviceSerial,
-      'forward',
-      `tcp:${localPort}`,
-      `tcp:${localPort}`,
-    ]);
+    try {
+      await this._execFileFn(adbPath, [
+        '-s',
+        deviceSerial,
+        'forward',
+        `tcp:${localPort}`,
+        `tcp:${localPort}`,
+      ]);
+    } catch (error) {
+      // adb forward failed — return the reservation to the pool so the
+      // port can be reused. The caller will see the rethrown error.
+      await this._releasePort(deviceSerial);
+      throw error;
+    }
 
     Logger.d(
       `Port forwarded: localhost:${localPort} -> ${deviceSerial}:${localPort}`,
@@ -185,7 +216,7 @@ export class AdbClient {
       // Ignore best-effort cleanup failures.
     }
 
-    this._releasePort(deviceSerial);
+    await this._releasePort(deviceSerial);
   }
 
   /**
@@ -207,9 +238,12 @@ export class AdbClient {
       }
     }
     // Reset in-memory pool too — the OS state was just wiped (or there's
-    // nothing to reset because no devices are attached)
-    this._portMap.clear();
-    this._allocatedPorts.clear();
+    // nothing to reset because no devices are attached). Take the lock so
+    // this can't race with an in-flight allocation.
+    await this._withAllocationLock(async () => {
+      this._portMap.clear();
+      this._allocatedPorts.clear();
+    });
   }
 
   getForwardedPort(deviceSerial: string): number | undefined {
@@ -895,35 +929,43 @@ export class AdbClient {
    * Pick the lowest free port in [PORT_RANGE_START, PORT_RANGE_END) that is
    * BOTH not currently assigned to a known device AND actually bindable on
    * the host. Mirrors the Dart device_node getNewPort() pool semantics.
+   *
+   * Serialized via the allocation mutex so concurrent forwardPort() calls
+   * can't both observe the same port as free between the bindability probe
+   * and the reservation.
    */
   private async _allocatePort(deviceSerial: string): Promise<number> {
-    const existingPort = this._portMap.get(deviceSerial);
-    if (existingPort !== undefined) {
-      return existingPort;
-    }
+    return this._withAllocationLock(async () => {
+      const existingPort = this._portMap.get(deviceSerial);
+      if (existingPort !== undefined) {
+        return existingPort;
+      }
 
-    for (let port = PORT_RANGE_START; port < PORT_RANGE_END; port++) {
-      if (this._allocatedPorts.has(port)) continue;
-      if (!(await this._isPortBindable(port))) continue;
+      for (let port = PORT_RANGE_START; port < PORT_RANGE_END; port++) {
+        if (this._allocatedPorts.has(port)) continue;
+        if (!(await this._isPortBindable(port))) continue;
 
-      this._allocatedPorts.add(port);
-      this._portMap.set(deviceSerial, port);
-      Logger.d(`Allocated port ${port} for ${deviceSerial}`);
-      return port;
-    }
+        this._allocatedPorts.add(port);
+        this._portMap.set(deviceSerial, port);
+        Logger.d(`Allocated port ${port} for ${deviceSerial}`);
+        return port;
+      }
 
-    throw new Error(
-      `No ports available in range ${PORT_RANGE_START}-${PORT_RANGE_END}`,
-    );
+      throw new Error(
+        `No ports available in range ${PORT_RANGE_START}-${PORT_RANGE_END}`,
+      );
+    });
   }
 
   /** Return a port to the pool. Called from removePortForward. */
-  private _releasePort(deviceSerial: string): void {
-    const port = this._portMap.get(deviceSerial);
-    if (port === undefined) return;
-    this._portMap.delete(deviceSerial);
-    this._allocatedPorts.delete(port);
-    Logger.d(`Released port ${port} for ${deviceSerial}`);
+  private async _releasePort(deviceSerial: string): Promise<void> {
+    await this._withAllocationLock(async () => {
+      const port = this._portMap.get(deviceSerial);
+      if (port === undefined) return;
+      this._portMap.delete(deviceSerial);
+      this._allocatedPorts.delete(port);
+      Logger.d(`Released port ${port} for ${deviceSerial}`);
+    });
   }
 
   /**

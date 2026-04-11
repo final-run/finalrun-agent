@@ -30,6 +30,13 @@ export class DeviceNode {
   private _initialized: boolean = false;
   private _adbClient: AdbClient;
   private _simctlClient: SimctlClient;
+  /**
+   * Promise tracking the in-flight startup adb-forward cleanup. setUpDevice()
+   * awaits this so removeAllPortForwards() can never wipe a freshly allocated
+   * forward. Defaults to a resolved promise so callers that never run init()
+   * (e.g., direct AdbClient tests) aren't blocked.
+   */
+  private _initCleanupPromise: Promise<void> = Promise.resolve();
 
   private constructor() {
     this._deviceDiscoveryService = new DeviceDiscoveryService();
@@ -68,8 +75,10 @@ export class DeviceNode {
     });
     this._initialized = true;
 
-    // Fire-and-forget: clean up stale adb forwards from prior runs.
-    void this._cleanupStaleAdbForwards(filePathUtil);
+    // Capture the cleanup as a promise. setUpDevice() awaits it before
+    // running so removeAllPortForwards() (which clears the in-memory pool)
+    // can never race with a freshly allocated forward.
+    this._initCleanupPromise = this._cleanupStaleAdbForwards(filePathUtil);
   }
 
   private async _cleanupStaleAdbForwards(filePathUtil: FilePathUtil): Promise<void> {
@@ -114,6 +123,11 @@ export class DeviceNode {
     if (!this._initialized || !this._grpcDriverSetup) {
       throw new Error('DeviceNode not initialized. Call init() first.');
     }
+
+    // Wait for any in-flight startup cleanup before allocating a new
+    // forward. removeAllPortForwards() clears the in-memory port pool,
+    // which would otherwise wipe a freshly-created entry.
+    await this._initCleanupPromise;
 
     const device = await this._grpcDriverSetup.setUp(deviceInfo);
     this._devicePool.add(device);
