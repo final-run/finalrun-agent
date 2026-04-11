@@ -182,7 +182,7 @@ function createSuiteRunManifest(): RunManifest {
         },
       ],
       cli: {
-        command: 'finalrun test --suite login_suite.yaml',
+        command: 'finalrun suite login_suite.yaml',
         selectors: [],
         suitePath: 'login_suite.yaml',
         debug: false,

@@ -458,8 +458,6 @@ function buildCliContext(options: TestRunnerOptions): {
   const commandParts = ['finalrun', invokedCommand];
   if (invokedCommand === 'suite' && options.suitePath) {
     commandParts.push(options.suitePath);
-  } else if (options.suitePath) {
-    commandParts.push('--suite', options.suitePath);
   }
   return {
     command: commandParts.join(' '),
