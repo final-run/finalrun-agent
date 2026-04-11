@@ -125,13 +125,15 @@ const EMPTY_PROVIDER_ENV_VARS = {
 async function assertNoRunArtifacts(cwd: string): Promise<void> {
   const workspace = await resolveWorkspaceForHome(cwd, CLI_TEST_HOME);
   const artifactEntries = await fsp.readdir(workspace.artifactsDir).catch(() => []);
-  assert.deepEqual(artifactEntries, []);
+  const runEntries = artifactEntries.filter((e) => e !== '.server.json');
+  assert.deepEqual(runEntries, []);
   await assert.rejects(() => fsp.stat(path.join(workspace.artifactsDir, 'runs.json')));
 }
 
 function assertNoRunOutput(result: ReturnType<typeof runCli>): void {
-  assert.doesNotMatch(result.stdout, /Artifacts written to/);
-  assert.doesNotMatch(result.stdout, /Runs index available at/);
+  assert.doesNotMatch(result.stdout, /All tests passed/);
+  assert.doesNotMatch(result.stdout, /test\(s\) failed/);
+  assert.doesNotMatch(result.stdout, /Run directory:/);
   assert.doesNotMatch(result.stdout, /Run report available at/);
 }
 

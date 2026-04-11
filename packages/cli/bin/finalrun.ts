@@ -2,7 +2,7 @@
 // CLI entry point — parses arguments and runs the goal.
 
 import { Command } from 'commander';
-import { Logger, LogLevel } from '@finalrun/common';
+import { Logger, LogLevel, type TestResult } from '@finalrun/common';
 import { formatResolvedAppSummary } from '../src/appConfig.js';
 import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
@@ -18,7 +18,7 @@ import {
   stopWorkspaceReportServer,
 } from '../src/reportServerManager.js';
 import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
-import { PreExecutionFailureError, runTests } from '../src/testRunner.js';
+import { PreExecutionFailureError, runTests, type TestRunnerResult } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
 import { initializeCliRuntimeEnvironment, resolveCliPackageVersion } from '../src/runtimePaths.js';
@@ -319,6 +319,8 @@ async function runTestCommand(params: {
       providedApiKey: params.options.apiKey,
     });
 
+    const reportServer = await tryStartReportServer(workspace);
+
     const result = await runTests({
       envName: resolvedEnvironment.usesEmptyBindings ? undefined : resolvedEnvironment.envName,
       selectors: normalizedSelectors,
@@ -333,22 +335,20 @@ async function runTestCommand(params: {
       invokedCommand: params.invokedCommand,
     });
 
-    console.log(`Artifacts written to ${result.runDir}`);
-    console.log(`Runs index available at ${result.runIndexPath}`);
-    try {
-      const server = await startOrReuseWorkspaceReportServer({
-        workspace,
-        requestedPort: 4173,
-        dev: false,
-      });
-      const runUrl = buildRunReportUrl(server.url, result.runId);
-      console.log(`Run report available at ${runUrl}`);
-      await openUrlBestEffort(runUrl);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`Could not start the local report UI automatically: ${message}`);
-      console.log('Start the local report UI with `finalrun start-server`.');
+    const runUrl = reportServer
+      ? buildRunReportUrl(reportServer, result.runId)
+      : undefined;
+
+    if (result.success) {
+      printSuccessSummary(result, runUrl);
+    } else {
+      printFailureSummary(result, runUrl);
     }
+
+    if (runUrl) {
+      await openUrlBestEffort(runUrl);
+    }
+
     process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
   } catch (error) {
     if (error instanceof PreExecutionFailureError) {
@@ -448,12 +448,85 @@ function parsePortOption(value: string, fallback: number): number {
   return parsed;
 }
 
+async function tryStartReportServer(
+  workspace: Awaited<ReturnType<typeof resolveCommandWorkspace>>,
+): Promise<string | undefined> {
+  try {
+    const server = await startOrReuseWorkspaceReportServer({
+      workspace,
+      requestedPort: 4173,
+      dev: false,
+    });
+    console.log(`Report server: ${buildWorkspaceReportUrl(server.url)}`);
+    return server.url;
+  } catch {
+    return undefined;
+  }
+}
+
+function printSuccessSummary(result: TestRunnerResult, runUrl?: string): void {
+  console.log('\n' + '═'.repeat(60));
+  console.log(`\x1b[32m✓ All tests passed\x1b[0m`);
+  console.log('═'.repeat(60));
+  console.log(`  Artifacts: ${result.runDir}`);
+  if (runUrl) {
+    console.log(`  Report:    ${runUrl}`);
+  }
+  console.log('═'.repeat(60));
+}
+
+function printFailureSummary(result: TestRunnerResult, runUrl?: string): void {
+  const failed = result.testResults.filter((t) => !t.success);
+  const passed = result.testResults.filter((t) => t.success);
+
+  console.log('\n' + '═'.repeat(60));
+  if (result.status === 'aborted') {
+    console.log(`\x1b[33m! Run aborted\x1b[0m`);
+  } else {
+    console.log(`\x1b[31m✗ ${failed.length} of ${result.testResults.length} test(s) failed\x1b[0m`);
+  }
+  console.log('═'.repeat(60));
+
+  for (const test of failed) {
+    console.log(`\n\x1b[31m✗ FAILED:\x1b[0m ${test.testName} (${test.relativePath})`);
+    console.log(`  Message: ${test.message}`);
+    printTestArtifactPaths(test, result.runDir);
+  }
+
+  if (passed.length > 0) {
+    console.log(`\n\x1b[32m✓ PASSED:\x1b[0m ${passed.map((t) => t.testName).join(', ')}`);
+  }
+
+  console.log('\n' + '─'.repeat(60));
+  console.log('Run artifacts:');
+  console.log(`  Run directory:  ${result.runDir}`);
+  console.log(`  Runner log:     ${result.runDir}/runner.log`);
+  if (runUrl) {
+    console.log(`  Report:         ${runUrl}`);
+  }
+  console.log('─'.repeat(60));
+}
+
+function printTestArtifactPaths(test: TestResult, runDir: string): void {
+  const testDir = `${runDir}/tests/${test.testId}`;
+  console.log(`  Result:      ${testDir}/result.json`);
+  if (test.steps.length > 0) {
+    console.log(`  Actions:     ${testDir}/actions/`);
+    console.log(`  Screenshots: ${testDir}/screenshots/`);
+  }
+  if (test.recordingFile) {
+    console.log(`  Recording:   ${runDir}/${test.recordingFile}`);
+  }
+  if (test.deviceLogFile) {
+    console.log(`  Device log:  ${runDir}/${test.deviceLogFile}`);
+  }
+}
+
 async function openUrlBestEffort(url: string): Promise<void> {
   try {
     await openReportUrl(url);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`Could not open the browser automatically: ${message}`);
+  } catch {
+    // Silently ignore — the URL is already printed to the terminal.
   }
 }
 
