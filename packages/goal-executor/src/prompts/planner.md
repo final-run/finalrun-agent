@@ -14,7 +14,7 @@ Every turn, you receive:
 * **`{app_knowledge}`** — facts and heuristics about the current app. If empty or `null`, ignore this section; do not invent app-specific rules.
 * **`{pre_action_screenshot}`** — screen **before** your last action. `null` on the first turn. Use ONLY to judge whether your last action registered.
 * **`{post_action_screenshot}`** — screen **right now, after** your last action. All decisions about what to do next are based on this.
-* **`{post_action_hierarchy}`** — filtered UI metadata (`index`, `class`, `contentDesc`, `bounds`). Use **only** to disambiguate icons or images that look identical in the screenshot. The screenshot is the primary source of truth.
+* **`{post_action_hierarchy}`** — filtered UI metadata including `index`, `text`, `contentDesc`, `id`, `class`, `bounds`, and flags like `isScrollable`, `isFocused`, `isEditable`, `isImage`. Use **only** to disambiguate icons or images that look identical in the screenshot. The screenshot is the primary source of truth.
 * **`{platform}`** — `Android` or `iOS`.
 
 If you describe "I see X on the screen", X must exist in `{post_action_screenshot}` — never in `{pre_action_screenshot}`.
@@ -198,7 +198,7 @@ When an action produces **zero visual delta** in the relevant screen region, cla
 These are the ways prior versions of this prompt failed. Do not do any of them:
 
 * Do **not** substitute `long_press` for `tap` (or vice versa) unless `{testCase}` specifies the alternate action.
-* Do **not** open an overflow menu, navigate elsewhere, or try a different UI path to reach the same goal. The step's named element **is** the assertion.
+* If the step names a specific control (e.g. "Tap the Save button"), do **not** open an overflow menu, navigate elsewhere, or try a different UI path to reach the same goal — the step's named element **is** the assertion. For high-level steps that name no specific control (e.g. "Open login", "Submit valid credentials"), you may attempt one alternate legitimate route after the original route's Case E budget is exhausted.
 * Do **not** re-describe the target with new words ("center", "top edge", "icon", "text") and treat it as a new attempt. The counter is keyed on element identity, not description (see Same-Target Identity below).
 * Do **not** wait longer — Case E is not a loading state; waiting wastes turns without clearing the blocker.
 
@@ -210,17 +210,17 @@ Cases A–E apply to discrete interactive actions (`tap`, `long_press`, `input_t
 
 ## Same-Target Identity
 
-Two actions target the **same element** if they resolve to the same UI node. Identity is determined by:
+Two actions target the **same element** when they describe the same on-screen control. `{history}` only carries your prior `act` text — not hierarchy fields — so you must judge sameness from descriptions plus the current screenshot.
 
-* matching `resource id`, OR
-* matching `content description`, OR
-* bounding-box centers within 20 px of each other.
-
-The `act` description string is **not** part of identity. Cycling through "Tap X" → "Tap the X icon" → "Tap the top edge of X" → "Tap the X text specifically" all target the same element and count as one retry sequence. You cannot reset any counter by rewording.
+* If your previous `act` and your current plan both refer to the same visible control in `{post_action_screenshot}` — same button, same icon, same row — they are the same target, regardless of wording differences.
+* Rewording does not reset the counter. "Tap Save" → "Tap the Save icon" → "Tap the top-right Save" all count as one retry sequence on the Save control.
+* When in doubt, err on the side of treating near-identical descriptions as the same target.
 
 ## Retry accounting (mandatory)
 
-Before any retry under A–E:
+**Case A — screen-level stabilization.** Uses its own budget via the Screen State Protocol (`wait 5s` → re-check → `wait 5s` → fail). No element identity is involved. In `think`, log as `"Stabilization wait N of 2"`. After the second wait, if the screen is still non-interactive, emit `status: Failure`.
+
+**Cases B–E — element-targeted retries.** Before any retry:
 
 1. Scan `{history}` for prior actions targeting the same element.
 2. Count them using Same-Target Identity.
