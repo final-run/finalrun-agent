@@ -171,7 +171,7 @@ At the start of every turn, compare `{pre_action_screenshot}` (State A) against 
 **2. Partial change (low delta).** Same layout, but a specific element changed — text appeared in a field, a toggle flipped, an item disappeared, a keyboard opened. → Verify the specific target:
 * `input_text` → does the field contain exactly what you typed (or masked dots for passwords)? If empty or wrong, correct it before proceeding.
 * `tap` → did the expected state change occur (button pressed, checkbox toggled, item selected)?
-* delete → is the item gone?
+* item removal → is the item gone?
 * business logic → did the rule apply correctly (not just "did something change")? If you changed the language, did the menu text actually change to the new language?
 * unexpected overlay → If the change is a new overlay, popup, tooltip, or any transient element appearing over the target screen — and it is NOT the expected outcome of your action per `{testCase}` — do not treat it as a failed action. Handle it per `<popup_and_obstruction_handling>` section 2: dismiss, then retry the original action.
 
