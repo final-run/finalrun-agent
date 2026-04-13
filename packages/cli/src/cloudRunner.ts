@@ -98,16 +98,13 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
       runName = `${first} + ${remaining} more`;
     }
 
-    // Run type classification — based on user intent (selectors), not the
-    // expansion result. The server falls back to its own classification if
-    // this field is omitted.
-    const runType: 'folder' | 'single_test' | 'multi_test' | 'suite' = options.suitePath
+    // Run type classification. The server falls back to its own classification
+    // if this field is omitted.
+    const runType: 'single_test' | 'multi_test' | 'suite' = options.suitePath
       ? 'suite'
-      : options.selectors.length === 0
-        ? 'folder'
-        : options.selectors.length === 1
-          ? checked.tests.length === 1 ? 'single_test' : 'folder'
-          : 'multi_test';
+      : checked.tests.length === 1
+        ? 'single_test'
+        : 'multi_test';
 
     const formData = new FormData();
     const zipBuffer = fs.readFileSync(zipPath);
@@ -157,7 +154,9 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     }
 
     const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(1);
-    if (!response.ok) {
+    // The server returns 201 Created on successful submission. Anything else
+    // is an error — surface the body and exit non-zero.
+    if (response.status !== 201) {
       spinner.fail(`Upload failed after ${elapsed}s (HTTP ${response.status})`);
       const body = await response.text();
       throw new Error(`Cloud service returned ${response.status}: ${body}`);
@@ -166,14 +165,18 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
 
     const result = (await response.json()) as { success: boolean; runId?: string; error?: string };
     if (!result.success || !result.runId) {
-      console.log(`\n\x1b[31m✖ Cloud submission failed\x1b[0m`);
-      console.log(JSON.stringify(result, null, 2));
-      return;
+      throw new Error(
+        `Cloud submission failed: ${result.error ?? JSON.stringify(result)}`,
+      );
     }
 
-    Logger.i(`Run submitted: ${result.runId}`);
-    Logger.i(`Polling status...\n`);
-    await pollRunUntilFinished(result.runId);
+    // Fire-and-forget: the run is now queued. Print the polling URL and exit.
+    // The user can curl the status URL to track progress; the CLI does not
+    // wait for the run to finish.
+    console.log(`\n\x1b[32m✓ Run submitted\x1b[0m`);
+    console.log(`  Run ID:      ${result.runId}`);
+    console.log(`  Status URL:  ${FINALRUN_CLOUD_URL}/api/v1/runs/${result.runId}`);
+    console.log(`\n  The run is now queued. Use the status URL above to track progress.`);
   } finally {
     // Clean up temp zip
     try {
@@ -182,101 +185,6 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
       // ignore cleanup errors
     }
   }
-}
-
-interface RunDetailsResponse {
-  success: boolean;
-  run?: {
-    id: string;
-    status: string;
-    totalTests: number;
-    completedTests: number;
-  };
-  nodes?: Array<{
-    id: string;
-    type: string;
-    name: string;
-    status: string;
-    errorMessage?: string | null;
-    videoUrl?: string | null;
-  }>;
-}
-
-async function pollRunUntilFinished(runId: string): Promise<void> {
-  const url = `${FINALRUN_CLOUD_URL}/api/v1/runs/${runId}`;
-  const POLL_INTERVAL_MS = 5_000;
-  const MAX_WAIT_MS = 30 * 60 * 1000; // 30 minutes
-  const start = Date.now();
-  let lastStatus = '';
-  const seenNodeStatus = new Map<string, string>();
-
-  while (Date.now() - start < MAX_WAIT_MS) {
-    let body: RunDetailsResponse;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        Logger.w(`poll HTTP ${res.status}, retrying...`);
-        await sleep(POLL_INTERVAL_MS);
-        continue;
-      }
-      body = (await res.json()) as RunDetailsResponse;
-    } catch (e) {
-      Logger.w(`poll failed: ${e instanceof Error ? e.message : String(e)}`);
-      await sleep(POLL_INTERVAL_MS);
-      continue;
-    }
-
-    if (!body.success || !body.run) {
-      Logger.w(`run not found, retrying...`);
-      await sleep(POLL_INTERVAL_MS);
-      continue;
-    }
-
-    const { run, nodes = [] } = body;
-
-    if (run.status !== lastStatus) {
-      Logger.i(`run status: ${run.status} (${run.completedTests}/${run.totalTests} tests)`);
-      lastStatus = run.status;
-    }
-
-    // Print transitions for each test node
-    for (const node of nodes) {
-      if (node.type !== 'test') continue;
-      const previous = seenNodeStatus.get(node.id);
-      if (previous !== node.status) {
-        const icon = statusIcon(node.status);
-        const suffix = node.errorMessage ? ` — ${node.errorMessage}` : '';
-        Logger.i(`  ${icon} ${node.name}: ${node.status}${suffix}`);
-        seenNodeStatus.set(node.id, node.status);
-      }
-    }
-
-    if (run.status === 'completed' || run.status === 'failed' || run.status === 'aborted') {
-      const passed = nodes.filter((n) => n.type === 'test' && n.status === 'completed').length;
-      const total = nodes.filter((n) => n.type === 'test').length;
-      const colour = run.status === 'completed' ? '\x1b[32m' : '\x1b[31m';
-      console.log(`\n${colour}Run ${run.status}: ${passed}/${total} passed\x1b[0m`);
-      return;
-    }
-
-    await sleep(POLL_INTERVAL_MS);
-  }
-
-  Logger.w(`run did not finish within ${MAX_WAIT_MS / 1000}s — check the cloud server`);
-}
-
-function statusIcon(status: string): string {
-  switch (status) {
-    case 'completed': return '✔';
-    case 'failed': return '✖';
-    case 'running': return '◉';
-    case 'queued': return '○';
-    default: return '·';
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatBytes(bytes: number): string {
