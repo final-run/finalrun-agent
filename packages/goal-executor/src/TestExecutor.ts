@@ -103,10 +103,12 @@ export interface TestExecutionResult {
 }
 
 /**
- * Progress callback — called on each iteration.
- * Used by the CLI's terminal renderer to show live progress.
+ * Progress callback — called on each iteration. Supports both sync (CLI
+ * terminal renderer) and async (cloud-server step persistence) consumers.
+ * The executor awaits the callback so async consumers can safely perform
+ * I/O (S3 uploads, DB writes) before the next iteration starts.
  */
-export type ExecutionProgressCallback = (event: ExecutionProgressEvent) => void;
+export type ExecutionProgressCallback = (event: ExecutionProgressEvent) => void | Promise<void>;
 
 export interface ExecutionProgressEvent {
   type: 'planning' | 'executing' | 'step_complete' | 'goal_complete' | 'error';
@@ -117,6 +119,8 @@ export interface ExecutionProgressEvent {
   reason?: string;
   success?: boolean;
   message?: string;
+  /** Full step result — available on `step_complete` events. */
+  stepResult?: AgentActionResult;
 }
 
 interface DeviceState {
@@ -236,7 +240,7 @@ export class TestExecutor {
         };
       }
 
-      onProgress?.({
+      await onProgress?.({
         type: 'planning',
         iteration,
         totalIterations: maxIterations,
@@ -275,7 +279,7 @@ export class TestExecutor {
         };
         this._steps.push(captureStep);
 
-        onProgress?.({
+        await onProgress?.({
           type: 'error',
           iteration,
           totalIterations: maxIterations,
@@ -320,7 +324,7 @@ export class TestExecutor {
       consecutiveTransientCaptureFailures = 0;
       const deviceState = captureResult.deviceState;
 
-      onProgress?.({
+      await onProgress?.({
         type: 'planning',
         iteration,
         totalIterations: maxIterations,
@@ -367,7 +371,7 @@ export class TestExecutor {
           trace,
         });
 
-        onProgress?.({
+        await onProgress?.({
           type: 'error',
           iteration,
           totalIterations: maxIterations,
@@ -426,7 +430,7 @@ export class TestExecutor {
           trace,
         });
 
-        onProgress?.({
+        await onProgress?.({
           type: 'goal_complete',
           iteration,
           totalIterations: maxIterations,
@@ -470,7 +474,7 @@ export class TestExecutor {
           trace,
         });
 
-        onProgress?.({
+        await onProgress?.({
           type: 'goal_complete',
           iteration,
           totalIterations: maxIterations,
@@ -493,7 +497,7 @@ export class TestExecutor {
         };
       }
 
-      onProgress?.({
+      await onProgress?.({
         type: 'executing',
         iteration,
         totalIterations: maxIterations,
@@ -550,7 +554,7 @@ export class TestExecutor {
         });
 
         Logger.e(actionResult.terminalFailure.message);
-        onProgress?.({
+        await onProgress?.({
           type: 'error',
           iteration,
           totalIterations: maxIterations,
@@ -617,7 +621,7 @@ export class TestExecutor {
       stepResult.durationMs = trace.totalMs;
       this._steps.push(stepResult);
 
-      onProgress?.({
+      await onProgress?.({
         type: 'step_complete',
         iteration,
         totalIterations: maxIterations,
@@ -625,6 +629,7 @@ export class TestExecutor {
         reason,
         success: actionResult.success,
         message: actionResult.error,
+        stepResult,
       });
 
       const statusText = actionResult.success ? 'SUCCESS' : `FAILED: ${actionResult.error}`;
