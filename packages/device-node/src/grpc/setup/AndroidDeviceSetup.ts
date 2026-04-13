@@ -30,6 +30,19 @@ interface AndroidDriverStartupState {
   pid?: number;
 }
 
+/**
+ * Thrown when the gRPC server is reachable but UiAutomation never finished
+ * binding within the capture-readiness window. Separate from generic errors
+ * so `prepare` can retry once before rolling back.
+ */
+class CaptureReadinessError extends Error {
+  readonly isCaptureReadinessFailure = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'CaptureReadinessError';
+  }
+}
+
 export class AndroidDeviceSetup {
   private _adbClient: AdbClient;
   private _filePathUtil: FilePathUtil;
@@ -143,47 +156,45 @@ export class AndroidDeviceSetup {
       // launched with `-e port localPort` so all references line up.
       localPort = await this._adbClient.forwardPort(adbPath, deviceSerial);
 
-      Logger.i('Starting Android driver instrumentation...');
-      driverProcess = this._startAndroidDriverFn(adbPath, deviceSerial, localPort);
-      const androidStartupState = this._trackAndroidDriverProcess(
+      let spawned = await this._spawnDriverAndAwaitGrpc(
+        adbPath,
         deviceSerial,
-        driverProcess,
-      );
-      startupState = androidStartupState;
-
-      Logger.i(`Waiting for Android driver gRPC at 127.0.0.1:${localPort}...`);
-      const connected = await this._connectWithPolling(
-        grpcClient,
-        '127.0.0.1',
         localPort,
-        {
-          getStartupFailureMessage: () => androidStartupState.failureMessage,
-          getWaitStatusMessage: () => this._formatWaitStatus(androidStartupState),
-          getTimeoutMessage: () =>
-            this._buildTimeoutMessage(deviceSerial, localPort!, androidStartupState),
-        },
+        grpcClient,
       );
-      if (!connected) {
-        throw new Error('Failed to connect to device via gRPC after 120s - driver did not start');
-      }
+      driverProcess = spawned.driverProcess;
+      startupState = spawned.startupState;
 
-      const captureReady = await waitForDriverCaptureReadiness(grpcClient, {
-        timeoutMs: this._captureReadinessTimeoutMs,
-        delayMs: this._captureReadinessDelayMs,
-      });
-      if (!captureReady.ready) {
-        if (androidStartupState.failureMessage) {
-          throw new Error(androidStartupState.failureMessage);
+      try {
+        await this._awaitCaptureReadiness(spawned.startupState, grpcClient);
+      } catch (err) {
+        if (!(err instanceof CaptureReadinessError)) {
+          throw err;
         }
-        throw new Error(
-          `Driver started and gRPC connected, but UiAutomation never became ready for screenshot capture after ${this._captureReadinessTimeoutMs / 1000}s: ${captureReady.message ?? 'unknown capture readiness error'}`,
+        Logger.w(
+          `Driver reached gRPC but UiAutomation never bound on ${deviceSerial} (${err.message}); retrying once after deep cleanup`,
         );
-      }
-      if (androidStartupState.failureMessage) {
-        throw new Error(androidStartupState.failureMessage);
+        await this._tearDownDriverAttempt(
+          adbPath,
+          deviceSerial,
+          spawned.driverProcess,
+        );
+        driverProcess = null;
+        startupState = null;
+
+        spawned = await this._spawnDriverAndAwaitGrpc(
+          adbPath,
+          deviceSerial,
+          localPort,
+          grpcClient,
+        );
+        driverProcess = spawned.driverProcess;
+        startupState = spawned.startupState;
+
+        await this._awaitCaptureReadiness(spawned.startupState, grpcClient);
       }
 
-      androidStartupState.setupComplete = true;
+      spawned.startupState.setupComplete = true;
       Logger.i('gRPC connection established successfully');
       return { adbPath, deviceSerial };
     } catch (error) {
@@ -306,8 +317,179 @@ export class AndroidDeviceSetup {
       ANDROID_DRIVER_APP_PACKAGE_NAME,
       { suppressErrorLog: true },
     );
-    // Allow time for the old instrumentation to fully release UiAutomation.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // `pm clear` on the instrumentation test package evicts its process and
+    // drops any AccessibilityManagerService binding held against its UID —
+    // the root cause of second-run UiAutomation bind-with-id=-1 failures.
+    // The test APK holds no user data, and the driver APK (which keeps the
+    // runtime permissions granted via `adb install -g`) is deliberately not
+    // cleared.
+    await this._adbClient.clearAppData(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_TEST_PACKAGE_NAME,
+    );
+    await this._waitForProcessGone(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_TEST_PACKAGE_NAME,
+    );
+  }
+
+  /**
+   * Poll `pidof <package>` until the process disappears or the cap elapses.
+   * Replaces blind sleeps around force-stop / pm clear so we proceed as soon
+   * as the device confirms the binding is gone. Best-effort: on cap timeout
+   * we log and continue; the higher-level readiness checks will catch any
+   * real regression.
+   */
+  private async _waitForProcessGone(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+    capMs = 5000,
+  ): Promise<void> {
+    const pollMs = 250;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < capMs) {
+      const running = await this._adbClient.isProcessRunning(
+        adbPath,
+        deviceSerial,
+        packageName,
+      );
+      if (!running) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+    Logger.w(
+      `Timed out waiting for ${packageName} on ${deviceSerial} to exit after ${capMs}ms; continuing best-effort`,
+    );
+  }
+
+  /**
+   * Install APKs already done; port forward already set up. This brings up a
+   * single instrumentation attempt: spawn the driver, track its process, and
+   * poll the gRPC port. On failure it cleans up the spawned process before
+   * re-throwing so the caller doesn't leak a pid.
+   */
+  private async _spawnDriverAndAwaitGrpc(
+    adbPath: string,
+    deviceSerial: string,
+    localPort: number,
+    grpcClient: GrpcDriverClient,
+  ): Promise<{
+    driverProcess: AndroidDriverProcessHandle;
+    startupState: AndroidDriverStartupState;
+  }> {
+    Logger.i('Starting Android driver instrumentation...');
+    const driverProcess = this._startAndroidDriverFn(adbPath, deviceSerial, localPort);
+    const startupState = this._trackAndroidDriverProcess(deviceSerial, driverProcess);
+
+    try {
+      Logger.i(`Waiting for Android driver gRPC at 127.0.0.1:${localPort}...`);
+      const connected = await this._connectWithPolling(
+        grpcClient,
+        '127.0.0.1',
+        localPort,
+        {
+          getStartupFailureMessage: () => startupState.failureMessage,
+          getWaitStatusMessage: () => this._formatWaitStatus(startupState),
+          getTimeoutMessage: () =>
+            this._buildTimeoutMessage(deviceSerial, localPort, startupState),
+        },
+      );
+      if (!connected) {
+        throw new Error(
+          'Failed to connect to device via gRPC after 120s - driver did not start',
+        );
+      }
+      return { driverProcess, startupState };
+    } catch (err) {
+      if (!driverProcess.killed) {
+        try {
+          driverProcess.kill('SIGKILL');
+        } catch (killErr) {
+          Logger.w(
+            `Failed to kill Android driver process after gRPC connect failure for ${deviceSerial}:`,
+            killErr,
+          );
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Poll `getScreenshotAndHierarchy` until UiAutomation is bound or the
+   * capture-readiness window expires. If the window expires while the driver
+   * process is still alive, throw `CaptureReadinessError` so `prepare` can
+   * retry once; any other failure (process died, unknown error) rethrows
+   * straight through and falls to rollback.
+   */
+  private async _awaitCaptureReadiness(
+    startupState: AndroidDriverStartupState,
+    grpcClient: GrpcDriverClient,
+  ): Promise<void> {
+    const captureReady = await waitForDriverCaptureReadiness(grpcClient, {
+      timeoutMs: this._captureReadinessTimeoutMs,
+      delayMs: this._captureReadinessDelayMs,
+    });
+    if (!captureReady.ready) {
+      if (startupState.failureMessage) {
+        throw new Error(startupState.failureMessage);
+      }
+      throw new CaptureReadinessError(
+        `Driver started and gRPC connected, but UiAutomation never became ready for screenshot capture after ${this._captureReadinessTimeoutMs / 1000}s: ${captureReady.message ?? 'unknown capture readiness error'}`,
+      );
+    }
+    if (startupState.failureMessage) {
+      throw new Error(startupState.failureMessage);
+    }
+  }
+
+  /**
+   * Inter-attempt teardown used when the first driver start succeeded at the
+   * gRPC level but failed the UiAutomation readiness gate. Kills the prior
+   * process, force-stops both packages, clears the test package's state, and
+   * waits for its process to exit before the next attempt starts.
+   */
+  private async _tearDownDriverAttempt(
+    adbPath: string,
+    deviceSerial: string,
+    driverProcess: AndroidDriverProcessHandle,
+  ): Promise<void> {
+    if (!driverProcess.killed) {
+      try {
+        driverProcess.kill('SIGKILL');
+      } catch (error) {
+        Logger.w(
+          `Failed to kill previous Android driver process for ${deviceSerial}:`,
+          error,
+        );
+      }
+    }
+    await this._adbClient.forceStop(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_TEST_PACKAGE_NAME,
+      { suppressErrorLog: true },
+    );
+    await this._adbClient.forceStop(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_APP_PACKAGE_NAME,
+      { suppressErrorLog: true },
+    );
+    await this._adbClient.clearAppData(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_TEST_PACKAGE_NAME,
+    );
+    await this._waitForProcessGone(
+      adbPath,
+      deviceSerial,
+      ANDROID_DRIVER_TEST_PACKAGE_NAME,
+    );
   }
 
   private async _rollbackFailedSetup(params: {
@@ -357,6 +539,15 @@ export class AndroidDeviceSetup {
         params.deviceSerial,
         ANDROID_DRIVER_TEST_PACKAGE_NAME,
         { suppressErrorLog: true },
+      );
+      // Ensure the instrumentation host is gone before returning control.
+      // Otherwise the next `prepare()` can race a still-running `am instrument`
+      // that still holds the old UiAutomation binding, reproducing the very
+      // second-run failure this rollback is meant to clean up after.
+      await this._waitForProcessGone(
+        params.adbPath,
+        params.deviceSerial,
+        ANDROID_DRIVER_TEST_PACKAGE_NAME,
       );
     }
   }

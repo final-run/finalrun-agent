@@ -74,6 +74,13 @@ const TRANSIENT_CAPTURE_PATTERNS = [
   /empty screenshot/i,
   /missing hierarchy/i,
   /invalid hierarchy/i,
+  // Deep inside the Android driver, a stale UiAutomation binding can surface
+  // as a JVM NPE from framework code (`getClass()` on a null field) rather
+  // than the clean "UiAutomation not connected" string. Treat both shapes as
+  // transient so the readiness window gets to retry instead of bailing on
+  // the first poll.
+  /null object reference/i,
+  /nullpointerexception/i,
 ];
 
 export function isTransientCaptureFailureMessage(

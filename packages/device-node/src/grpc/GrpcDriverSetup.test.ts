@@ -104,6 +104,33 @@ function createFilePathUtil(overrides?: Partial<FilePathUtil>): FilePathUtil {
   };
 }
 
+// Android driver setup touches several AdbClient methods during cleanup,
+// install, forward, and rollback. Tests that don't care about those calls can
+// use this default fake and override just the methods they assert on.
+function createAndroidAdbClientFake(
+  overrides: Partial<Record<string, (...args: unknown[]) => unknown>> = {},
+): AdbClient {
+  return {
+    async installApp() {
+      return true;
+    },
+    async removePortForward() {},
+    async forwardPort() {
+      return 50051;
+    },
+    async forceStop() {
+      return { success: true };
+    },
+    async clearAppData() {
+      return { success: true };
+    },
+    async isProcessRunning() {
+      return false;
+    },
+    ...overrides,
+  } as unknown as AdbClient;
+}
+
 test('GrpcDriverSetup waits for screenshot capture readiness after ping succeeds', async () => {
   const grpcClient = new FakeGrpcClient({
     pingResponses: [true],
@@ -122,18 +149,7 @@ test('GrpcDriverSetup waits for screenshot capture readiness after ping succeeds
   const driverProcess = new FakeAndroidDriverProcess();
 
   const setup = new GrpcDriverSetup({
-    adbClient: {
-      async installApp() {
-        return true;
-      },
-      async removePortForward() {},
-      async forwardPort() {
-        return 50051;
-      },
-      async forceStop() {
-        return { success: true };
-      },
-    } as unknown as AdbClient,
+    adbClient: createAndroidAdbClientFake(),
     simctlClient: {} as SimctlClient,
     filePathUtil: createFilePathUtil({
       getIOSDriverAppPath: async () => null,
@@ -160,37 +176,37 @@ test('GrpcDriverSetup waits for screenshot capture readiness after ping succeeds
   assert.equal(grpcClient.captureCalls, 3);
 });
 
-test('GrpcDriverSetup fails when Android UiAutomation never becomes capture-ready', async () => {
+test('GrpcDriverSetup fails when Android UiAutomation never becomes capture-ready after a retry', async () => {
+  // prepare() now retries the driver start phase once when UiAutomation
+  // never binds, so the final-failure path needs to survive both attempts.
+  const transientCaptureResponse: GrpcScreenshotResponse = {
+    success: false,
+    message: 'UiAutomation not connected',
+    screenWidth: 0,
+    screenHeight: 0,
+  };
   const grpcClient = new FakeGrpcClient({
-    pingResponses: [true],
-    captureResponses: [
-      { success: false, message: 'UiAutomation not connected', screenWidth: 0, screenHeight: 0 },
-      { success: false, message: 'UiAutomation not connected', screenWidth: 0, screenHeight: 0 },
-      { success: false, message: 'UiAutomation not connected', screenWidth: 0, screenHeight: 0 },
-    ],
+    pingResponses: [true, true],
+    captureResponses: Array.from({ length: 40 }, () => ({
+      ...transientCaptureResponse,
+    })),
   });
-  const driverProcess = new FakeAndroidDriverProcess();
+  const driverProcesses = [new FakeAndroidDriverProcess(), new FakeAndroidDriverProcess()];
+  let spawnCount = 0;
 
   const setup = new GrpcDriverSetup({
-    adbClient: {
-      async installApp() {
-        return true;
-      },
-      async removePortForward() {},
-      async forwardPort() {
-        return 50051;
-      },
-      async forceStop() {
-        return { success: true };
-      },
-    } as unknown as AdbClient,
+    adbClient: createAndroidAdbClientFake(),
     simctlClient: {} as SimctlClient,
     filePathUtil: createFilePathUtil({
       getIOSDriverAppPath: async () => null,
     }),
     grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
     delayFn: async () => undefined,
-    startAndroidDriverFn: () => driverProcess,
+    startAndroidDriverFn: () => {
+      const next = driverProcesses[spawnCount] ?? new FakeAndroidDriverProcess();
+      spawnCount += 1;
+      return next;
+    },
     captureReadinessTimeoutMs: 20,
     captureReadinessDelayMs: 5,
   });
@@ -208,6 +224,119 @@ test('GrpcDriverSetup fails when Android UiAutomation never becomes capture-read
       ),
     /UiAutomation never became ready/,
   );
+  assert.equal(spawnCount, 2, 'expected one retry after capture-readiness failure');
+  assert.equal(driverProcesses[0]!.killed, true, 'first driver should be killed before retry');
+});
+
+test('GrpcDriverSetup recovers when a stale UiAutomation binding clears after the one-shot retry', async () => {
+  // Simulates the back-to-back-run failure: the first instrumentation attempt
+  // connects over gRPC but never finishes binding UiAutomation. After the
+  // inter-attempt teardown (force-stop + pm clear + pidof wait) the second
+  // attempt succeeds. This is the core scenario the retry guard protects.
+  const driverProcesses = [new FakeAndroidDriverProcess(), new FakeAndroidDriverProcess()];
+  let spawnCount = 0;
+  const adbCalls: string[] = [];
+
+  // State-driven fake: the first spawned driver always replies "UiAutomation
+  // not connected" (exhausting the readiness window), and the retry's driver
+  // returns a successful capture on its first poll. This keeps the response
+  // boundary tied to *attempt*, not to how many polls fit in a 20ms window.
+  const grpcClient = {
+    channelCreations: [] as Array<{ host: string; port: number }>,
+    captureCalls: 0,
+    get isConnected(): boolean {
+      return true;
+    },
+    createChannel(host: string, port: number): void {
+      this.channelCreations.push({ host, port });
+    },
+    async ping(): Promise<boolean> {
+      return true;
+    },
+    async getScreenshotAndHierarchy(): Promise<GrpcScreenshotResponse> {
+      this.captureCalls += 1;
+      if (spawnCount <= 1) {
+        return {
+          success: false,
+          message: 'UiAutomation not connected',
+          screenWidth: 0,
+          screenHeight: 0,
+        };
+      }
+      return {
+        success: true,
+        screenshot: 'image',
+        hierarchy: '[]',
+        screenWidth: 1080,
+        screenHeight: 2400,
+      };
+    },
+    async updateAppIds(): Promise<{ success: boolean; message?: string }> {
+      return { success: true };
+    },
+    close(): void {},
+  };
+
+  const setup = new GrpcDriverSetup({
+    adbClient: createAndroidAdbClientFake({
+      async forceStop(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
+        adbCalls.push(`forceStop:${packageName}`);
+        return { success: true };
+      },
+      async clearAppData(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
+        adbCalls.push(`clearAppData:${packageName}`);
+        return { success: true };
+      },
+      async isProcessRunning(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
+        adbCalls.push(`isProcessRunning:${packageName}`);
+        return false;
+      },
+    }),
+    simctlClient: {} as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      getIOSDriverAppPath: async () => null,
+    }),
+    grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
+    delayFn: async () => undefined,
+    startAndroidDriverFn: () => {
+      const next = driverProcesses[spawnCount] ?? new FakeAndroidDriverProcess();
+      spawnCount += 1;
+      return next;
+    },
+    captureReadinessTimeoutMs: 20,
+    captureReadinessDelayMs: 5,
+  });
+
+  const device = await setup.setUp(
+    new DeviceInfo({
+      id: 'emulator-5554',
+      deviceUUID: 'device-1',
+      isAndroid: true,
+      sdkVersion: 34,
+      name: 'Android Emulator',
+    }),
+  );
+
+  assert.equal(device.getDeviceInfo().id, 'emulator-5554');
+  assert.equal(spawnCount, 2, 'expected exactly one retry');
+  assert.equal(driverProcesses[0]!.killed, true, 'first driver should be SIGKILLed between attempts');
+  assert.equal(driverProcesses[1]!.killed, false, 'second driver should remain alive after success');
+  // The same force-stop + pm clear + pidof sequence must run twice — once for
+  // pre-run cleanup, once between attempts — so a stale UiAutomation binding
+  // from the first attempt is genuinely released before the retry spawns.
+  assert.deepEqual(adbCalls, [
+    'forceStop:app.finalrun.android.test',
+    'forceStop:app.finalrun.android',
+    'clearAppData:app.finalrun.android.test',
+    'isProcessRunning:app.finalrun.android.test',
+    'forceStop:app.finalrun.android.test',
+    'forceStop:app.finalrun.android',
+    'clearAppData:app.finalrun.android.test',
+    'isProcessRunning:app.finalrun.android.test',
+  ]);
 });
 
 test('GrpcDriverSetup wires Android runtime scroll through adb', async () => {
@@ -231,19 +360,17 @@ test('GrpcDriverSetup wires Android runtime scroll through adb', async () => {
   }> = [];
 
   const setup = new GrpcDriverSetup({
-    adbClient: {
-      async installApp() {
-        return true;
-      },
-      async removePortForward() {},
-      async forwardPort() {
-        return 50051;
-      },
-      async swipe(adbPath: string, deviceSerial: string, params: Record<string, number>) {
+    adbClient: createAndroidAdbClientFake({
+      async swipe(...args: unknown[]) {
+        const [adbPath, deviceSerial, params] = args as [
+          string,
+          string,
+          Record<string, number>,
+        ];
         swipeCalls.push({ adbPath, deviceSerial, params });
         return { success: true, message: 'scrolled via adb' };
       },
-    } as unknown as AdbClient,
+    }),
     simctlClient: {} as SimctlClient,
     filePathUtil: createFilePathUtil({
       getIOSDriverAppPath: async () => null,
@@ -304,8 +431,9 @@ test('GrpcDriverSetup fails fast when the Android driver exits early and rolls b
   let delayCalls = 0;
 
   const setup = new GrpcDriverSetup({
-    adbClient: {
-      async installApp(_adbPath: string, _deviceSerial: string, apkPath: string) {
+    adbClient: createAndroidAdbClientFake({
+      async installApp(...args: unknown[]) {
+        const [, , apkPath] = args as [string, string, string];
         adbCalls.push(`install:${apkPath}`);
         return true;
       },
@@ -316,11 +444,22 @@ test('GrpcDriverSetup fails fast when the Android driver exits early and rolls b
         adbCalls.push('forwardPort');
         return 50051;
       },
-      async forceStop(_adbPath: string, _deviceSerial: string, packageName: string) {
+      async forceStop(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
         adbCalls.push(`forceStop:${packageName}`);
         return { success: true };
       },
-    } as unknown as AdbClient,
+      async clearAppData(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
+        adbCalls.push(`clearAppData:${packageName}`);
+        return { success: true };
+      },
+      async isProcessRunning(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
+        adbCalls.push(`isProcessRunning:${packageName}`);
+        return false;
+      },
+    }),
     simctlClient: {} as SimctlClient,
     filePathUtil: createFilePathUtil({
       getIOSDriverAppPath: async () => null,
@@ -353,13 +492,22 @@ test('GrpcDriverSetup fails fast when the Android driver exits early and rolls b
   assert.equal(delayCalls, 1);
   assert.equal(driverProcess.killed, true);
   assert.deepEqual(adbCalls, [
+    // _cleanupStaleDriverProcesses: force-stop both packages, clear test
+    // package state, then poll `pidof` until the instrumentation host exits.
+    'forceStop:app.finalrun.android.test',
+    'forceStop:app.finalrun.android',
+    'clearAppData:app.finalrun.android.test',
+    'isProcessRunning:app.finalrun.android.test',
     'install:/tmp/app-debug.apk',
     'install:/tmp/app-debug-androidTest.apk',
     'removePortForward',
     'forwardPort',
+    // _rollbackFailedSetup: tear down the port forward, stop both packages,
+    // then confirm the instrumentation host is gone before the error surfaces.
     'removePortForward',
     'forceStop:app.finalrun.android',
     'forceStop:app.finalrun.android.test',
+    'isProcessRunning:app.finalrun.android.test',
   ]);
 });
 
@@ -371,18 +519,7 @@ test('GrpcDriverSetup includes Android process status in gRPC timeout failures',
   let wroteLog = false;
 
   const setup = new GrpcDriverSetup({
-    adbClient: {
-      async installApp() {
-        return true;
-      },
-      async removePortForward() {},
-      async forwardPort() {
-        return 50051;
-      },
-      async forceStop() {
-        return { success: true };
-      },
-    } as unknown as AdbClient,
+    adbClient: createAndroidAdbClientFake(),
     simctlClient: {} as SimctlClient,
     filePathUtil: createFilePathUtil({
       getIOSDriverAppPath: async () => null,
