@@ -4,12 +4,15 @@ import type { DeviceSession } from '../device/DeviceSession.js';
 import {
   ScreenshotCaptureHelper,
   waitForCaptureReadiness,
+  type CaptureReadinessResult,
 } from '../device/ScreenshotCapture.js';
 
 export interface CaptureReadinessOptions {
   timeoutMs?: number;
   delayMs?: number;
 }
+
+export type { CaptureReadinessResult } from '../device/ScreenshotCapture.js';
 
 export class ScreenshotCaptureCoordinator {
   private _helper: ScreenshotCaptureHelper;
@@ -32,6 +35,6 @@ export class ScreenshotCaptureCoordinator {
 export async function waitForDriverCaptureReadiness(
   grpcClient: GrpcDriverClient,
   options?: CaptureReadinessOptions,
-): Promise<{ ready: boolean; message: string | null }> {
+): Promise<CaptureReadinessResult> {
   return await waitForCaptureReadiness(grpcClient, options);
 }

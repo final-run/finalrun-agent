@@ -339,6 +339,115 @@ test('GrpcDriverSetup recovers when a stale UiAutomation binding clears after th
   ]);
 });
 
+test('GrpcDriverSetup does not retry when capture-readiness reports a non-transient failure', async () => {
+  // "device offline" is not in TRANSIENT_CAPTURE_PATTERNS, so
+  // waitForCaptureReadiness early-bails with {ready: false, transient: false}.
+  // The retry is meant for the stale-UiAutomation (transient-but-window-expired)
+  // case only — a non-transient failure must surface immediately without
+  // burning an extra teardown + re-spawn cycle.
+  const grpcClient = new FakeGrpcClient({
+    pingResponses: [true],
+    captureResponses: [
+      { success: false, message: 'device offline', screenWidth: 0, screenHeight: 0 },
+    ],
+  });
+  let spawnCount = 0;
+
+  const setup = new GrpcDriverSetup({
+    adbClient: createAndroidAdbClientFake(),
+    simctlClient: {} as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      getIOSDriverAppPath: async () => null,
+    }),
+    grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
+    delayFn: async () => undefined,
+    startAndroidDriverFn: () => {
+      spawnCount += 1;
+      return new FakeAndroidDriverProcess();
+    },
+    captureReadinessTimeoutMs: 1000,
+    captureReadinessDelayMs: 0,
+  });
+
+  await assert.rejects(
+    () =>
+      setup.setUp(
+        new DeviceInfo({
+          id: 'emulator-5554',
+          deviceUUID: 'device-1',
+          isAndroid: true,
+          sdkVersion: 34,
+          name: 'Android Emulator',
+        }),
+      ),
+    /non-transient failure.*device offline/,
+  );
+  assert.equal(spawnCount, 1, 'non-transient failure must not trigger the one-shot retry');
+});
+
+test('GrpcDriverSetup aborts retry when the prior test-package process never disappears', async () => {
+  // Inter-attempt teardown polls `pidof` to confirm the instrumentation host
+  // is gone before spawning a second `am instrument`. If the poll times out,
+  // the stale UiAutomation binding is likely still held — retrying would race
+  // the exact condition the retry is meant to escape. The retry must bail and
+  // surface the original capture-readiness error instead.
+  const transientCaptureResponse: GrpcScreenshotResponse = {
+    success: false,
+    message: 'UiAutomation not connected',
+    screenWidth: 0,
+    screenHeight: 0,
+  };
+  const grpcClient = new FakeGrpcClient({
+    pingResponses: [true],
+    captureResponses: Array.from({ length: 20 }, () => ({
+      ...transientCaptureResponse,
+    })),
+  });
+  let spawnCount = 0;
+  const isProcessRunningCalls: string[] = [];
+
+  const setup = new GrpcDriverSetup({
+    adbClient: createAndroidAdbClientFake({
+      async isProcessRunning(...args: unknown[]) {
+        const [, , packageName] = args as [string, string, string];
+        isProcessRunningCalls.push(packageName);
+        // The pre-run cleanup call (first invocation) sees a clean device.
+        // Every subsequent call — the inter-attempt teardown poll — keeps
+        // reporting the instrumentation host as alive, simulating a binding
+        // that never releases within the cap.
+        return isProcessRunningCalls.length > 1;
+      },
+    }),
+    simctlClient: {} as SimctlClient,
+    filePathUtil: createFilePathUtil({
+      getIOSDriverAppPath: async () => null,
+    }),
+    grpcClientFactory: () => grpcClient as unknown as GrpcDriverClient,
+    delayFn: async () => undefined,
+    startAndroidDriverFn: () => {
+      spawnCount += 1;
+      return new FakeAndroidDriverProcess();
+    },
+    captureReadinessTimeoutMs: 20,
+    captureReadinessDelayMs: 5,
+  });
+
+  await assert.rejects(
+    () =>
+      setup.setUp(
+        new DeviceInfo({
+          id: 'emulator-5554',
+          deviceUUID: 'device-1',
+          isAndroid: true,
+          sdkVersion: 34,
+          name: 'Android Emulator',
+        }),
+      ),
+    /UiAutomation never became ready/,
+  );
+  assert.equal(spawnCount, 1, 'retry must not spawn a second driver when the prior one is still alive');
+});
+
 test('GrpcDriverSetup wires Android runtime scroll through adb', async () => {
   const grpcClient = new FakeGrpcClient({
     pingResponses: [true],

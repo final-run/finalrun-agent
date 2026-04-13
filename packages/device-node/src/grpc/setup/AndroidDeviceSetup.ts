@@ -174,13 +174,21 @@ export class AndroidDeviceSetup {
         Logger.w(
           `Driver reached gRPC but UiAutomation never bound on ${deviceSerial} (${err.message}); retrying once after deep cleanup`,
         );
-        await this._tearDownDriverAttempt(
+        const priorProcessGone = await this._tearDownDriverAttempt(
           adbPath,
           deviceSerial,
           spawned.driverProcess,
         );
         driverProcess = null;
         startupState = null;
+        if (!priorProcessGone) {
+          // The prior instrumentation host is still alive after the cleanup
+          // cap, so its UiAutomation binding is likely still held. Starting a
+          // second `am instrument` now would race the same stale binding the
+          // retry is meant to escape — bail and surface the original readiness
+          // error instead of masking it with a second failure.
+          throw err;
+        }
 
         spawned = await this._spawnDriverAndAwaitGrpc(
           adbPath,
@@ -337,17 +345,19 @@ export class AndroidDeviceSetup {
 
   /**
    * Poll `pidof <package>` until the process disappears or the cap elapses.
-   * Replaces blind sleeps around force-stop / pm clear so we proceed as soon
-   * as the device confirms the binding is gone. Best-effort: on cap timeout
-   * we log and continue; the higher-level readiness checks will catch any
-   * real regression.
+   * Returns true if the process is confirmed gone, false on cap timeout.
+   * Callers decide whether a timeout is fatal: pre-run cleanup treats it as
+   * best-effort (subsequent phases will surface real problems), but the
+   * inter-attempt retry path must NOT proceed on a timeout — the stale
+   * UiAutomation binding we were waiting to release is the exact race the
+   * retry is meant to avoid.
    */
   private async _waitForProcessGone(
     adbPath: string,
     deviceSerial: string,
     packageName: string,
     capMs = 5000,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const pollMs = 250;
     const startedAt = Date.now();
     while (Date.now() - startedAt < capMs) {
@@ -357,13 +367,14 @@ export class AndroidDeviceSetup {
         packageName,
       );
       if (!running) {
-        return;
+        return true;
       }
       await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
     Logger.w(
-      `Timed out waiting for ${packageName} on ${deviceSerial} to exit after ${capMs}ms; continuing best-effort`,
+      `Timed out waiting for ${packageName} on ${deviceSerial} to exit after ${capMs}ms`,
     );
+    return false;
   }
 
   /**
@@ -421,10 +432,11 @@ export class AndroidDeviceSetup {
 
   /**
    * Poll `getScreenshotAndHierarchy` until UiAutomation is bound or the
-   * capture-readiness window expires. If the window expires while the driver
-   * process is still alive, throw `CaptureReadinessError` so `prepare` can
-   * retry once; any other failure (process died, unknown error) rethrows
-   * straight through and falls to rollback.
+   * capture-readiness window expires. Only the transient window-expired case
+   * throws `CaptureReadinessError` so `prepare` retries once; a non-transient
+   * failure (e.g. "device offline", permission denied) throws a plain Error
+   * and falls straight to rollback. A process-death failure also surfaces
+   * directly via `startupState.failureMessage` — no retry.
    */
   private async _awaitCaptureReadiness(
     startupState: AndroidDriverStartupState,
@@ -438,8 +450,14 @@ export class AndroidDeviceSetup {
       if (startupState.failureMessage) {
         throw new Error(startupState.failureMessage);
       }
+      const reason = captureReady.message ?? 'unknown capture readiness error';
+      if (!captureReady.transient) {
+        throw new Error(
+          `Driver started and gRPC connected, but capture-readiness reported a non-transient failure: ${reason}`,
+        );
+      }
       throw new CaptureReadinessError(
-        `Driver started and gRPC connected, but UiAutomation never became ready for screenshot capture after ${this._captureReadinessTimeoutMs / 1000}s: ${captureReady.message ?? 'unknown capture readiness error'}`,
+        `Driver started and gRPC connected, but UiAutomation never became ready for screenshot capture after ${this._captureReadinessTimeoutMs / 1000}s: ${reason}`,
       );
     }
     if (startupState.failureMessage) {
@@ -452,12 +470,14 @@ export class AndroidDeviceSetup {
    * gRPC level but failed the UiAutomation readiness gate. Kills the prior
    * process, force-stops both packages, clears the test package's state, and
    * waits for its process to exit before the next attempt starts.
+   * Returns true if the prior instrumentation host is confirmed gone — the
+   * retry should only proceed in that case.
    */
   private async _tearDownDriverAttempt(
     adbPath: string,
     deviceSerial: string,
     driverProcess: AndroidDriverProcessHandle,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!driverProcess.killed) {
       try {
         driverProcess.kill('SIGKILL');
@@ -485,7 +505,7 @@ export class AndroidDeviceSetup {
       deviceSerial,
       ANDROID_DRIVER_TEST_PACKAGE_NAME,
     );
-    await this._waitForProcessGone(
+    return await this._waitForProcessGone(
       adbPath,
       deviceSerial,
       ANDROID_DRIVER_TEST_PACKAGE_NAME,
