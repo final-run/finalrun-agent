@@ -74,6 +74,13 @@ const TRANSIENT_CAPTURE_PATTERNS = [
   /empty screenshot/i,
   /missing hierarchy/i,
   /invalid hierarchy/i,
+  // Deep inside the Android driver, a stale UiAutomation binding can surface
+  // as a JVM NPE from framework code (`getClass()` on a null field) rather
+  // than the clean "UiAutomation not connected" string. Treat both shapes as
+  // transient so the readiness window gets to retry instead of bailing on
+  // the first poll.
+  /null object reference/i,
+  /nullpointerexception/i,
 ];
 
 export function isTransientCaptureFailureMessage(
@@ -133,10 +140,14 @@ export function validateScreenshotCaptureResponse(
   };
 }
 
+export type CaptureReadinessResult =
+  | { ready: true; message: null }
+  | { ready: false; transient: boolean; message: string | null };
+
 export async function waitForCaptureReadiness(
   grpcClient: GrpcDriverClient,
   options?: CaptureReadinessOptions,
-): Promise<{ ready: boolean; message: string | null }> {
+): Promise<CaptureReadinessResult> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_CAPTURE_READINESS_TIMEOUT_MS;
   const delayMs = options?.delayMs ?? DEFAULT_CAPTURE_READINESS_DELAY_MS;
   const startedAt = performance.now();
@@ -161,7 +172,9 @@ export async function waitForCaptureReadiness(
       `ScreenshotCaptureHelper[capture-readiness attempt ${attempt}]: capture not ready transient=${captureAttempt.transient} reason=${captureAttempt.message ?? 'unknown error'}`,
     );
     if (!captureAttempt.transient) {
-      return { ready: false, message: captureAttempt.message };
+      // Non-transient failure (e.g. "device offline", permission denied):
+      // no amount of waiting will fix this, and the caller must not retry.
+      return { ready: false, transient: false, message: captureAttempt.message };
     }
 
     await delay(delayMs);
@@ -170,8 +183,11 @@ export async function waitForCaptureReadiness(
   Logger.d(
     `ScreenshotCaptureHelper[capture-readiness]: timed out after ${attempt} attempts over ${roundDuration(timeoutMs)}ms`,
   );
+  // Window exhausted while transient failures kept repeating — the stale
+  // UiAutomation case. Safe for callers to retry once after deep cleanup.
   return {
     ready: false,
+    transient: true,
     message:
       lastMessage ??
       'Driver started but UiAutomation never became ready for screenshot capture',

@@ -413,6 +413,27 @@ export class AdbClient {
     );
   }
 
+  /**
+   * Best-effort check for whether a package has any live process on the
+   * device. Uses `pidof <pkg>`; behaviour across Android versions varies
+   * (empty stdout vs. non-zero exit when no match), so "any signal that
+   * something is still running" is treated as running. Errors are treated as
+   * not-running so teardown pollers don't hang on a disconnected device.
+   */
+  async isProcessRunning(
+    adbPath: string,
+    deviceSerial: string,
+    packageName: string,
+  ): Promise<boolean> {
+    const result = await this._runAdb(
+      adbPath,
+      ['-s', deviceSerial, 'shell', 'pidof', packageName],
+      `Failed to check process for ${packageName} on ${deviceSerial}`,
+      { suppressErrorLog: true },
+    );
+    return result.success && !!result.stdout && result.stdout.length > 0;
+  }
+
   async performKeyPress(
     adbPath: string,
     deviceSerial: string,

@@ -7,11 +7,15 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'child_process';
 import { RecordingRequest } from '@finalrun/common';
-import { AndroidRecordingProvider } from './AndroidRecordingProvider.js';
+import {
+  AndroidRecordingProvider,
+  ScrcpyStartupInterruptedError,
+} from './AndroidRecordingProvider.js';
 
 class FakeChildProcess extends EventEmitter {
   pid: number | undefined = 1234;
   exitCode: number | null = null;
+  signalCode: NodeJS.Signals | null = null;
   stdout = new PassThrough();
   stderr = new PassThrough();
   killSignals: Array<NodeJS.Signals | number | undefined> = [];
@@ -96,7 +100,51 @@ test('AndroidRecordingProvider fails startup if scrcpy exits during the readines
           apiKey: 'key',
         }),
       }),
-    /scrcpy exited before recording became ready: adb device unauthorized/,
+    /scrcpy exited before recording became ready \(code=1\): adb device unauthorized/,
+  );
+});
+
+test('AndroidRecordingProvider reports SIGINT interruption instead of scrcpy-server push noise', async () => {
+  // Repro of the original bug: a SIGINT during startup produced a "1 file pushed" red
+  // herring because _formatStartupExit previously led with raw stdout. Now the signal is
+  // surfaced explicitly via ScrcpyStartupInterruptedError and the banner is suppressed.
+  const process = new FakeChildProcess();
+  const provider = new AndroidRecordingProvider({
+    execFileFn: async () => ({ stdout: '/usr/bin/scrcpy', stderr: '' }),
+    spawnFn: (((_command: string, _args?: readonly string[]) => {
+      queueMicrotask(() => {
+        process.stdout.write(
+          '/opt/homebrew/Cellar/scrcpy/3.3.4/share/scrcpy/scrcpy-server: ' +
+            '1 file pushed, 0 skipped. 132.5 MB/s (90980 bytes in 0.001s)\n',
+        );
+        process.signalCode = 'SIGINT';
+        process.emit('exit', null, 'SIGINT');
+      });
+      return process as unknown as ReturnType<typeof import('child_process').spawn>;
+    }) as unknown) as typeof import('child_process').spawn,
+    delayFn: async () => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      provider.startRecordingProcess({
+        deviceId: 'emulator-5554',
+        filePath: '/tmp/run_case.mp4',
+        recordingRequest: new RecordingRequest({
+          runId: 'run',
+          testId: 'case',
+          apiKey: 'key',
+        }),
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof ScrcpyStartupInterruptedError);
+      assert.equal(error.signal, 'SIGINT');
+      assert.match(error.message, /interrupted by SIGINT/);
+      assert.doesNotMatch(error.message, /1 file pushed/);
+      return true;
+    },
   );
 });
 
