@@ -183,6 +183,7 @@ setup:
 - **Only use allowed actions**: Every step must map to an action from the **Allowed Action Vocabulary** table above. Do not write steps that require actions outside that list.
 - **Verify intermediate states in steps**: When a multi-step flow depends on an earlier action succeeding (e.g. a form submission before checking a confirmation screen), add a "Verify" step between them to confirm the intermediate state.
 - **Reserve `expected_state` for the final screen**: Do not put intermediate checks in `expected_state`. Use inline "Verify" steps in `steps` for intermediate validation instead.
+- **Avoid verifying ephemeral UI (toasts, snackbars, transient banners)**: Short-lived messages disappear on their own timer (typically 2–5s) and race against the agent's verification step. Do not assert on them in `steps` or `expected_state`. Verify the persistent consequence instead (updated list, badge count, navigated screen, changed field value).
 
 ### Positional Context & Verification
 

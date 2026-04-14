@@ -1,6 +1,6 @@
 {
   "name": "@finalrun/finalrun-agent",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": false,
   "description": "AI-driven mobile app testing CLI for YAML-defined tests on Android and iOS",
   "license": "Apache-2.0",

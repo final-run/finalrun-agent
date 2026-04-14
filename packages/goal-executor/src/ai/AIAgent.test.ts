@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PLANNER_ACTION_ROTATE } from '@finalrun/common';
+import {
+  FEATURE_GROUNDER,
+  PLANNER_ACTION_ROTATE,
+  PLANNER_ACTION_TAP,
+} from '@finalrun/common';
 import { AIAgent, GrounderResponse, PlannerResponse } from './AIAgent.js';
+import { FatalProviderError } from './providerFailure.js';
 
 type LLMPhase = 'planner' | 'grounder';
 
-function parsePlannerResponse(raw: string): PlannerResponse {
+function parsePlannerResponse(output: unknown, rawText = ''): PlannerResponse {
   const agent = new AIAgent({
     provider: 'google',
     modelName: 'gemini-test',
@@ -14,12 +19,12 @@ function parsePlannerResponse(raw: string): PlannerResponse {
 
   return (
     agent as unknown as {
-      _parsePlannerResponse: (value: string) => PlannerResponse;
+      _parsePlannerResponse: (output: unknown, rawText: string) => PlannerResponse;
     }
-  )._parsePlannerResponse(raw);
+  )._parsePlannerResponse(output, rawText);
 }
 
-function parseGrounderResponse(raw: string): GrounderResponse {
+function parseGrounderResponse(output: unknown, rawText = ''): GrounderResponse {
   const agent = new AIAgent({
     provider: 'google',
     modelName: 'gemini-test',
@@ -28,23 +33,9 @@ function parseGrounderResponse(raw: string): GrounderResponse {
 
   return (
     agent as unknown as {
-      _parseGrounderResponse: (value: string) => GrounderResponse;
+      _parseGrounderResponse: (output: unknown, rawText: string) => GrounderResponse;
     }
-  )._parseGrounderResponse(raw);
-}
-
-function extractJson(raw: string): Record<string, unknown> | null {
-  const agent = new AIAgent({
-    provider: 'google',
-    modelName: 'gemini-test',
-    apiKey: 'test-key',
-  });
-
-  return (
-    agent as unknown as {
-      _extractJson: (value: string) => Record<string, unknown> | null;
-    }
-  )._extractJson(raw);
+  )._parseGrounderResponse(output, rawText);
 }
 
 function getProviderOptions(params: {
@@ -64,71 +55,6 @@ function getProviderOptions(params: {
     }
   )._getProviderOptions(params.phase);
 }
-
-test('AIAgent extracts plain valid JSON when top-level output is present', () => {
-  const json = extractJson(JSON.stringify({
-    output: { index: 42, reason: 'Exact text match.' },
-  }));
-
-  assert.deepEqual(json, {
-    output: { index: 42, reason: 'Exact text match.' },
-  });
-});
-
-test('AIAgent extracts JSON with top-level output from prose-wrapped responses', () => {
-  const raw = `Here is the result:\n${JSON.stringify({ output: { index: 8, reason: 'Matched button.' } })}\nDone.`;
-  const json = extractJson(raw);
-
-  assert.deepEqual(json, {
-    output: { index: 8, reason: 'Matched button.' },
-  });
-});
-
-test('AIAgent extracts JSON with top-level output from fenced json blocks', () => {
-  const payload = JSON.stringify({
-    output: { packageName: 'com.example.app', reason: 'Matched by exact app name.' },
-  });
-  const raw = ['```json', payload, '```'].join('\n');
-  const json = extractJson(raw);
-
-  assert.deepEqual(json, {
-    output: { packageName: 'com.example.app', reason: 'Matched by exact app name.' },
-  });
-});
-
-test('AIAgent extractor returns null when top-level output is missing', () => {
-  const json = extractJson(JSON.stringify({ index: 42, reason: 'Exact text match.' }));
-
-  assert.equal(json, null);
-});
-
-test('AIAgent extracts JSON with escaped quotes, backslashes, and braces inside strings', () => {
-  const payload = JSON.stringify({
-    output: {
-      reason: 'Brace {inside} and quote "ok" and slash \\',
-      text: 'hello',
-    },
-  });
-  const json = extractJson(`prefix\n\`\`\`json\n${payload}\n\`\`\`\nsuffix`);
-
-  assert.deepEqual(json, {
-    output: {
-      reason: 'Brace {inside} and quote "ok" and slash \\',
-      text: 'hello',
-    },
-  });
-});
-
-test('AIAgent extracts the JSON object containing output when multiple JSON objects exist', () => {
-  const raw = `${JSON.stringify({ meta: { ok: true } })}\n${JSON.stringify({
-    output: { start_x: 540, start_y: 1800, end_x: 540, end_y: 400, reason: 'Swipe up.' },
-  })}`;
-  const json = extractJson(raw);
-
-  assert.deepEqual(json, {
-    output: { start_x: 540, start_y: 1800, end_x: 540, end_y: 400, reason: 'Swipe up.' },
-  });
-});
 
 test('AIAgent uses medium Gemini 3 reasoning defaults for planner calls', () => {
   const providerOptions = getProviderOptions({
@@ -266,23 +192,19 @@ test('AIAgent applies Anthropic effort defaults without model-family gating', ()
 });
 
 test('AIAgent normalizes rotate planner actions', () => {
-  const response = parsePlannerResponse(
-    JSON.stringify({
-      output: {
-        action: {
-          action_type: 'rotate',
-        },
-        remember: [],
-      },
-    }),
-  );
+  const response = parsePlannerResponse({
+    output: {
+      action: { action_type: 'rotate' },
+      remember: [],
+    },
+  });
 
   assert.equal(response.act, PLANNER_ACTION_ROTATE);
   assert.equal(response.reason, 'Rotate the device orientation.');
 });
 
 test('AIAgent normalizes nested planner output from planner prompt schema', () => {
-  const response = parsePlannerResponse(JSON.stringify({
+  const response = parsePlannerResponse({
     output: {
       thought: {
         plan: '[-> Type Hindi]',
@@ -296,7 +218,7 @@ test('AIAgent normalizes nested planner output from planner prompt schema', () =
       },
       remember: ['At step 2, Hindi search has started.'],
     },
-  }));
+  });
 
   assert.equal(response.act, 'type');
   assert.equal(response.reason, 'Type "Hindi" into the search field.');
@@ -307,7 +229,7 @@ test('AIAgent normalizes nested planner output from planner prompt schema', () =
 });
 
 test('AIAgent maps terminal status responses to completed and keeps analysis as the message', () => {
-  const response = parsePlannerResponse(JSON.stringify({
+  const response = parsePlannerResponse({
     output: {
       thought: {
         plan: '[✓ Verify language added]',
@@ -321,7 +243,7 @@ test('AIAgent maps terminal status responses to completed and keeps analysis as 
       },
       remember: [],
     },
-  }));
+  });
 
   assert.equal(response.act, 'completed');
   assert.equal(response.reason, 'Hindi is visible in the selected languages list.');
@@ -330,10 +252,21 @@ test('AIAgent maps terminal status responses to completed and keeps analysis as 
   assert.deepEqual(response.remember, []);
 });
 
+test('AIAgent accepts unwrapped planner output without the output key', () => {
+  const response = parsePlannerResponse({
+    thought: { plan: '[-> Tap]', think: 'Target visible.', act: 'Tap button' },
+    action: { action_type: 'tap' },
+    remember: [],
+  });
+
+  assert.equal(response.act, 'tap');
+  assert.equal(response.reason, 'Tap button');
+});
+
 test('AIAgent parses standard grounder output', () => {
-  const response = parseGrounderResponse(JSON.stringify({
+  const response = parseGrounderResponse({
     output: { index: 42, reason: 'Exact text match.' },
-  }));
+  });
 
   assert.deepEqual(response.output, {
     index: 42,
@@ -342,7 +275,7 @@ test('AIAgent parses standard grounder output', () => {
 });
 
 test('AIAgent parses scroll grounder output with snake_case coordinates', () => {
-  const response = parseGrounderResponse(JSON.stringify({
+  const response = parseGrounderResponse({
     output: {
       start_x: 540,
       start_y: 1800,
@@ -351,7 +284,7 @@ test('AIAgent parses scroll grounder output with snake_case coordinates', () => 
       durationMs: 600,
       reason: 'Computed swipe up vector.',
     },
-  }));
+  });
 
   assert.deepEqual(response.output, {
     start_x: 540,
@@ -364,13 +297,13 @@ test('AIAgent parses scroll grounder output with snake_case coordinates', () => 
 });
 
 test('AIAgent parses launch-app grounder output', () => {
-  const response = parseGrounderResponse(JSON.stringify({
+  const response = parseGrounderResponse({
     output: {
       packageName: 'com.whatsapp',
       allowAllPermissions: false,
       reason: 'Matched by exact app name.',
     },
-  }));
+  });
 
   assert.deepEqual(response.output, {
     packageName: 'com.whatsapp',
@@ -380,13 +313,13 @@ test('AIAgent parses launch-app grounder output', () => {
 });
 
 test('AIAgent parses set-location grounder output', () => {
-  const response = parseGrounderResponse(JSON.stringify({
+  const response = parseGrounderResponse({
     output: {
       lat: '37.7749',
       long: '-122.4194',
       reason: 'Resolved San Francisco to city center coordinates.',
     },
-  }));
+  });
 
   assert.deepEqual(response.output, {
     lat: '37.7749',
@@ -395,22 +328,189 @@ test('AIAgent parses set-location grounder output', () => {
   });
 });
 
-test('AIAgent rejects planner responses without top-level output', () => {
+test('AIAgent parses grounder output without the output wrapper', () => {
+  const response = parseGrounderResponse({
+    index: 7,
+    reason: 'Direct match.',
+  });
+
+  assert.deepEqual(response.output, {
+    index: 7,
+    reason: 'Direct match.',
+  });
+});
+
+test('AIAgent rejects planner responses that are not JSON objects', () => {
   assert.throws(
-    () => parsePlannerResponse(JSON.stringify({
-      action_type: 'tap',
-      reason: 'Tap the target element.',
-    })),
-    /top-level output/,
+    () => parsePlannerResponse('not an object', 'not an object'),
+    /Planner response is not a JSON object/,
   );
 });
 
-test('AIAgent rejects grounder responses without top-level output', () => {
+test('AIAgent rejects planner responses missing an actionable action_type', () => {
   assert.throws(
-    () => parseGrounderResponse(JSON.stringify({
-      index: 42,
-      reason: 'Exact text match.',
-    })),
-    /top-level output/,
+    () =>
+      parsePlannerResponse(
+        { output: { thought: { plan: '[]' }, remember: [] } },
+        '',
+      ),
+    /missing actionable action_type/,
   );
+});
+
+test('AIAgent rejects grounder responses that are not JSON objects', () => {
+  assert.throws(
+    () => parseGrounderResponse(null, ''),
+    /Grounder response is not a JSON object/,
+  );
+});
+
+// ----------------------------------------------------------------------------
+// Retry behavior for plan() and ground()
+// ----------------------------------------------------------------------------
+
+type MockLLMResult = { output: unknown; text: string };
+
+function makeAgent(): AIAgent {
+  return new AIAgent({
+    provider: 'google',
+    modelName: 'gemini-test',
+    apiKey: 'test-key',
+  });
+}
+
+function installMockCallLLM(
+  agent: AIAgent,
+  results: Array<MockLLMResult | Error>,
+): { callCount: () => number } {
+  let idx = 0;
+  (
+    agent as unknown as {
+      _callLLM: (
+        systemPrompt: string,
+        userParts: unknown[],
+        phase: LLMPhase,
+      ) => Promise<MockLLMResult>;
+    }
+  )._callLLM = async () => {
+    const next = results[idx++];
+    if (next instanceof Error) {
+      throw next;
+    }
+    if (!next) {
+      throw new Error(`No more mock results (called ${idx} times)`);
+    }
+    return next;
+  };
+  return { callCount: () => idx };
+}
+
+const validPlannerOutput = {
+  output: {
+    thought: { plan: '[-> Tap]', think: 'Target visible.', act: 'Tap button' },
+    action: { action_type: 'tap' },
+    remember: [],
+  },
+};
+
+const emptyPlannerOutput = { output: {} };
+
+test('AIAgent.plan retries on parse failure then succeeds', async () => {
+  const agent = makeAgent();
+  const mock = installMockCallLLM(agent, [
+    { output: emptyPlannerOutput, text: '' },
+    { output: validPlannerOutput, text: '' },
+  ]);
+
+  const response = await agent.plan({
+    testObjective: 'test',
+    platform: 'android',
+  });
+
+  assert.equal(response.act, PLANNER_ACTION_TAP);
+  assert.equal(mock.callCount(), 2);
+});
+
+test('AIAgent.plan retries on transient LLM error then succeeds', async () => {
+  const agent = makeAgent();
+  const mock = installMockCallLLM(agent, [
+    new Error('ECONNRESET'),
+    { output: validPlannerOutput, text: '' },
+  ]);
+
+  const response = await agent.plan({
+    testObjective: 'test',
+    platform: 'android',
+  });
+
+  assert.equal(response.act, PLANNER_ACTION_TAP);
+  assert.equal(mock.callCount(), 2);
+});
+
+test('AIAgent.plan does NOT retry on FatalProviderError', async () => {
+  const agent = makeAgent();
+  const mock = installMockCallLLM(agent, [
+    new FatalProviderError({
+      provider: 'google',
+      modelName: 'gemini-test',
+      statusCode: 401,
+      detail: 'Unauthorized',
+    }),
+    { output: validPlannerOutput, text: '' },
+  ]);
+
+  await assert.rejects(
+    () => agent.plan({ testObjective: 'test', platform: 'android' }),
+    (error: unknown) => FatalProviderError.isInstance(error),
+  );
+  assert.equal(mock.callCount(), 1);
+});
+
+test('AIAgent.plan surfaces the last parse error after exhausting retries', async () => {
+  const agent = makeAgent();
+  const mock = installMockCallLLM(agent, [
+    { output: emptyPlannerOutput, text: '' },
+    { output: emptyPlannerOutput, text: '' },
+  ]);
+
+  await assert.rejects(
+    () => agent.plan({ testObjective: 'test', platform: 'android' }),
+    /missing actionable action_type/,
+  );
+  assert.equal(mock.callCount(), 2);
+});
+
+test('AIAgent.ground retries on parse failure then succeeds', async () => {
+  const agent = makeAgent();
+  const mock = installMockCallLLM(agent, [
+    { output: null, text: '' },
+    { output: { index: 5, reason: 'match' }, text: '' },
+  ]);
+
+  const response = await agent.ground({
+    feature: FEATURE_GROUNDER,
+    act: 'Tap button',
+  });
+
+  assert.equal(response.output['index'], 5);
+  assert.equal(mock.callCount(), 2);
+});
+
+test('AIAgent.ground does NOT retry on FatalProviderError', async () => {
+  const agent = makeAgent();
+  const mock = installMockCallLLM(agent, [
+    new FatalProviderError({
+      provider: 'google',
+      modelName: 'gemini-test',
+      statusCode: 400,
+      detail: 'Bad request',
+    }),
+    { output: { index: 5 }, text: '' },
+  ]);
+
+  await assert.rejects(
+    () => agent.ground({ feature: FEATURE_GROUNDER, act: 'Tap button' }),
+    (error: unknown) => FatalProviderError.isInstance(error),
+  );
+  assert.equal(mock.callCount(), 1);
 });

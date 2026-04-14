@@ -6,7 +6,10 @@ import type {
   GrpcScreenshotResponse,
 } from '../grpc/GrpcDriverClient.js';
 import { DeviceSession } from './DeviceSession.js';
-import { ScreenshotCaptureHelper } from './ScreenshotCapture.js';
+import {
+  isTransientCaptureFailureMessage,
+  ScreenshotCaptureHelper,
+} from './ScreenshotCapture.js';
 
 class FakeGrpcClient {
   captureCalls = 0;
@@ -44,6 +47,33 @@ class FakeGrpcClient {
     return next;
   }
 }
+
+test('isTransientCaptureFailureMessage matches UiAutomation-adjacent NPE variants', () => {
+  // The Android driver's stale-binding failures surface either as the clean
+  // "UiAutomation not connected" message or as a JVM NPE from framework code.
+  // Both shapes need to count as transient so `waitForCaptureReadiness` gets
+  // to retry inside its window instead of bailing on the first poll.
+  assert.equal(
+    isTransientCaptureFailureMessage(
+      "Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference",
+    ),
+    true,
+  );
+  assert.equal(
+    isTransientCaptureFailureMessage(
+      'java.lang.NullPointerException: Attempt to read from field ...',
+    ),
+    true,
+  );
+  assert.equal(
+    isTransientCaptureFailureMessage('Invalid hierarchy JSON from driver'),
+    true,
+  );
+  assert.equal(
+    isTransientCaptureFailureMessage('device offline'),
+    false,
+  );
+});
 
 test('ScreenshotCaptureHelper retries transient failures when stability is disabled', async () => {
   const session = new DeviceSession();

@@ -19,6 +19,16 @@ type ExecFileFn = (
 
 type DelayFn = (ms: number) => Promise<void>;
 
+export class ScrcpyStartupInterruptedError extends Error {
+  readonly signal: NodeJS.Signals;
+
+  constructor(signal: NodeJS.Signals) {
+    super(`scrcpy recording startup interrupted by ${signal} before it became ready`);
+    this.name = 'ScrcpyStartupInterruptedError';
+    this.signal = signal;
+  }
+}
+
 /**
  * Android screen recording via host-installed `scrcpy`.
  * Uses headless recording to keep parity with the existing iOS artifact flow.
@@ -109,6 +119,9 @@ export class AndroidRecordingProvider implements RecordingProvider {
         stderrChunks,
       });
       if (startupState.exited) {
+        if (startupState.signal === 'SIGINT' || startupState.signal === 'SIGTERM') {
+          throw new ScrcpyStartupInterruptedError(startupState.signal);
+        }
         throw new Error(startupState.message);
       }
 
@@ -127,6 +140,12 @@ export class AndroidRecordingProvider implements RecordingProvider {
         },
       };
     } catch (error) {
+      if (error instanceof ScrcpyStartupInterruptedError) {
+        Logger.w(
+          `AndroidRecordingProvider: scrcpy startup for device ${params.deviceId} was interrupted by ${error.signal} before it became ready`,
+        );
+        throw error;
+      }
       Logger.e(
         `AndroidRecordingProvider: Failed to start recording for device ${params.deviceId}:`,
         error,
@@ -157,9 +176,9 @@ export class AndroidRecordingProvider implements RecordingProvider {
         });
       }
 
-      const exitCode = await this._waitForExit(params.process);
+      const { code: exitCode, signal } = await this._waitForExit(params.process);
       Logger.i(
-        `AndroidRecordingProvider: scrcpy process exited with code ${exitCode} for device: ${params.deviceId}, file: ${params.fileName}`,
+        `AndroidRecordingProvider: scrcpy process exited with code=${exitCode ?? 'unknown'} signal=${signal ?? 'none'} for device: ${params.deviceId}, file: ${params.fileName}`,
       );
 
       await fsp.access(params.filePath);
@@ -254,20 +273,26 @@ export class AndroidRecordingProvider implements RecordingProvider {
       stdoutChunks: string[];
       stderrChunks: string[];
     },
-  ): Promise<{ exited: boolean; message?: string }> {
-    if (process.exitCode !== null) {
+  ): Promise<{
+    exited: boolean;
+    message?: string;
+    signal?: NodeJS.Signals | null;
+  }> {
+    if (process.exitCode !== null || process.signalCode !== null) {
       return {
         exited: true,
-        message: this._formatStartupExit(process.exitCode, logs),
+        message: this._formatStartupExit(process.exitCode, process.signalCode, logs),
+        signal: process.signalCode,
       };
     }
 
     const timeoutResult = this._delayFn(this._startupSettleMs).then(
       () => ({ exited: false }) as const,
     );
-    const exitResult = this._waitForExit(process).then((exitCode) => ({
+    const exitResult = this._waitForExit(process).then(({ code, signal }) => ({
       exited: true as const,
-      message: this._formatStartupExit(exitCode, logs),
+      message: this._formatStartupExit(code, signal, logs),
+      signal,
     }));
 
     return await Promise.race([timeoutResult, exitResult]);
@@ -275,27 +300,44 @@ export class AndroidRecordingProvider implements RecordingProvider {
 
   private _formatStartupExit(
     exitCode: number | null,
+    signal: NodeJS.Signals | null,
     logs: {
       stdoutChunks: string[];
       stderrChunks: string[];
     },
   ): string {
-    const stderr = logs.stderrChunks.join('').trim();
-    const stdout = logs.stdoutChunks.join('').trim();
-    const detail =
-      stderr ||
-      stdout ||
-      `scrcpy exited with code ${exitCode === null ? 'unknown' : String(exitCode)}`;
-    return `scrcpy exited before recording became ready: ${detail}`;
-  }
-
-  private async _waitForExit(process: ChildProcess): Promise<number | null> {
-    if (process.exitCode !== null) {
-      return process.exitCode;
+    if (signal === 'SIGINT' || signal === 'SIGTERM') {
+      return `scrcpy recording startup interrupted by ${signal} before it became ready`;
     }
 
-    const [code] = await once(process, 'exit');
-    return (code as number | null) ?? null;
+    const cause =
+      signal !== null
+        ? `signal=${signal}`
+        : `code=${exitCode === null ? 'unknown' : String(exitCode)}`;
+    const stderr = logs.stderrChunks.join('').trim();
+    const stdout = logs.stdoutChunks.join('').trim();
+    const detail = stderr || stdout;
+    return detail
+      ? `scrcpy exited before recording became ready (${cause}): ${detail}`
+      : `scrcpy exited before recording became ready (${cause})`;
+  }
+
+  private async _waitForExit(process: ChildProcess): Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }> {
+    if (process.exitCode !== null || process.signalCode !== null) {
+      return {
+        code: process.exitCode,
+        signal: process.signalCode,
+      };
+    }
+
+    const [code, signal] = await once(process, 'exit');
+    return {
+      code: (code as number | null) ?? null,
+      signal: (signal as NodeJS.Signals | null) ?? null,
+    };
   }
 
   private _formatError(error: unknown): string {
