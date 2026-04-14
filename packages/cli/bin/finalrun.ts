@@ -18,7 +18,7 @@ import {
   stopWorkspaceReportServer,
 } from '../src/reportServerManager.js';
 import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
-import { runCloud } from '../src/cloudRunner.js';
+import { runCloud, uploadApp } from '../src/cloudRunner.js';
 import { PreExecutionFailureError, runTests, type TestRunnerResult } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
@@ -179,7 +179,7 @@ cloud
   .description('Run repo-local FinalRun YAML tests from .finalrun/tests on cloud devices')
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
-  .requiredOption('--app <path>', 'Path to the .apk or .app to install on the cloud device')
+  .option('--app <path>', 'Path to the .apk or .app to install (omit to use the latest uploaded app)')
   .action(async (selectors: string[] | undefined, options: CloudCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
@@ -201,7 +201,7 @@ cloud
   .description('Run a FinalRun suite manifest from .finalrun/suites on cloud devices')
   .option('--env <name>', 'Environment name (for example dev or staging)')
   .option('--platform <platform>', 'Target platform (android or ios)')
-  .requiredOption('--app <path>', 'Path to the .apk or .app to install on the cloud device')
+  .option('--app <path>', 'Path to the .apk or .app to install (omit to use the latest uploaded app)')
   .action(async (suitePath: string, options: CloudCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
@@ -212,6 +212,17 @@ cloud
         platform: options.platform,
         appPath: options.app,
       });
+    });
+  });
+
+cloud
+  .command('upload')
+  .description('Upload an app binary to FinalRun cloud for use in subsequent test runs')
+  .requiredOption('--app <path>', 'Path to the .apk or .app to upload')
+  .action(async (options: { app: string }) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      await uploadApp(options.app);
     });
   });
 
@@ -298,7 +309,7 @@ interface CheckCommandOptions extends CommonCommandOptions {
 interface CloudCommandOptions {
   env?: string;
   platform?: string;
-  app: string;
+  app?: string;
 }
 
 interface DoctorCommandOptions {

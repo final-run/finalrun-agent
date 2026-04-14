@@ -12,7 +12,25 @@ export interface CloudRunnerOptions {
   suitePath?: string;
   envName?: string;
   platform?: string;
-  appPath: string;
+  appPath?: string;
+}
+
+interface AppUploadEntry {
+  id: string;
+  filename: string;
+  createdAt: string;
+}
+
+async function fetchLatestAppUpload(): Promise<AppUploadEntry> {
+  const res = await fetch(`${FINALRUN_CLOUD_URL}/api/v1/app_uploads`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch app uploads (HTTP ${res.status})`);
+  }
+  const data = (await res.json()) as { success: boolean; appUploads: AppUploadEntry[] };
+  if (!data.success || !data.appUploads || data.appUploads.length === 0) {
+    throw new Error('No app uploaded yet. Use --app <path> to upload one.');
+  }
+  return data.appUploads[0]!;
 }
 
 export async function runCloud(options: CloudRunnerOptions): Promise<void> {
@@ -27,7 +45,22 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     requireSelection: true,
   });
 
-  // 2. Collect resolved file paths
+  // 2. Resolve app — either from --app flag or latest upload
+  let appMode: { type: 'file'; path: string } | { type: 'existing'; upload: AppUploadEntry };
+
+  if (options.appPath) {
+    if (!fs.existsSync(options.appPath)) {
+      throw new Error(`App file not found: ${options.appPath}`);
+    }
+    appMode = { type: 'file', path: options.appPath };
+  } else {
+    const latest = await fetchLatestAppUpload();
+    const uploadTime = new Date(latest.createdAt).toLocaleString(undefined, { timeZoneName: 'short' });
+    console.log(`\n  Using app: \x1b[36m${latest.filename}\x1b[0m (uploaded ${uploadTime})\n`);
+    appMode = { type: 'existing', upload: latest };
+  }
+
+  // 3. Collect resolved file paths
   const filesToZip: Array<{ absolutePath: string; relativePath: string }> = [];
 
   // Add suite file if present
@@ -68,7 +101,7 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     }
   }
 
-  // 3. Create zip with only selected files
+  // 4. Create zip with only selected files
   Logger.i(`Zipping ${filesToZip.length} file(s)...`);
   const zip = new AdmZip();
   for (const file of filesToZip) {
@@ -80,7 +113,7 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
   zip.writeZip(zipPath);
 
   try {
-    // 4. Upload to cloud service
+    // 5. Upload to cloud service
     // Capture the raw CLI invocation, exactly as the user typed it (minus the
     // node binary path). process.argv = [node, finalrun(.ts), ...userArgs].
     const command = `finalrun ${process.argv.slice(2).join(' ')}`;
@@ -125,20 +158,31 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
       formData.append('platform', options.platform);
     }
 
-    const appBuffer = fs.readFileSync(options.appPath);
-    const appFileName = path.basename(options.appPath);
-    const appSize = appBuffer.byteLength;
-    formData.append('appFile', new Blob([appBuffer]), appFileName);
-    formData.append('appFilename', appFileName);
+    // Attach app binary or reference existing upload
+    let spinnerMessage: string;
+    if (appMode.type === 'file') {
+      const appBuffer = fs.readFileSync(appMode.path);
+      const appFileName = path.basename(appMode.path);
+      const appSize = appBuffer.byteLength;
+      formData.append('appFile', new Blob([appBuffer]), appFileName);
+      formData.append('appFilename', appFileName);
 
-    const submissionLabel = options.suitePath
-      ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
-      : `${checked.tests.length} test(s)`;
+      const submissionLabel = options.suitePath
+        ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
+        : `${checked.tests.length} test(s)`;
+      spinnerMessage = `Uploading ${appFileName} (${formatBytes(appSize)}) and submitting ${submissionLabel}...`;
+    } else {
+      formData.append('appUploadId', appMode.upload.id);
+
+      const submissionLabel = options.suitePath
+        ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
+        : `${checked.tests.length} test(s)`;
+      spinnerMessage = `Submitting ${submissionLabel} with ${appMode.upload.filename}...`;
+    }
+
     const uploadStart = Date.now();
     const { default: ora } = await import('ora');
-    const spinner = ora(
-      `Uploading ${appFileName} (${formatBytes(appSize)}) and submitting ${submissionLabel}...`,
-    ).start();
+    const spinner = ora(spinnerMessage).start();
 
     const url = `${FINALRUN_CLOUD_URL}/api/v1/execute`;
     let response: Response;
@@ -157,11 +201,17 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     // The server returns 201 Created on successful submission. Anything else
     // is an error — surface the body and exit non-zero.
     if (response.status !== 201) {
-      spinner.fail(`Upload failed after ${elapsed}s (HTTP ${response.status})`);
+      spinner.fail(`Submission failed after ${elapsed}s (HTTP ${response.status})`);
       const body = await response.text();
       throw new Error(`Cloud service returned ${response.status}: ${body}`);
     }
-    spinner.succeed(`Uploaded ${formatBytes(appSize)} in ${elapsed}s`);
+
+    if (appMode.type === 'file') {
+      const appSize = fs.statSync(appMode.path).size;
+      spinner.succeed(`Uploaded ${formatBytes(appSize)} in ${elapsed}s`);
+    } else {
+      spinner.succeed(`Submitted in ${elapsed}s`);
+    }
 
     const result = (await response.json()) as { success: boolean; runId?: string; error?: string };
     if (!result.success || !result.runId) {
@@ -175,8 +225,14 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     // wait for the run to finish.
     console.log(`\n\x1b[32m✓ Run submitted\x1b[0m`);
     console.log(`  Run ID:      ${result.runId}`);
-    console.log(`  Status URL:  ${FINALRUN_CLOUD_URL}/api/v1/runs/${result.runId}`);
+    console.log(`  Status URL:  ${FINALRUN_CLOUD_URL}/runs/${result.runId}`);
     console.log(`\n  The run is now queued. Use the status URL above to track progress.`);
+
+    if (appMode.type === 'file') {
+      const appFileName = path.basename(appMode.path);
+      console.log(`\n  \x1b[33mTip:\x1b[0m You don't need to upload the app every time. Without --app,`);
+      console.log(`       FinalRun uses your latest uploaded app (${appFileName}).`);
+    }
   } finally {
     // Clean up temp zip
     try {
@@ -185,6 +241,54 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
       // ignore cleanup errors
     }
   }
+}
+
+export async function uploadApp(appPath: string): Promise<void> {
+  if (!fs.existsSync(appPath)) {
+    throw new Error(`App file not found: ${appPath}`);
+  }
+
+  const appBuffer = fs.readFileSync(appPath);
+  const appFileName = path.basename(appPath);
+  const appSize = appBuffer.byteLength;
+
+  const { default: ora } = await import('ora');
+  const spinner = ora(`Uploading ${appFileName} (${formatBytes(appSize)})...`).start();
+  const uploadStart = Date.now();
+
+  const formData = new FormData();
+  formData.append('appFile', new Blob([appBuffer]), appFileName);
+
+  let response: Response;
+  try {
+    response = await fetch(`${FINALRUN_CLOUD_URL}/api/v1/app_uploads`, {
+      method: 'POST',
+      body: formData,
+    });
+  } catch (e) {
+    const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(1);
+    spinner.fail(`Upload failed after ${elapsed}s`);
+    throw e;
+  }
+
+  const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(1);
+  if (response.status !== 201) {
+    spinner.fail(`Upload failed after ${elapsed}s (HTTP ${response.status})`);
+    const body = await response.text();
+    throw new Error(`Cloud service returned ${response.status}: ${body}`);
+  }
+
+  spinner.succeed(`Uploaded ${appFileName} (${formatBytes(appSize)}) in ${elapsed}s`);
+
+  const result = (await response.json()) as { success: boolean; appUpload?: { id: string }; error?: string };
+  if (!result.success || !result.appUpload) {
+    throw new Error(`Upload failed: ${result.error ?? JSON.stringify(result)}`);
+  }
+
+  console.log(`\n  \x1b[32m✓ App uploaded\x1b[0m`);
+  console.log(`  App ID:    ${result.appUpload.id}`);
+  console.log(`  Filename:  ${appFileName}`);
+  console.log(`\n  This app will be used automatically when you run tests without --app.`);
 }
 
 function formatBytes(bytes: number): string {
