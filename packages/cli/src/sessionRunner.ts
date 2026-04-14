@@ -11,6 +11,7 @@ import {
   RecordingRequest,
   type DeviceInventoryDiagnostic,
   type DeviceInventoryEntry,
+  type DeviceInventoryReport,
   type RuntimeBindings,
 } from '@finalrun/common';
 import { DeviceNode } from '@finalrun/device-node';
@@ -64,6 +65,7 @@ export interface TestSessionConfig {
   platform?: string;
   appOverridePath?: string;
   app?: ResolvedAppConfig;
+  preferredSelectionId?: string;
   runtimeBindings?: RuntimeBindings;
   abortSignal?: AbortSignal;
   recording?: {
@@ -83,6 +85,8 @@ export interface GoalSessionConfig {
   platform?: string;
   appOverridePath?: string;
   app?: ResolvedAppConfig;
+  /** When set, that inventory entry is used instead of prompting. */
+  preferredSelectionId?: string;
 }
 
 export interface TestSessionDeps {
@@ -173,6 +177,7 @@ export async function prepareTestSession(
       entries: scopedEntries,
       diagnostics: scopedDiagnostics,
       requestedPlatform: config.platform,
+      preferredSelectionId: config.preferredSelectionId,
       selectionIO,
     });
 
@@ -554,9 +559,28 @@ export async function executeTestOnSession(
 }
 
 /**
- * Top-level orchestrator for running a goal from the CLI.
- *
+ * Detect devices/emulators filtered by platform, then release the device node.
+ * Used by parallel orchestration before spawning per-device subprocesses.
  */
+export async function detectFilteredInventoryReport(
+  config: Pick<GoalSessionConfig, 'platform'>,
+  dependencies: TestSessionDeps = testSessionDeps,
+): Promise<DeviceInventoryReport> {
+  const filePathUtil = dependencies.createFilePathUtil();
+  const adbPath = await filePathUtil.getADBPath();
+  const deviceNode = dependencies.getDeviceNode();
+  deviceNode.init(filePathUtil);
+  try {
+    const inventory = await deviceNode.detectInventory(adbPath);
+    return {
+      entries: filterInventoryEntries(inventory.entries, config.platform),
+      diagnostics: filterInventoryDiagnostics(inventory.diagnostics, config.platform),
+    };
+  } finally {
+    await deviceNode.cleanup();
+  }
+}
+
 export async function runGoal(
   config: TestSessionConfig,
   dependencies: TestSessionDeps = testSessionDeps,
@@ -567,6 +591,7 @@ export async function runGoal(
       platform: config.platform,
       appOverridePath: config.appOverridePath,
       app: config.app,
+      preferredSelectionId: config.preferredSelectionId,
     },
     dependencies,
   );
@@ -697,9 +722,31 @@ function printRunBanner(config: TestSessionConfig): void {
 async function chooseInventoryEntry(params: {
   entries: DeviceInventoryEntry[];
   diagnostics: DeviceInventoryDiagnostic[];
-  requestedPlatform?: string,
+  requestedPlatform?: string;
+  preferredSelectionId?: string;
   selectionIO: DeviceSelectionIO;
 }): Promise<DeviceInventoryEntry> {
+  if (params.preferredSelectionId) {
+    const normalized = params.preferredSelectionId.trim();
+    const match = params.entries.find((entry) => entry.selectionId === normalized);
+    if (!match) {
+      throw new DevicePreparationError(
+        `No device or emulator matches --device "${normalized}". ` +
+          'Use the selection id from device listings, or omit --device to pick interactively.',
+        params.diagnostics,
+      );
+    }
+    const selectable = getSelectableEntries(params.entries);
+    if (!selectable.some((entry) => entry.selectionId === normalized)) {
+      throw new DevicePreparationError(
+        `Device "${normalized}" is not usable for this run ` +
+          '(wrong platform or not runnable yet).',
+        params.diagnostics,
+      );
+    }
+    return match;
+  }
+
   const selectableEntries = getSelectableEntries(params.entries);
   if (selectableEntries.length === 1) {
     return selectableEntries[0]!;

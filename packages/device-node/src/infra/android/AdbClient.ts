@@ -19,6 +19,29 @@ const execFileAsync = promisify(execFile);
 const PORT_RANGE_START = DEFAULT_GRPC_PORT_START;
 const PORT_RANGE_END = PORT_RANGE_START + 100;
 
+/**
+ * Parallel `finalrun test --parallel` runs one Node process per device. Each
+ * process has its own AdbClient and would otherwise race on the same first
+ * candidate port: both can pass `_isPortBindable` before either's `adb forward`
+ * claims the host port, so one forward fails or traffic goes to the wrong device.
+ * The orchestrator sets `FINALRUN_GRPC_PORT_SLOT` (0, 1, 2, …) so each
+ * subprocess scans the pool in a different order.
+ */
+const GRPC_PORT_SLOT_STRIDE = 7;
+const FINALRUN_GRPC_PORT_SLOT_ENV = 'FINALRUN_GRPC_PORT_SLOT';
+
+function readGrpcPortScanSlot(): number {
+  const raw = process.env[FINALRUN_GRPC_PORT_SLOT_ENV];
+  if (raw === undefined || raw.trim() === '') {
+    return 0;
+  }
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.min(n, 32);
+}
+
 type ExecFileFn = (
   file: string,
   args: readonly string[],
@@ -220,20 +243,68 @@ export class AdbClient {
   }
 
   /**
+   * Serials of USB/network devices and emulators in `device` state (from `adb devices`).
+   */
+  async listConnectedDeviceSerials(adbPath: string): Promise<string[]> {
+    try {
+      const { stdout } = await this._execFileFn(adbPath, ['devices']);
+      return this._parseAdbDevicesList(String(stdout));
+    } catch {
+      return [];
+    }
+  }
+
+  private _parseAdbDevicesList(output: string): string[] {
+    const serials: string[] = [];
+    const lines = output.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === '' || /^List of devices/i.test(trimmed)) {
+        continue;
+      }
+      const parts = trimmed.split(/\s+/);
+      if (parts.length < 2) {
+        continue;
+      }
+      const serial = parts[0]!;
+      const state = parts[1]!;
+      if (state === 'device') {
+        serials.push(serial);
+      }
+    }
+    return serials;
+  }
+
+  /**
    * Nuke every adb forward across all attached devices. Call this on process
    * startup to clean up stale forwards left behind by a previous crashed
    * device-node process.
+   *
+   * When several devices are connected, plain `adb forward --remove-all` fails
+   * ("more than one device/emulator"); we run `adb -s <serial> forward --remove-all`
+   * for each connected device instead.
    */
   async removeAllPortForwards(adbPath: string): Promise<void> {
     try {
-      await this._execFileFn(adbPath, ['forward', '--remove-all']);
-      Logger.d('Removed all stale adb forwards');
+      const serials = await this.listConnectedDeviceSerials(adbPath);
+      if (serials.length === 0) {
+        Logger.d('No adb devices; skipping stale adb forward cleanup');
+      } else {
+        for (const serial of serials) {
+          try {
+            await this._execFileFn(adbPath, ['-s', serial, 'forward', '--remove-all']);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!/no devices\/emulators found|device ('.*' )?not found/i.test(message)) {
+              Logger.d(`Stale adb forward cleanup on ${serial} (ignored): ${message}`);
+            }
+          }
+        }
+        Logger.d('Removed stale adb forwards (per device)');
+      }
     } catch (error) {
-      // "no devices/emulators found" is expected at cold startup — adb
-      // requires a target device for `forward --remove-all`. Anything else
-      // is unusual but still best-effort.
       const message = error instanceof Error ? error.message : String(error);
-      if (!/no devices\/emulators found/i.test(message)) {
+      if (!/no devices\/emulators found|more than one device/i.test(message)) {
         Logger.w('Failed to remove all adb forwards (ignoring)', error as Error);
       }
     }
@@ -941,7 +1012,11 @@ export class AdbClient {
         return existingPort;
       }
 
-      for (let port = PORT_RANGE_START; port < PORT_RANGE_END; port++) {
+      const rangeWidth = PORT_RANGE_END - PORT_RANGE_START;
+      const slot = readGrpcPortScanSlot();
+      for (let j = 0; j < rangeWidth; j++) {
+        const port =
+          PORT_RANGE_START + ((slot * GRPC_PORT_SLOT_STRIDE + j) % rangeWidth);
         if (this._allocatedPorts.has(port)) continue;
         if (!(await this._isPortBindable(port))) continue;
 

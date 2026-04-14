@@ -7,6 +7,8 @@ import type { FinalRunWorkspace } from './workspace.js';
 import { resolveCliLaunchArgs } from './runtimePaths.js';
 
 const DEFAULT_REPORT_SERVER_PORT = 4173;
+/** How many ports to try after the preferred port before allocating an ephemeral port. */
+const PREFERRED_PORT_SCAN_WIDTH = 100;
 const HEALTH_ROUTE = '/health';
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2000;
 
@@ -465,14 +467,17 @@ async function findAvailablePort(startingPort: number): Promise<number> {
     return await getEphemeralPort();
   }
 
-  let candidate = Math.max(0, startingPort);
-  while (candidate < startingPort + 20) {
+  const maxPort = 65535;
+  let candidate = Math.max(1, Math.min(Math.floor(startingPort), maxPort));
+  const endExclusive = Math.min(candidate + PREFERRED_PORT_SCAN_WIDTH, maxPort + 1);
+  while (candidate < endExclusive) {
     if (await isPortAvailable(candidate)) {
       return candidate;
     }
     candidate += 1;
   }
-  throw new Error(`Could not find an open port near ${startingPort}.`);
+
+  return await getEphemeralPort();
 }
 
 async function isPortAvailable(port: number): Promise<boolean> {

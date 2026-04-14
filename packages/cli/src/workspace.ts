@@ -255,9 +255,27 @@ export function createRunId(params: {
   envName: string;
   platform: string;
   startedAt: Date;
+  /**
+   * When set (e.g. `finalrun test --device <selectionId>`), disambiguates artifact
+   * directories so parallel subprocesses never share one `runDir` (which would
+   * truncate `runner.log`, overwrite inputs, and corrupt recordings).
+   */
+  deviceTag?: string;
 }): string {
   const timestamp = params.startedAt.toISOString().replace(/[:]/g, '-');
-  return `${timestamp}-${params.envName}-${params.platform}`;
+  let id = `${timestamp}-${params.envName}-${params.platform}`;
+  const raw = params.deviceTag?.trim();
+  if (raw) {
+    const tag = raw
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 96);
+    if (tag.length > 0) {
+      id = `${id}--${tag}`;
+    }
+  }
+  return id;
 }
 
 export async function validateAppOverride(

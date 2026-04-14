@@ -46,6 +46,119 @@ export async function promptForDeviceSelection(params: {
   return await pipedSelection(rendered, params.io);
 }
 
+export function parallelSelectableEntries(entries: DeviceInventoryEntry[]): DeviceInventoryEntry[] {
+  const runnable = entries.filter((entry) => entry.runnable);
+  if (runnable.length > 0) {
+    return runnable;
+  }
+  return entries.filter((entry) => entry.startable);
+}
+
+/**
+ * Ask the user to pick multiple devices/emulators for a parallel or distributed CLI run.
+ */
+export async function promptForParallelDeviceSelection(params: {
+  entries: DeviceInventoryEntry[];
+  io: DeviceSelectionIO;
+  minimumDevices: number;
+  /** Affects headings and error text (`--parallel` vs `--distribute`). */
+  mode?: 'parallel' | 'distribute';
+}): Promise<DeviceInventoryEntry[]> {
+  const mode = params.mode ?? 'parallel';
+  const flag = mode === 'distribute' ? '--distribute' : '--parallel';
+  const label = mode === 'distribute' ? 'distributed' : 'parallel';
+
+  const selectableEntries = parallelSelectableEntries(params.entries);
+  const rendered = formatDeviceSelectionList(params.entries, selectableEntries);
+
+  params.io.output.write(`\nSelect devices for ${label} run\n`);
+  params.io.output.write(`${rendered.text}\n`);
+
+  if (rendered.numberedEntries.length < params.minimumDevices) {
+    throw new Error(
+      `Need at least ${params.minimumDevices} selectable devices for ${flag}, ` +
+        `but only ${rendered.numberedEntries.length} are available.`,
+    );
+  }
+
+  const validNums = new Set(rendered.numberedEntries.map((n) => n.index));
+
+  if (params.io.isTTY) {
+    const readline = createInterface({
+      input: params.io.input,
+      output: params.io.output,
+    });
+    try {
+      for (;;) {
+        const answer = await readline.question(
+          `Enter device numbers (comma-separated, at least ${params.minimumDevices}): `,
+        );
+        try {
+          const parsed = parseParallelSelection(answer, validNums);
+          if (parsed.length >= params.minimumDevices) {
+            return mapParallelSelectionToEntries(parsed, rendered.numberedEntries);
+          }
+          params.io.output.write(
+            `Need at least ${params.minimumDevices} distinct numbers from the list.\n`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          params.io.output.write(`${message}\n`);
+        }
+      }
+    } finally {
+      readline.close();
+    }
+  }
+
+  const line = await readFirstLine(params.io.input);
+  if (line === null) {
+    throw new Error(
+      `${label} runs need ${params.minimumDevices}+ device numbers on stdin ` +
+        `(comma-separated), for example: echo "1,2,3" | finalrun test ... ${flag}`,
+    );
+  }
+  const parsed = parseParallelSelection(line, validNums);
+  if (parsed.length < params.minimumDevices) {
+    throw new Error(
+      `Invalid ${label} device selection "${line.trim()}". ` +
+        `Provide at least ${params.minimumDevices} comma-separated numbers from the list.`,
+    );
+  }
+  return mapParallelSelectionToEntries(parsed, rendered.numberedEntries);
+}
+
+function parseParallelSelection(answer: string, validNums: Set<number>): number[] {
+  const parts = answer.split(/[, ]+/).map((p) => p.trim()).filter((p) => p.length > 0);
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const part of parts) {
+    const n = Number.parseInt(part, 10);
+    if (!Number.isFinite(n) || !validNums.has(n)) {
+      throw new Error(`Invalid device number "${part}". Use only numbers from the list.`);
+    }
+    if (seen.has(n)) {
+      throw new Error(`Duplicate device number ${n}. Each device can only be selected once.`);
+    }
+    seen.add(n);
+    result.push(n);
+  }
+  return result;
+}
+
+function mapParallelSelectionToEntries(
+  indices: number[],
+  numbered: NumberedEntry[],
+): DeviceInventoryEntry[] {
+  return indices.map((index) => {
+    const row = numbered.find((n) => n.index === index);
+    if (!row) {
+      throw new Error(`Internal error: missing device index ${index}.`);
+    }
+    return row.entry;
+  });
+}
+
 async function interactiveSelection(
   rendered: FormatResult,
   io: DeviceSelectionIO,

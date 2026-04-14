@@ -363,3 +363,61 @@ test('AdbClient.togglePermissions uses pm grant and appops for Android permissio
     },
   ]);
 });
+
+test('AdbClient.removeAllPortForwards runs forward --remove-all per device when several are connected', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (args[0] === 'devices') {
+        return {
+          stdout:
+            'List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\n',
+          stderr: '',
+        };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  await adbClient.removeAllPortForwards('/adb');
+
+  assert.equal(execCalls.length, 3);
+  assert.deepEqual(execCalls[0]?.args, ['devices']);
+  assert.deepEqual(execCalls[1]?.args, ['-s', 'emulator-5554', 'forward', '--remove-all']);
+  assert.deepEqual(execCalls[2]?.args, ['-s', 'emulator-5556', 'forward', '--remove-all']);
+});
+
+test('AdbClient.removeAllPortForwards skips forward --remove-all when adb devices is empty', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (args[0] === 'devices') {
+        return { stdout: 'List of devices attached\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  await adbClient.removeAllPortForwards('/adb');
+
+  assert.equal(execCalls.length, 1);
+  assert.deepEqual(execCalls[0]?.args, ['devices']);
+});
+
+test('AdbClient.listConnectedDeviceSerials parses adb devices output', async () => {
+  const adbClient = new AdbClient({
+    execFileFn: async () => ({
+      stdout:
+        'List of devices attached\n' +
+        'emulator-5554\tdevice\n' +
+        'deadbeef\tunauthorized\n' +
+        'emulator-5556\tdevice\n',
+      stderr: '',
+    }),
+  });
+
+  const serials = await adbClient.listConnectedDeviceSerials('/adb');
+  assert.deepEqual(serials, ['emulator-5554', 'emulator-5556']);
+});

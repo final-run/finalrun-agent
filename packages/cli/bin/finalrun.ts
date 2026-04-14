@@ -18,6 +18,14 @@ import {
   stopWorkspaceReportServer,
 } from '../src/reportServerManager.js';
 import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import {
+  runDistributeTestInvocations,
+  type DistributeTestRunResult,
+} from '../src/distributeTestRunner.js';
+import {
+  runParallelTestInvocations,
+  type ParallelTestRunResult,
+} from '../src/parallelTestRunner.js';
 import { PreExecutionFailureError, runTests, type TestRunnerResult } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
@@ -29,6 +37,10 @@ import {
   resolveWorkspaceForCommand,
 } from '../src/workspace.js';
 import { WorkspaceSelectionCancelledError } from '../src/workspacePicker.js';
+
+function collectOption(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
 
 // ============================================================================
 // CLI definition
@@ -135,6 +147,22 @@ program
   )
   .option('--debug', 'Enable debug logging', false)
   .option('--max-iterations <n>', 'Maximum iterations before giving up', '110')
+  .option(
+    '--device <selectionId>',
+    'Use a specific device or simulator (repeatable; use with --parallel or --distribute)',
+    collectOption,
+    [],
+  )
+  .option(
+    '--parallel',
+    'Run the same test selection on multiple devices concurrently (subprocess per device)',
+    false,
+  )
+  .option(
+    '--distribute',
+    'Run each test once across a device pool (subprocess per test; not combinable with --parallel)',
+    false,
+  )
   .argument(
     '[selectors...]',
     'Workspace-relative YAML files, directories, or globs under .finalrun/tests',
@@ -160,6 +188,22 @@ program
   )
   .option('--debug', 'Enable debug logging', false)
   .option('--max-iterations <n>', 'Maximum iterations before giving up', '110')
+  .option(
+    '--device <selectionId>',
+    'Use a specific device or simulator (repeatable; use with --parallel or --distribute)',
+    collectOption,
+    [],
+  )
+  .option(
+    '--parallel',
+    'Run the same suite on multiple devices concurrently (subprocess per device)',
+    false,
+  )
+  .option(
+    '--distribute',
+    'Run each suite test once across a device pool (subprocess per test; not combinable with --parallel)',
+    false,
+  )
   .argument('<suitePath>', 'Workspace-relative YAML file under .finalrun/suites')
   .action(async (suitePath: string, options: TestCommandOptions) => {
     await runTestCommand({
@@ -173,7 +217,11 @@ program
   .command('start-server')
   .description('Start or reuse the local FinalRun report server for a workspace')
   .option('--workspace <path>', 'Workspace root or a path inside a FinalRun workspace')
-  .option('--port <n>', 'Preferred port to bind to', '4173')
+  .option(
+    '--port <n>',
+    'Preferred port (4173 default); scans the next ~100 ports, then picks a free port. Use 0 for an OS-assigned port.',
+    '4173',
+  )
   .option('--dev', 'Run the report server in Next.js development mode', false)
   .action(async (options: StartServerCommandOptions) => {
     await runCommand(async () => {
@@ -258,6 +306,9 @@ interface TestCommandOptions extends CommonCommandOptions {
   model?: string;
   debug?: boolean;
   maxIterations: string;
+  device?: string[];
+  parallel?: boolean;
+  distribute?: boolean;
 }
 
 interface RunsCommandOptions {
@@ -318,9 +369,21 @@ async function runTestCommand(params: {
       providedApiKey: params.options.apiKey,
     });
 
-    const reportServer = await tryStartReportServer(workspace);
+    const devices = params.options.device ?? [];
+    if (params.options.parallel && params.options.distribute) {
+      throw new Error('Use either --parallel or --distribute, not both.');
+    }
+    if (!params.options.parallel && !params.options.distribute && devices.length > 1) {
+      throw new Error('Multiple --device values require --parallel or --distribute.');
+    }
+    if (params.options.parallel && devices.length === 1) {
+      throw new Error(
+        '--parallel expects multiple devices. Use at least two --device <selectionId> flags, ' +
+          'or omit --device to choose devices interactively.',
+      );
+    }
 
-    const result = await runTests({
+    const baseRunnerOptions = {
       envName: resolvedEnvironment.usesEmptyBindings ? undefined : resolvedEnvironment.envName,
       selectors: normalizedSelectors,
       suitePath: normalizedSuitePath,
@@ -332,6 +395,44 @@ async function runTestCommand(params: {
       maxIterations: parseInt(params.options.maxIterations, 10) || 110,
       debug,
       invokedCommand: params.invokedCommand,
+    };
+
+    if (params.options.distribute) {
+      const distributeResult = await runDistributeTestInvocations({
+        deviceSelectionIds: devices,
+        baseOptions: baseRunnerOptions,
+        stdinIsTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      });
+      const reportServer = await tryStartReportServer(workspace);
+      printDistributeSummary(distributeResult, reportServer);
+      if (reportServer) {
+        await openUrlBestEffort(buildWorkspaceReportUrl(reportServer));
+      }
+      process.exit(distributeResult.exitCode);
+    }
+
+    if (params.options.parallel) {
+      const parallelResult = await runParallelTestInvocations({
+        invokedCommand: params.invokedCommand,
+        selectors: normalizedSelectors,
+        suitePath: normalizedSuitePath,
+        deviceSelectionIds: devices,
+        baseOptions: baseRunnerOptions,
+        stdinIsTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      });
+      const reportServer = await tryStartReportServer(workspace);
+      printParallelSummary(parallelResult, reportServer);
+      if (reportServer) {
+        await openUrlBestEffort(buildWorkspaceReportUrl(reportServer));
+      }
+      process.exit(parallelResult.exitCode);
+    }
+
+    const reportServer = await tryStartReportServer(workspace);
+
+    const result = await runTests({
+      ...baseRunnerOptions,
+      preferredSelectionId: devices.length === 1 ? devices[0] : undefined,
     });
 
     const runUrl = reportServer
@@ -461,6 +562,56 @@ async function tryStartReportServer(
   } catch {
     return undefined;
   }
+}
+
+function printDistributeSummary(
+  result: DistributeTestRunResult,
+  reportServerUrl?: string,
+): void {
+  console.log('\n' + '═'.repeat(60));
+  if (result.exitCode === 130) {
+    console.log(`\x1b[33m! Distributed run aborted\x1b[0m`);
+  } else if (result.success) {
+    console.log(`\x1b[32m✓ Distributed run finished (all test subprocesses passed)\x1b[0m`);
+  } else {
+    console.log(`\x1b[31m✗ Distributed run finished with one or more failing test runs\x1b[0m`);
+  }
+  console.log('═'.repeat(60));
+  console.log('Each test ran in its own subprocess; artifacts are under .finalrun/artifacts/.');
+  if (reportServerUrl) {
+    console.log(`  Report:    ${buildWorkspaceReportUrl(reportServerUrl)}`);
+    console.log('  Open a run in the table for the full HTML report (recording, steps, logs).');
+  } else {
+    console.log(
+      '  Run `finalrun start-server` from this workspace to open HTML reports in the browser.',
+    );
+  }
+  console.log('═'.repeat(60));
+}
+
+function printParallelSummary(
+  result: ParallelTestRunResult,
+  reportServerUrl?: string,
+): void {
+  console.log('\n' + '═'.repeat(60));
+  if (result.exitCode === 130) {
+    console.log(`\x1b[33m! Parallel run aborted\x1b[0m`);
+  } else if (result.success) {
+    console.log(`\x1b[32m✓ Parallel run finished (all device subprocesses passed)\x1b[0m`);
+  } else {
+    console.log(`\x1b[31m✗ Parallel run finished with one or more failing device runs\x1b[0m`);
+  }
+  console.log('═'.repeat(60));
+  console.log('Each device run wrote its own artifact directory under .finalrun/artifacts/.');
+  if (reportServerUrl) {
+    console.log(`  Report:    ${buildWorkspaceReportUrl(reportServerUrl)}`);
+    console.log('  Open a run in the table for the full HTML report (recording, steps, logs).');
+  } else {
+    console.log(
+      '  Run `finalrun start-server` from this workspace to open HTML reports in the browser.',
+    );
+  }
+  console.log('═'.repeat(60));
 }
 
 function printSuccessSummary(result: TestRunnerResult, runUrl?: string): void {

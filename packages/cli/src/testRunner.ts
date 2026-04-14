@@ -46,6 +46,66 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
   maxIterations?: number;
   debug?: boolean;
   invokedCommand?: 'test' | 'suite';
+  /** Pin a specific device/emulator from inventory (used by --device and parallel workers). */
+  preferredSelectionId?: string;
+}
+
+export interface ValidatedTestWorkspace {
+  checked: CheckRunnerResult;
+  effectiveGoals: Map<string, string>;
+}
+
+/**
+ * Shared validation + host preflight for `finalrun test` / `suite` (single or parallel orchestration).
+ */
+export async function validateTestWorkspaceForExecution(
+  options: TestRunnerOptions,
+): Promise<ValidatedTestWorkspace> {
+  let checked: CheckRunnerResult;
+  let effectiveGoals = new Map<string, string>();
+  try {
+    checked = await testRunnerDependencies.runCheck({
+      ...options,
+      requireSelection: true,
+    });
+    effectiveGoals = new Map(
+      checked.tests.map((t) => [
+        t.testId!,
+        compileTestObjective(t, checked.environment.bindings),
+      ]),
+    );
+  } catch (error) {
+    if (error instanceof PreExecutionFailureError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new PreExecutionFailureError({
+      phase: 'validation',
+      message,
+      exitCode: 1,
+    });
+  }
+
+  const requestedPlatforms = resolveTestRequestedPlatforms(checked.resolvedApp.platform);
+  Logger.i(formatResolvedAppSummary(checked.resolvedApp));
+  const preflight =
+    process.env[CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR] === '1'
+      ? {
+          requestedPlatforms,
+          checks: [],
+        }
+      : await testRunnerDependencies.runHostPreflight({
+          requestedPlatforms,
+        });
+  if (shouldBlockLocalRunPreflight(preflight)) {
+    throw new PreExecutionFailureError({
+      phase: 'setup',
+      message: `Run setup failed before execution: ${formatHostPreflightReport(preflight, 'test')}`,
+      exitCode: 1,
+    });
+  }
+
+  return { checked, effectiveGoals };
 }
 
 export interface TestRunnerResult {
@@ -136,16 +196,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
     let checked: CheckRunnerResult;
     let effectiveGoals = new Map<string, string>();
     try {
-      checked = await testRunnerDependencies.runCheck({
-        ...options,
-        requireSelection: true,
-      });
-      effectiveGoals = new Map(
-        checked.tests.map((t) => [
-          t.testId!,
-          compileTestObjective(t, checked.environment.bindings),
-        ]),
-      );
+      ({ checked, effectiveGoals } = await validateTestWorkspaceForExecution(options));
     } catch (error) {
       if (error instanceof PreExecutionFailureError) {
         throw error;
@@ -167,35 +218,6 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
     }
 
     try {
-      const requestedPlatforms = resolveTestRequestedPlatforms(
-        checked.resolvedApp.platform,
-      );
-      Logger.i(formatResolvedAppSummary(checked.resolvedApp));
-      const preflight =
-        process.env[CLI_TEST_SKIP_HOST_PREFLIGHT_ENV_VAR] === '1'
-          ? {
-              requestedPlatforms,
-              checks: [],
-            }
-          : await testRunnerDependencies.runHostPreflight({
-              requestedPlatforms,
-            });
-      if (shouldBlockLocalRunPreflight(preflight)) {
-        throw new PreExecutionFailureError({
-          phase: 'setup',
-          message: `Run setup failed before execution: ${formatHostPreflightReport(preflight, 'test')}`,
-          exitCode: runAborted ? 130 : 1,
-        });
-      }
-
-      if (runAborted) {
-        throw new PreExecutionFailureError({
-          phase: 'setup',
-          message: 'Run aborted before execution.',
-          exitCode: 130,
-        });
-      }
-
       const forcedDeviceSetupFailure = process.env[CLI_TEST_FORCE_DEVICE_SETUP_FAILURE_ENV_VAR];
       if (forcedDeviceSetupFailure) {
         throw new DevicePreparationError(forcedDeviceSetupFailure);
@@ -204,6 +226,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
         platform: checked.resolvedApp.platform,
         appOverridePath: checked.appOverride?.appPath,
         app: checked.resolvedApp,
+        preferredSelectionId: options.preferredSelectionId,
       });
     } catch (error) {
       if (error instanceof PreExecutionFailureError) {
@@ -250,6 +273,7 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
             platform: goalSession.platform,
             startedAt,
             bindings: checked.environment.bindings,
+            deviceTag: options.preferredSelectionId,
           }));
           logSink = reportWriter.createLoggerSink();
           flushBufferedLogEntries(bufferedLogEntries, logSink);
@@ -417,11 +441,13 @@ async function createReportWriter(params: {
   platform: string;
   startedAt: Date;
   bindings: RuntimeBindings;
+  deviceTag?: string;
 }): Promise<{ reportWriter: ReportWriter; runDir: string }> {
   const runId = createRunId({
     envName: params.envName,
     platform: params.platform,
     startedAt: params.startedAt,
+    deviceTag: params.deviceTag,
   });
   const runDir = path.join(params.workspace.artifactsDir, runId);
   const reportWriter = new ReportWriter({
@@ -453,6 +479,8 @@ function buildCliContext(options: TestRunnerOptions): {
   appOverridePath?: string;
   debug: boolean;
   maxIterations?: number;
+  parallel: boolean;
+  preferredSelectionId?: string;
 } {
   const invokedCommand = options.invokedCommand ?? 'test';
   const commandParts = ['finalrun', invokedCommand];
@@ -467,6 +495,8 @@ function buildCliContext(options: TestRunnerOptions): {
     appOverridePath: options.appPath,
     debug: options.debug === true,
     maxIterations: options.maxIterations,
+    parallel: false,
+    preferredSelectionId: options.preferredSelectionId,
   };
 }
 
