@@ -4,7 +4,7 @@
 
 import { Logger } from '@finalrun/common';
 import type { AIAgent } from './AIAgent.js';
-import { FEATURE_GROUNDER } from '@finalrun/common';
+import { FEATURE_VISUAL_GROUNDER } from '@finalrun/common';
 import type { LLMTrace } from '../trace.js';
 import { FatalProviderError } from './providerFailure.js';
 
@@ -44,15 +44,13 @@ export class VisualGrounder {
     try {
       Logger.i('Attempting visual grounding fallback (no hierarchy)...');
 
-      // Call grounder with no hierarchy — forces screenshot-only grounding
       const response = await this._aiAgent.ground({
-        feature: FEATURE_GROUNDER,
+        feature: FEATURE_VISUAL_GROUNDER,
         act: params.act,
         screenshot: params.screenshot,
         platform: params.platform,
         traceStep: params.traceStep,
         tracePhase: 'action.visual_fallback',
-        // Intentionally no hierarchy — forces Case B/coordinate-based grounding
       });
 
       const output = response.output;
