@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-04-15
+
+### Added
+
+- `/finalrun-test-and-fix` skill for running tests and fixing issues with proof
+- Dedicated visual-grounding fallback feature with its own prompt
+- Async per-step progress callback for listening to step-level execution updates
+- Retry for planner and grounder LLM calls on transient failures
+- Docs for auto-triggering FinalRun during development
+
+### Changed
+
+- Restructured planner prompt for clarity and stricter retry rules
+- Generalized planner `thought.act` and broadened overlay handling
+- Aligned planner retry rules with actual executor inputs
+- Renamed verification bullet from "delete" to "item removal"
+- Skill guidance to skip verifying ephemeral UI in generated tests
+- Tightened Android driver retry preconditions
+
+### Fixed
+
+- Android back-to-back run UiAutomation bind failure
+- Surface scrcpy SIGINT interruption instead of adb-push stdout noise
+- Use absolute GitHub URLs for logo and demo GIF in READMEs
+
 ## [0.1.5] - 2026-04-11
 
 ### Added
