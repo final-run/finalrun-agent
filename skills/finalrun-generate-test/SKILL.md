@@ -75,7 +75,7 @@ Identify every place the UI handles zero-data or failure conditions. These are h
 - Do **not** generate edge-case tests automatically. Collect them as candidates.
 - In Step 4 (Propose Plan), present the discovered edge cases as an **"Edge cases identified"** section alongside the main test plan. Group them by category (state-dependent, empty state, validation error, etc.).
 - Let the user choose which edge cases to include. Some may be out of scope or lower priority.
-- For each selected edge case, the resulting test must follow the same **Setup & Idempotent Cleanup Rule** — setup must force the app into the specific state the edge case requires (e.g., clear all items to test the empty state, revoke a permission to test the denied flow).
+- For each selected edge case, the resulting test must follow the same **Idempotent Prep Rule** — the first items in `steps` must force the app into the specific state the edge case requires (e.g., clear all items to test the empty state, revoke a permission to test the denied flow).
 
 ### Step 2 — Environment profiles (required when tests use `${variables.*}` or `${secrets.*}`, or when app identity differs by environment)
 - **Inspect:** Read `.finalrun/config.yaml` and `.finalrun/env/*.yaml` if present so you reuse the existing app config and binding keys.
@@ -134,7 +134,7 @@ Before creating any test code, you **must** look into the existing test director
 Present the proposed testing modifications to the user for validation.
 - State explicitly if you are UPDATING or CREATING files.
 - List the exact target paths you intend to touch.
-- Detail the **Setup & Idempotent Cleanup** strategy (as described below) you intend to use.
+- Detail the **Idempotent Prep** strategy (as described below) you intend to put at the start of `steps`.
 - **Setup checklist:** List every `${variables.*}` and `${secrets.*}` the tests will use, and confirm the matching entries you will add to `.finalrun/env/*.yaml` (secret rows as `${ENV_VAR}` only).
 - **Effective app checklist:** State which app identifier FinalRun should use for each env/platform affected by the change.
 - **Inference checklist:** State which app identifiers were inferred from the repo, which files they came from, and whether any user confirmation is still needed.
@@ -158,7 +158,7 @@ Once approved, generate or update tests and suites using strict FinalRun YAML sy
 
 ## Allowed Action Vocabulary
 
-Every step you write in `setup` or `steps` must map to one of the actions the runtime agent can perform. Use the natural-language verbs below; do not invent actions outside this list.
+Every step you write in `steps` must map to one of the actions the runtime agent can perform. Use the natural-language verbs below; do not invent actions outside this list.
 
 | Verb to use in steps | Runtime action | Needs a UI target? |
 |---|---|---|
@@ -175,38 +175,40 @@ Every step you write in `setup` or `steps` must map to one of the actions the ru
 | **Wait** | `wait` | No |
 | **Verify** / Check | Visual assertion (agent inspects the screen) | Yes (what to verify) |
 
-> **"Verify" steps** are the one exception that is not a device action. They instruct the agent to visually inspect the current screen and confirm a condition. Use them in `setup` to confirm cleanup worked, and in `steps` to confirm intermediate states during the flow.
+> **"Verify" steps** are the one exception that is not a device action. They instruct the agent to visually inspect the current screen and confirm a condition. Use them at the start of `steps` to confirm idempotent prep worked, and later in `steps` to confirm intermediate states during the flow.
 
-## Setup & Idempotent Cleanup Rule
+## Steps Must Start with Idempotent Prep
 
 > [!IMPORTANT]
-> **EVERY Setup & Cleanup Flow MUST BE IDEMPOTENT.** 
-> Before writing any setup steps, you must ensure the test can run successfully **regardless of the prior state of the app**. If a previous run changed data (added an item, enabled a setting), this setup flow MUST clean that up first.
+> **EVERY test's first steps MUST BE IDEMPOTENT prep.**
+> The test must run successfully **regardless of the prior state of the app**. If a previous run changed data (added an item, enabled a setting), the leading steps MUST clean that up first before exercising the actual scenario.
 
-**Cleanup is NOT redundant.** Even if the cleanup steps involve navigating to the same screens as the test flow, you **MUST** include them.
+**Prep is NOT redundant.** Even if the prep involves navigating to the same screens as the rest of the flow, you **MUST** include it.
 
-| If the test validates... | The Setup & Cleanup Flow MUST... |
+| If the test validates... | The leading prep steps MUST... |
 |---|---|
 | **Adding** an item | Check if the item exists and **Delete/Remove** it first. |
 | **Deleting** an item | Check if the item exists and **Add/Create** it first if missing. |
 | **Enabling** a toggle | **Disable** the toggle first if it's already on. |
 | **Moving/Reordering** | Ensure the list is in a **known default state** first. |
 
-**Setup steps MUST include verification.** After performing a cleanup action, add a "Verify" step to confirm the cleanup succeeded before proceeding. If the cleanup fails, the test should fail early in setup rather than produce a misleading failure in the main steps.
+**Prep steps MUST include verification.** After each prep action, add a "Verify" step to confirm the app is in the expected starting state before proceeding to the scenario being tested. If prep fails, the test should fail early rather than produce a misleading failure later in the flow.
 
-**Example — setup with verification:**
+**Example — steps starting with idempotent prep:**
 ```yaml
-setup:
+steps:
   - "Navigate to the Shopping List screen"
   - "If the item 'Milk' is visible, swipe left on it and tap Delete"
   - "Verify that 'Milk' is no longer visible on the Shopping List screen"
+  - "Tap the Add Item button"
+  - "Type 'Milk' into the new item field and tap Save"
 ```
 
 ## Writing Good Test Flows
 - **Be specific**: Reference actual UI labels and recognizable controls (e.g. Settings screen, Settings button).
 - **Name visible controls clearly**: Use plain language like Save button and Home screen.
 - **Variables**: Use syntax like "Type `${variables.search_term}` into the search field".
-- **Idempotency is the priority**: Assume the test has already run and failed once; the setup flow must fix it.
+- **Idempotency is the priority**: Assume the test has already run and failed once; the leading prep steps must fix it.
 - **Only use allowed actions**: Every step must map to an action from the **Allowed Action Vocabulary** table above. Do not write steps that require actions outside that list.
 - **Verify intermediate states in steps**: When a multi-step flow depends on an earlier action succeeding (e.g. a form submission before checking a confirmation screen), add a "Verify" step between them to confirm the intermediate state.
 - **Reserve `expected_state` for the final screen**: Do not put intermediate checks in `expected_state`. Use inline "Verify" steps in `steps` for intermediate validation instead.
@@ -272,21 +274,18 @@ Every test specification file must strictly follow this exact schema:
 ```yaml
 name: <snake_case_name>
 description: <One or two sentences describing what the test validates.>
-setup:
-  - <string>
 steps:
   - <string>
 expected_state:
   - <string>
 ```
 
-**The three-phase execution model:** At runtime, the agent executes the test in three sequential phases: **Setup** (prepare clean state) → **Steps** (perform the user journey) → **Expected State** (verify the final screen). The test succeeds only if all three phases pass.
+**The two-phase execution model:** At runtime, the agent executes the test in two sequential phases: **Steps** (perform idempotent prep, then the user journey) → **Expected State** (verify the final screen). The test succeeds only if both phases pass.
 
 **Instruction Guidelines for the specific keys:**
 - **name:** Short unique identifier.
 - **description:** High level summary of the user journey.
-- **setup:** Actionable steps to guarantee a clean starting state, honoring the Idempotency rule. Include "Verify" steps after cleanup actions to confirm the app is in the expected starting state. Each step must use an action from the Allowed Action Vocabulary.
-- **steps:** Chronological list of user interactions. Name the target screen, button, field, or control directly in each step. Each step must use an action from the Allowed Action Vocabulary. You may include inline "Verify" steps to confirm intermediate UI states during the flow.
+- **steps:** Chronological list of user interactions. The **first items** must be idempotent prep that guarantees a clean starting state (honoring the Idempotency rule), each followed by a "Verify" step confirming the prep worked. The remaining items are the user journey being tested. Name the target screen, button, field, or control directly in each step. Each step must use an action from the Allowed Action Vocabulary. Inline "Verify" steps may be used anywhere to confirm intermediate UI states.
 - **expected_state:** The expected state of the UI **after all steps are complete**. These are **not actions to perform** — they are boolean conditions the agent checks against the final screen. If all conditions are met the test passes; if any fail the test fails. Do not include navigation or interaction instructions here.
 
 ### Suite File Template (`.finalrun/suites/<feature-name>.yaml`)

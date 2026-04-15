@@ -329,7 +329,6 @@ async function writeRunManifest(
           variables: [],
           secrets: [],
         },
-        setup: [],
         steps: [],
         expected_state: [],
       })),

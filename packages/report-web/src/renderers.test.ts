@@ -161,7 +161,6 @@ function createSuiteRunManifest(): RunManifest {
             variables: [],
             secrets: ['email'],
           },
-          setup: [],
           steps: ['Tap login'],
           expected_state: ['Dashboard is visible'],
         },
@@ -176,7 +175,6 @@ function createSuiteRunManifest(): RunManifest {
             variables: [],
             secrets: [],
           },
-          setup: [],
           steps: ['Open checkout'],
           expected_state: ['Checkout page is visible'],
         },
@@ -252,7 +250,6 @@ function createSuiteRunManifest(): RunManifest {
         },
         authored: {
           name: 'valid login',
-          setup: [],
           steps: ['Tap login'],
           expected_state: ['Dashboard is visible'],
         },

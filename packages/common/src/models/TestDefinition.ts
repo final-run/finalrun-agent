@@ -3,7 +3,6 @@ export interface TestDefinition {
   // --- Always present (authored in YAML) ---
   name: string;
   description?: string;
-  setup: string[];
   steps: string[];
   expected_state: string[];
 

@@ -17,7 +17,6 @@ const ENV_TOP_LEVEL_KEYS = new Set(['app', 'secrets', 'variables']);
 const TEST_TOP_LEVEL_KEYS = new Set([
   'name',
   'description',
-  'setup',
   'steps',
   'expected_state',
 ]);
@@ -94,7 +93,6 @@ export async function loadTest(
 
   const name = readRequiredString(parsed['name'], `${filePath} name`);
   const description = readOptionalString(parsed['description'], `${filePath} description`);
-  const setup = readStringArray(parsed['setup'], `${filePath} setup`);
   const steps = readStringArray(parsed['steps'], `${filePath} steps`);
   const expected_state = readStringArray(parsed['expected_state'], `${filePath} expected_state`);
 
@@ -106,7 +104,6 @@ export async function loadTest(
   return {
     name,
     description,
-    setup,
     steps,
     expected_state,
     sourcePath: filePath,
@@ -151,7 +148,6 @@ export function validateTestBindings(
   const values = [
     test.name,
     test.description,
-    ...test.setup,
     ...test.steps,
     ...test.expected_state,
   ].filter((value): value is string => typeof value === 'string');

@@ -8,8 +8,7 @@ FinalRun tests are plain YAML files stored under `.finalrun/tests/`. Each file d
 |---|---|---|
 | `name` | yes | Stable identifier for the scenario |
 | `description` | no | Short human-readable summary |
-| `setup` | no | Actions to prepare clean state before the test runs |
-| `steps` | yes | Ordered natural-language steps executed by the agent |
+| `steps` | yes | Ordered natural-language steps executed by the agent. The first items should be idempotent prep that brings the app to a clean starting state. |
 | `expected_state` | no | Expected UI state after all steps complete |
 
 ## Example
@@ -18,10 +17,8 @@ FinalRun tests are plain YAML files stored under `.finalrun/tests/`. Each file d
 name: login_smoke
 description: Verify that a user can log in and reach the home screen.
 
-setup:
-  - Clear app data.
-
 steps:
+  - Clear app data.
   - Launch the app.
   - Enter ${secrets.email} on the login screen.
   - Enter ${secrets.password} on the password screen.

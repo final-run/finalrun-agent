@@ -86,11 +86,9 @@ my-app-repo/
 name: User Login Flow
 description: Verify login with valid credentials
 
-setup:                              # Pre-conditions (run before steps)
-  - Launch the app
-  - Navigate to login screen
-
 steps:                              # Main test actions (required, non-empty)
+  - Launch the app                  # Idempotent prep — bring app to a known state
+  - Navigate to login screen
   - Enter ${secrets.email} in the email field
   - Enter ${secrets.password} in the password field
   - Tap the Login button
@@ -100,9 +98,8 @@ expected_state:                     # Expected outcomes (verified after steps)
   - Welcome message shows user name
 ```
 
-**Why this structure?** The `setup → steps → expected_state` pattern mirrors how QA engineers think:
-- **setup**: Get the app into the right state
-- **steps**: Perform the user actions being tested
+**Why this structure?** The `steps → expected_state` pattern mirrors how QA engineers think:
+- **steps**: Begin with idempotent prep that puts the app into a known starting state, then perform the user actions being tested
 - **expected_state**: Verify the outcome
 
 `${secrets.email}` and `${variables.language}` are **binding references** — they get resolved from the environment config at runtime. This lets the same test run against different environments.
@@ -900,8 +897,7 @@ This is the most important artifact. It contains everything about a run.
           "variables": ["language"],
           "secrets": ["email", "password"]
         },
-        "setup": ["Launch the app"],
-        "steps": ["Enter ${secrets.email} in email field", "Tap Login"],
+        "steps": ["Launch the app", "Enter ${secrets.email} in email field", "Tap Login"],
         "expected_state": ["Dashboard is visible"]
       }
     ],

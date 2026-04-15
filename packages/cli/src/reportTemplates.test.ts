@@ -158,7 +158,6 @@ function createSuiteRunManifest(): ReportRunManifest {
         {
           testId: 'login',
           name: 'valid login',
-          setup: [],
           steps: [],
           expected_state: [],
           relativePath: 'login/valid_login.yaml',
@@ -173,7 +172,6 @@ function createSuiteRunManifest(): ReportRunManifest {
         {
           testId: 'checkout',
           name: 'guest checkout',
-          setup: [],
           steps: [],
           expected_state: [],
           relativePath: 'checkout/guest_checkout.yaml',
@@ -257,7 +255,6 @@ function createSuiteRunManifest(): ReportRunManifest {
         },
         authored: {
           name: 'valid login',
-          setup: [],
           steps: ['Tap login'],
           expected_state: ['Dashboard is visible'],
         },

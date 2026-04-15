@@ -39,7 +39,7 @@ export interface AgentAction {
   stepJsonFile?: string;
   trace?: AgentActionTrace;
   timing?: TimingInfo;
-  authoredRef?: { section: 'setup' | 'steps' | 'expected_state'; index: number };
+  authoredRef?: { section: 'steps' | 'expected_state'; index: number };
 }
 
 export interface TestResult {

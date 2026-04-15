@@ -168,7 +168,6 @@ test('ReportWriter emits redacted JSON artifacts and input snapshots without per
   const testDef: TestDefinition = {
     name: 'login',
     description: 'Verify a user can log in.',
-    setup: [],
     steps: ['Enter ${secrets.email} on the login screen.'],
     expected_state: ['The feed is visible.'],
     sourcePath: testSourcePath,
@@ -404,7 +403,6 @@ test('ReportWriter persists suite snapshots and suite metadata without changing 
 
   const testDef: TestDefinition = {
     name: 'valid login',
-    setup: [],
     steps: ['Open login.', 'Submit valid credentials.'],
     expected_state: ['The dashboard is visible.'],
     sourcePath: testSourcePath,
@@ -555,7 +553,6 @@ test('ReportWriter reuses artifact-local recording files without duplicating the
   const testDef: TestDefinition = {
     name: 'login',
     description: 'Verify login.',
-    setup: [],
     steps: ['Open login.'],
     expected_state: ['The dashboard is visible.'],
     sourcePath: path.join(runDir, 'workspace', '.finalrun', 'tests', 'login.yaml'),

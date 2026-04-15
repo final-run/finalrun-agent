@@ -15,15 +15,6 @@ export function compileTestObjective(
     sections.push(`Description: ${interpolateVariables(test.description, bindings)}`);
   }
 
-  if (test.setup.length > 0) {
-    sections.push(
-      formatNumberedSection(
-        'Setup',
-        test.setup.map((item) => interpolateVariables(item, bindings)),
-      ),
-    );
-  }
-
   sections.push(
     formatNumberedSection(
       'Steps',

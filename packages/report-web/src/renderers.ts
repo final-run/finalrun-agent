@@ -2446,7 +2446,6 @@ function buildTestListItems(manifest: ReportRunManifest): ReportTestListItem[] {
         snapshotJsonPath: test.snapshotJsonPath,
         snapshotYamlText: test.snapshotYamlText,
         bindingReferences: test.bindingReferences,
-        setup: [],
         steps: [],
         expected_state: [],
       },

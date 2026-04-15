@@ -2054,7 +2054,6 @@ function buildTestListItems(manifest: ReportRunManifest): ReportTestListItem[] {
       input: {
         testId: test.testId,
         name: test.testName,
-        setup: [],
         steps: [],
         expected_state: [],
         relativePath: test.relativePath,
