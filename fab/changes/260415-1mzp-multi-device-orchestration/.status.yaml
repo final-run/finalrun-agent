@@ -11,8 +11,8 @@ progress:
     apply: done
     review: done
     hydrate: done
-    ship: active
-    review-pr: pending
+    ship: done
+    review-pr: active
 checklist:
     generated: true
     path: checklist.md
@@ -37,6 +37,8 @@ stage_metrics:
     apply: {started_at: "2026-04-15T06:55:44Z", driver: fab-continue, iterations: 2, completed_at: "2026-04-15T07:19:20Z"}
     review: {started_at: "2026-04-15T07:19:20Z", driver: fab-fff, iterations: 1, completed_at: "2026-04-15T07:19:26Z"}
     hydrate: {started_at: "2026-04-15T07:19:26Z", driver: fab-fff, iterations: 1, completed_at: "2026-04-15T07:24:52Z"}
-    ship: {started_at: "2026-04-15T07:24:52Z", driver: fab-fff, iterations: 1}
-prs: []
-last_updated: 2026-04-15T07:24:52Z
+    ship: {started_at: "2026-04-15T07:24:52Z", driver: fab-fff, iterations: 1, completed_at: "2026-04-15T07:27:08Z"}
+    review-pr: {started_at: "2026-04-15T07:27:08Z", driver: git-pr, iterations: 1}
+prs:
+    - https://github.com/final-run/finalrun-agent/pull/90
+last_updated: 2026-04-15T07:27:08Z
