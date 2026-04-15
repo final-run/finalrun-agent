@@ -30,6 +30,10 @@ export type {
 export type { TestDefinition, BindingReference } from './models/TestDefinition.js';
 export type { SuiteDefinition } from './models/SuiteDefinition.js';
 export type {
+  DeviceDefinition,
+  MultiDeviceConfig,
+} from './models/MultiDeviceConfig.js';
+export type {
   AgentActionTrace,
   TraceSpan,
   TimingInfo,
@@ -44,6 +48,7 @@ export type {
   AgentAction,
   TestResult,
   FirstFailure,
+  PerDeviceArtifact,
 } from './models/TestResult.js';
 export type {
   RunStatus,

@@ -15,7 +15,26 @@ export { ActionExecutor } from './ActionExecutor.js';
 export type { ActionInput, ActionOutput } from './ActionExecutor.js';
 
 export { AIAgent } from './ai/AIAgent.js';
-export type { PlannerRequest, PlannerResponse, GrounderRequest, GrounderResponse } from './ai/AIAgent.js';
+export type {
+  PlannerRequest,
+  PlannerResponse,
+  PlannerAction,
+  MultiDeviceActiveState,
+  MultiDevicePlannerRequest,
+  MultiDevicePlannerResponse,
+  GrounderRequest,
+  GrounderResponse,
+} from './ai/AIAgent.js';
+
+export { MultiDeviceOrchestrator } from './MultiDeviceOrchestrator.js';
+export type {
+  MultiDeviceOrchestratorConfig,
+  MultiDeviceOrchestratorDeviceInput,
+  MultiDeviceExecutionResult,
+  MultiDeviceExecutionStatus,
+  MultiDeviceStepResult,
+  MultiDeviceRecordingMetadata,
+} from './MultiDeviceOrchestrator.js';
 
 export { VisualGrounder } from './ai/VisualGrounder.js';
 export type { VisualGroundingResult } from './ai/VisualGrounder.js';

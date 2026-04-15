@@ -19,6 +19,15 @@ export interface FinalRunWorkspace {
   suitesDir: string;
   envDir: string;
   artifactsDir: string;
+  /**
+   * `.finalrun/multi-device/` — parent directory for multi-device workspaces.
+   * Always populated; consumers must check `pathExists(multiDeviceDir)` before use.
+   */
+  multiDeviceDir: string;
+  /** `.finalrun/multi-device/tests/` — multi-device test YAML tree. */
+  multiDeviceTestsDir: string;
+  /** `.finalrun/multi-device/suites/` — multi-device suite YAML tree. */
+  multiDeviceSuitesDir: string;
 }
 
 export interface AppOverrideValidationResult {
@@ -148,8 +157,15 @@ async function finalizeResolvedWorkspace(
 export async function ensureWorkspaceDirectories(
   workspace: FinalRunWorkspace,
 ): Promise<void> {
-  if (!(await pathExists(workspace.testsDir))) {
-    throw new Error(`Missing .finalrun/tests directory: ${workspace.testsDir}`);
+  // A workspace is considered usable if it has either a single-device
+  // `tests/` subtree or a multi-device `multi-device/tests/` subtree (v1
+  // introduces the latter; see 260415-1mzp).
+  const hasSingleDeviceTests = await pathExists(workspace.testsDir);
+  const hasMultiDeviceTests = await pathExists(workspace.multiDeviceTestsDir);
+  if (!hasSingleDeviceTests && !hasMultiDeviceTests) {
+    throw new Error(
+      `Missing .finalrun/tests or .finalrun/multi-device/tests directory: ${workspace.testsDir}`,
+    );
   }
 
   await fs.mkdir(workspace.artifactsDir, { recursive: true });
@@ -307,7 +323,40 @@ export function isYamlFile(filePath: string): boolean {
 export async function resolveSuiteManifestPath(
   suitesDir: string,
   suitePath: string,
+  options?: { multiDeviceSuitesDir?: string; finalrunDir?: string },
 ): Promise<string> {
+  const normalizedSuitePath = suitePath.split(path.sep).join('/');
+  const isMultiDeviceSelector = normalizedSuitePath.startsWith('multi-device/suites/');
+
+  if (isMultiDeviceSelector) {
+    const multiDeviceSuitesDir = options?.multiDeviceSuitesDir;
+    const finalrunDir = options?.finalrunDir;
+    if (!multiDeviceSuitesDir || !finalrunDir) {
+      throw new Error(
+        'Multi-device suite selector provided without a workspace multi-device configuration.',
+      );
+    }
+    if (!(await pathExists(multiDeviceSuitesDir))) {
+      throw new Error(
+        `Missing .finalrun/multi-device/suites directory: ${multiDeviceSuitesDir}`,
+      );
+    }
+
+    const resolvedPath = path.resolve(finalrunDir, suitePath);
+    assertPathWithinRoot(multiDeviceSuitesDir, resolvedPath, 'Multi-device suite manifest');
+
+    if (!isYamlFile(resolvedPath)) {
+      throw new Error(`Suite manifest must point to a .yaml or .yml file: ${suitePath}`);
+    }
+
+    const stats = await fs.stat(resolvedPath).catch(() => null);
+    if (!stats?.isFile()) {
+      throw new Error(`Suite manifest not found: ${resolvedPath}`);
+    }
+
+    return resolvedPath;
+  }
+
   if (!(await pathExists(suitesDir))) {
     throw new Error(`Missing .finalrun/suites directory: ${suitesDir}`);
   }
@@ -501,6 +550,7 @@ async function tryResolveWorkspace(
 async function buildWorkspace(workspaceRoot: string): Promise<FinalRunWorkspace> {
   const rootDir = path.resolve(workspaceRoot);
   const finalrunDir = path.join(rootDir, '.finalrun');
+  const multiDeviceDir = path.join(finalrunDir, 'multi-device');
   return {
     rootDir,
     finalrunDir,
@@ -508,6 +558,9 @@ async function buildWorkspace(workspaceRoot: string): Promise<FinalRunWorkspace>
     suitesDir: path.join(finalrunDir, 'suites'),
     envDir: path.join(finalrunDir, 'env'),
     artifactsDir: await resolveWorkspaceArtifactsDir(rootDir),
+    multiDeviceDir,
+    multiDeviceTestsDir: path.join(multiDeviceDir, 'tests'),
+    multiDeviceSuitesDir: path.join(multiDeviceDir, 'suites'),
   };
 }
 

@@ -109,4 +109,19 @@ export interface RunManifest {
     log: string;
     runContextJson?: string;
   };
+  /**
+   * Multi-device run metadata. Only present when the run executed against a
+   * multi-device workspace. Single-device runs omit this field so the emitted
+   * JSON remains byte-identical to the pre-change baseline.
+   */
+  multiDevice?: {
+    devices: Record<
+      string,
+      {
+        platform: string;
+        app?: string;
+        hardwareName: string;
+      }
+    >;
+  };
 }

@@ -37,7 +37,9 @@ export async function selectTestFiles(
       throw new Error(TEST_SELECTION_REQUIRED_ERROR);
     }
     if (allTestFiles.length === 0) {
-      throw new Error(`No YAML tests found under ${testsDir}`);
+      throw new Error(
+        `No YAML tests found under ${testsDir}. If you meant a multi-device test, pass a selector starting with multi-device/tests/.`,
+      );
     }
     return allTestFiles;
   }
@@ -117,9 +119,23 @@ function hasGlobMagic(value: string): boolean {
 
 function resolveSelectorPath(selector: string, testsDir: string): string {
   const normalizedSelector = selector.split(path.sep).join('/');
-  const workspaceRoot = path.resolve(testsDir, '..', '..');
+  // `testsDir` is `<workspaceRoot>/.finalrun/tests` for single-device workspaces
+  // and `<workspaceRoot>/.finalrun/multi-device/tests` for multi-device
+  // selectors, so the workspace root is 2 levels up OR 3 levels up respectively.
+  const isMultiDeviceTestsDir =
+    testsDir.split(path.sep).join('/').endsWith('/.finalrun/multi-device/tests');
+  const workspaceRoot = isMultiDeviceTestsDir
+    ? path.resolve(testsDir, '..', '..', '..')
+    : path.resolve(testsDir, '..', '..');
+  const finalrunDir = path.join(workspaceRoot, '.finalrun');
   if (path.isAbsolute(selector)) {
     return path.resolve(selector);
+  }
+
+  // Multi-device selector: `multi-device/tests/<rel>`. Resolve against
+  // `<workspaceRoot>/.finalrun/` so it lands under `.finalrun/multi-device/tests/`.
+  if (normalizedSelector.startsWith('multi-device/tests/')) {
+    return path.resolve(finalrunDir, selector);
   }
 
   if (normalizedSelector.startsWith('.finalrun/tests/')) {
@@ -223,7 +239,12 @@ function findSimilarFiles(selector: string, allTestFiles: string[], testsDir: st
 }
 
 async function collectYamlFiles(dirPath: string): Promise<string[]> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const entries = await fs.readdir(dirPath, { withFileTypes: true }).catch(() => null);
+  if (!entries) {
+    // Gracefully return [] so callers (multi-device-aware error surfacing, for
+    // example) can branch on emptiness without catching ENOENT.
+    return [];
+  }
   const filePaths: string[] = [];
 
   for (const entry of entries) {

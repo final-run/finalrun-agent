@@ -40,6 +40,26 @@ export interface AgentAction {
   trace?: AgentActionTrace;
   timing?: TimingInfo;
   authoredRef?: { section: 'setup' | 'steps' | 'expected_state'; index: number };
+  /**
+   * Device key this action was dispatched to in a multi-device run (e.g. `"alice"`, `"bob"`).
+   * Omitted for single-device runs so JSON output remains byte-identical.
+   */
+  device?: string;
+}
+
+/**
+ * Per-device artifact paths for multi-device runs. All paths are relative to
+ * the run root; each device has its own video/log streams captured in parallel.
+ */
+export interface PerDeviceArtifact {
+  /** Subfolder under `tests/{testId}/` scoped to this device (e.g. `alice`). */
+  folder: string;
+  /** Recording (mp4/mov) captured on this device. */
+  recordingFile?: string;
+  /** Device log tail captured on this device. */
+  deviceLogFile?: string;
+  /** ISO timestamp when recording started on this device (for scrubber anchoring). */
+  recordingStartedAt?: string;
 }
 
 export interface TestResult {
@@ -76,6 +96,17 @@ export interface TestResult {
   firstFailure?: FirstFailure;
   previewScreenshotPath?: string;
   resultJsonPath?: string;
+  /**
+   * Discriminator flagging a multi-device test run. Single-device runs omit
+   * this field so JSON output remains byte-identical to the pre-change baseline.
+   */
+  multiDevice?: boolean;
+  /**
+   * Per-device artifact paths (folder, recording, device log, anchor timestamp),
+   * keyed by device identifier (e.g. `"alice"`, `"bob"`). Only present when
+   * `multiDevice` is true.
+   */
+  perDeviceArtifacts?: Record<string, PerDeviceArtifact>;
 }
 
 export interface FirstFailure {

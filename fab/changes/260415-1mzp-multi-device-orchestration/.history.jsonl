@@ -1,0 +1,26 @@
+{"action":"enter","driver":"fab-new","event":"stage-transition","stage":"intake","ts":"2026-04-15T01:20:01Z"}
+{"args":"Multi-device test orchestration v1 — 2 Android devices, same platform, auto-assigned, fail-fast. Per plan at ~/.claude/plans/harmonic-puzzling-robin.md: active-device-scoped AI planner, parallel gRPC dispatch, sandwich UI (phone | chat-bubble timeline | phone), byte-identical single-device preservation for both Android and iOS.","cmd":"fab-new","event":"command","ts":"2026-04-15T01:20:01Z"}
+{"delta":"+3.1","event":"confidence","score":3.1,"trigger":"calc-score","ts":"2026-04-15T01:27:39Z"}
+{"delta":"+0.0","event":"confidence","score":3.1,"trigger":"calc-score","ts":"2026-04-15T01:27:45Z"}
+{"delta":"+0.9","event":"confidence","score":4,"trigger":"calc-score","ts":"2026-04-15T05:04:50Z"}
+{"delta":"+0.0","event":"confidence","score":4,"trigger":"calc-score","ts":"2026-04-15T05:04:57Z"}
+{"delta":"+0.0","event":"confidence","score":4,"trigger":"calc-score","ts":"2026-04-15T05:05:00Z"}
+{"delta":"+1.0","event":"confidence","score":5,"trigger":"calc-score","ts":"2026-04-15T05:08:34Z"}
+{"delta":"+0.0","event":"confidence","score":5,"trigger":"calc-score","ts":"2026-04-15T05:08:48Z"}
+{"delta":"+0.0","event":"confidence","score":5,"trigger":"calc-score","ts":"2026-04-15T05:08:57Z"}
+{"delta":"+0.0","event":"confidence","score":5,"trigger":"calc-score","ts":"2026-04-15T05:08:59Z"}
+{"delta":"-0.9","event":"confidence","score":4.1,"trigger":"calc-score","ts":"2026-04-15T05:14:42Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"spec","ts":"2026-04-15T05:16:47Z"}
+{"delta":"+0.0","event":"confidence","score":4.1,"trigger":"calc-score","ts":"2026-04-15T05:17:53Z"}
+{"delta":"+0.0","event":"confidence","score":4.1,"trigger":"calc-score","ts":"2026-04-15T05:17:58Z"}
+{"delta":"+0.0","event":"confidence","score":4.1,"trigger":"calc-score","ts":"2026-04-15T05:18:03Z"}
+{"delta":"+0.0","event":"confidence","score":4.1,"trigger":"calc-score","ts":"2026-04-15T05:18:20Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"tasks","ts":"2026-04-15T05:26:09Z"}
+{"action":"enter","driver":"fab-ff","event":"stage-transition","stage":"apply","ts":"2026-04-15T05:26:09Z"}
+{"action":"enter","driver":"fab-continue","event":"stage-transition","stage":"review","ts":"2026-04-15T06:42:27Z"}
+{"event":"review","result":"failed","ts":"2026-04-15T06:55:44Z"}
+{"action":"re-entry","driver":"fab-continue","event":"stage-transition","stage":"apply","ts":"2026-04-15T06:55:44Z"}
+{"action":"enter","driver":"fab-fff","event":"stage-transition","stage":"review","ts":"2026-04-15T07:19:20Z"}
+{"action":"enter","driver":"fab-fff","event":"stage-transition","stage":"hydrate","ts":"2026-04-15T07:19:26Z"}
+{"event":"review","result":"passed","ts":"2026-04-15T07:19:26Z"}
+{"action":"enter","driver":"fab-fff","event":"stage-transition","stage":"ship","ts":"2026-04-15T07:24:52Z"}

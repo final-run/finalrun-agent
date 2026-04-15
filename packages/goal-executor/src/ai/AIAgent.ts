@@ -23,6 +23,7 @@ import {
   Hierarchy,
   FEATURE_PLANNER,
   FEATURE_GROUNDER,
+  FEATURE_VISUAL_GROUNDER,
   FEATURE_SCROLL_INDEX_GROUNDER,
   FEATURE_INPUT_FOCUS_GROUNDER,
   FEATURE_LAUNCH_APP_GROUNDER,
@@ -104,6 +105,65 @@ export interface GrounderRequest {
   availableApps?: Array<{ packageName: string; name: string }>;
   traceStep?: number;
   tracePhase?: string;
+}
+
+/**
+ * Structural action shape returned inside a `MultiDevicePlannerResponse`.
+ * Mirrors the union of fields supported by `PlannerResponse` (single-device)
+ * so the multi-device orchestrator can feed entries directly into the same
+ * `ActionExecutor` interface without duplicating normalization logic.
+ *
+ * Single-device callers MUST NOT import this type — `PlannerResponse` remains
+ * the canonical single-device shape.
+ */
+export interface PlannerAction {
+  act: string;
+  reason: string;
+  text?: string;
+  clearText?: boolean;
+  direction?: string;
+  durationSeconds?: number;
+  url?: string;
+  repeat?: number;
+  delayBetweenTapMs?: number;
+  result?: string;
+  analysis?: string;
+  severity?: string;
+}
+
+export interface MultiDeviceActiveState {
+  preActionScreenshot?: string; // base64, optional on a device's first appearance
+  postActionScreenshot: string; // base64, always present for an active device
+  hierarchy: Hierarchy;
+  platform: string;
+}
+
+export interface MultiDevicePlannerRequest {
+  testObjective: string;
+  /** Configured device keys — used to validate planner responses reference
+   *  known devices only. `activeDeviceStates` keys MUST be a subset of this. */
+  devices: string[];
+  /** Active-device-scoped state map. Only devices referenced by the current
+   *  step are present (1 or 2). Passive devices are absent from the map. */
+  activeDeviceStates: Record<string, MultiDeviceActiveState>;
+  history?: string;
+  remember?: Array<{ device: string; note: string }>;
+  preContext?: string;
+  traceStep?: number;
+}
+
+export interface MultiDevicePlannerResponse {
+  /** 0-2 device-tagged actions. 0 = observation-only turn, 1 = sequential,
+   *  2 = parallel (distinct devices). Duplicate devices or >2 entries are
+   *  validation failures — `planMulti` retries once, then throws. */
+  actions: Array<{ device: string; action: PlannerAction }>;
+  remember: Array<{ device: string; note: string }>;
+  thought?: {
+    plan?: string;
+    think?: string;
+    act?: string;
+  };
+  trace?: LLMTrace;
 }
 
 export interface GrounderResponse {
@@ -291,6 +351,132 @@ export class AIAgent {
 
     return {
       ...parsedResponse,
+      trace: {
+        totalMs: promptBuildMs + llmMs + parseMs,
+        promptBuildMs,
+        llmMs,
+        parseMs,
+      },
+    };
+  }
+
+  /**
+   * Multi-device planner — sibling to `plan()`. Uses the same Vercel AI SDK
+   * path (`_callLLM`) and the same retry count, but loads the multi-device
+   * prompt and validates a multi-action response shape.
+   *
+   * Validation (spec CHK-028): rejects responses whose `actions` array
+   *   - contains >2 entries,
+   *   - contains duplicate devices,
+   *   - references a device key not in `request.devices`.
+   * On first failure, retries once with a corrective hint appended to the
+   * user prompt. On second failure, throws the validation error.
+   *
+   * Single-device impact: zero. `plan()` and `PlannerResponse` are unchanged.
+   */
+  async planMulti(request: MultiDevicePlannerRequest): Promise<MultiDevicePlannerResponse> {
+    const promptBuildStartedAt = performance.now();
+    const systemPrompt = this._loadPrompt('multi-device-planner');
+
+    const knownDevices = new Set(request.devices);
+    const baseUserParts = this._buildMultiDeviceUserParts(request);
+    const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
+
+    const maxAttempts = MAX_LLM_ATTEMPTS;
+    let lastError: unknown;
+    let parsed: MultiDevicePlannerResponse | undefined;
+    let llmMs = 0;
+    let parseMs = 0;
+    let validationHint: string | undefined;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const userParts =
+        validationHint !== undefined
+          ? [
+              ...baseUserParts,
+              {
+                type: 'text' as const,
+                text: `\nPrevious response was invalid: ${validationHint}. Emit a corrected JSON object with at most 2 actions, distinct devices, and device keys drawn from: ${request.devices.join(', ')}.\n`,
+              },
+            ]
+          : baseUserParts;
+
+      const llmPhase = startTracePhase(
+        request.traceStep,
+        'planning.llm.multi',
+        `provider=${this._provider} model=${this._modelName} attempt=${attempt}/${maxAttempts}`,
+      );
+      const llmStartedAt = performance.now();
+
+      let rawOutput: unknown;
+      let rawText: string;
+      try {
+        const llmResult = await this._callLLM(systemPrompt, userParts, 'planner');
+        rawOutput = llmResult.output;
+        rawText = llmResult.text;
+      } catch (error) {
+        finishTracePhase(
+          llmPhase,
+          'failure',
+          error instanceof Error ? error.message : String(error),
+        );
+        if (FatalProviderError.isInstance(error)) {
+          throw error;
+        }
+        lastError = error;
+        if (attempt < maxAttempts) {
+          Logger.w(
+            `planMulti attempt ${attempt}/${maxAttempts} failed (llm), retrying: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          continue;
+        }
+        throw error;
+      }
+
+      llmMs = roundDuration(performance.now() - llmStartedAt);
+      finishTracePhase(
+        llmPhase,
+        'success',
+        describeLLMTrace({ promptBuildMs, llmMs }),
+      );
+
+      const parsePhase = startTracePhase(
+        request.traceStep,
+        'planning.parse.multi',
+        `attempt=${attempt}/${maxAttempts}`,
+      );
+      const parseStartedAt = performance.now();
+      try {
+        parsed = this._parseMultiDevicePlannerResponse(rawOutput, rawText, knownDevices);
+        parseMs = roundDuration(performance.now() - parseStartedAt);
+        finishTracePhase(parsePhase, 'success');
+        break;
+      } catch (error) {
+        finishTracePhase(
+          parsePhase,
+          'failure',
+          error instanceof Error ? error.message : String(error),
+        );
+        lastError = error;
+        validationHint = error instanceof Error ? error.message : String(error);
+        if (attempt < maxAttempts) {
+          Logger.w(
+            `planMulti attempt ${attempt}/${maxAttempts} failed (parse), retrying: ${validationHint}`,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!parsed) {
+      throw lastError ?? new Error('planMulti failed after all retry attempts');
+    }
+
+    return {
+      ...parsed,
       trace: {
         totalMs: promptBuildMs + llmMs + parseMs,
         promptBuildMs,
@@ -597,6 +783,8 @@ export class AIAgent {
     switch (feature) {
       case FEATURE_GROUNDER:
         return 'grounder';
+      case FEATURE_VISUAL_GROUNDER:
+        return 'visual-grounder';
       case FEATURE_SCROLL_INDEX_GROUNDER:
         return 'scroll-grounder';
       case FEATURE_INPUT_FOCUS_GROUNDER:
@@ -649,6 +837,145 @@ export class AIAgent {
 
     const grounderOutput = asRecord(record['output']) ?? record;
     return { output: grounderOutput, raw: rawText };
+  }
+
+  /**
+   * Build the user message parts for `planMulti()`. Per-active-device blocks
+   * are emitted as interleaved image + text parts so the multimodal model can
+   * correlate each screenshot with its device label.
+   */
+  private _buildMultiDeviceUserParts(
+    request: MultiDevicePlannerRequest,
+  ): Array<{ type: 'text'; text: string } | { type: 'image'; image: string }> {
+    const parts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }> = [];
+
+    let header = `Test objective: ${request.testObjective}\n`;
+    header += `Devices: ${request.devices.join(', ')}\n`;
+    if (request.preContext) {
+      header += `\nPre-context:\n${request.preContext}\n`;
+    }
+    if (request.history) {
+      header += `\nHistory of actions taken so far:\n${request.history}\n`;
+    }
+    if (request.remember && request.remember.length > 0) {
+      header += `\nImportant context to remember:\n${JSON.stringify(request.remember)}\n`;
+    }
+    parts.push({ type: 'text', text: header });
+
+    const activeKeys = Object.keys(request.activeDeviceStates);
+    for (const key of activeKeys) {
+      const state = request.activeDeviceStates[key]!;
+      if (state.preActionScreenshot) {
+        parts.push({ type: 'image', image: state.preActionScreenshot });
+      }
+      parts.push({ type: 'image', image: state.postActionScreenshot });
+      const elements = state.hierarchy.toPromptElements();
+      parts.push({
+        type: 'text',
+        text: `\nDevice '${key}' (${state.platform}) ui_elements:\n${JSON.stringify(elements)}\n`,
+      });
+    }
+
+    return parts;
+  }
+
+  /**
+   * Parse + validate the multi-device planner response. Throws `Error` with a
+   * message matching the test-guaranteed regex (`max is 2`, `duplicate device`,
+   * `unknown device '<key>'`) so callers can inspect causes.
+   */
+  private _parseMultiDevicePlannerResponse(
+    output: unknown,
+    rawText: string,
+    knownDevices: Set<string>,
+  ): MultiDevicePlannerResponse {
+    const record = asRecord(output);
+    if (!record) {
+      throw new Error(
+        `planMulti response is not a JSON object: ${rawText.substring(0, 200)}`,
+      );
+    }
+
+    const inner = asRecord(record['output']) ?? record;
+    const actionsRaw = inner['actions'];
+    if (!Array.isArray(actionsRaw)) {
+      throw new Error(
+        `planMulti response missing 'actions' array: ${rawText.substring(0, 200)}`,
+      );
+    }
+    if (actionsRaw.length > 2) {
+      throw new Error(
+        `planMulti response has ${actionsRaw.length} actions — max is 2`,
+      );
+    }
+
+    const seenDevices = new Set<string>();
+    const normalizedActions: Array<{ device: string; action: PlannerAction }> = [];
+    for (const entry of actionsRaw) {
+      const entryRecord = asRecord(entry);
+      if (!entryRecord) {
+        throw new Error(
+          `planMulti action entry is not an object: ${JSON.stringify(entry).substring(0, 120)}`,
+        );
+      }
+      const device = normalizeString(entryRecord['device']);
+      if (!device) {
+        throw new Error(
+          `planMulti action entry missing 'device': ${JSON.stringify(entryRecord).substring(0, 120)}`,
+        );
+      }
+      if (!knownDevices.has(device)) {
+        throw new Error(
+          `planMulti response references unknown device '${device}' (known: ${[...knownDevices].join(', ')})`,
+        );
+      }
+      if (seenDevices.has(device)) {
+        throw new Error(
+          `planMulti response contains duplicate device '${device}' — one action per device per iteration`,
+        );
+      }
+      seenDevices.add(device);
+
+      const actionBody = asRecord(entryRecord['action']);
+      if (!actionBody) {
+        throw new Error(
+          `planMulti action for '${device}' missing 'action' body`,
+        );
+      }
+      normalizedActions.push({
+        device,
+        action: normalizePlannerAction(actionBody),
+      });
+    }
+
+    const rememberRaw = inner['remember'];
+    const remember: Array<{ device: string; note: string }> = [];
+    if (Array.isArray(rememberRaw)) {
+      for (const entry of rememberRaw) {
+        const entryRecord = asRecord(entry);
+        if (!entryRecord) continue;
+        const device = normalizeString(entryRecord['device']);
+        const note = normalizeString(entryRecord['note']);
+        if (device && note) {
+          remember.push({ device, note });
+        }
+      }
+    }
+
+    const thoughtRecord = asRecord(inner['thought']);
+    const thought = thoughtRecord
+      ? {
+          plan: normalizeString(thoughtRecord['plan']),
+          think: normalizeString(thoughtRecord['think']),
+          act: normalizeString(thoughtRecord['act']),
+        }
+      : undefined;
+
+    return {
+      actions: normalizedActions,
+      remember,
+      thought,
+    };
   }
 }
 
@@ -769,6 +1096,27 @@ function normalizePromptAction(
         reason: `Planner returned unsupported action_type: ${actionType}`,
       };
   }
+}
+
+function normalizePlannerAction(action: JsonRecord): PlannerAction {
+  const actionType = normalizeString(action['action_type']) ?? '';
+  const mapped = normalizePromptAction(actionType, action);
+  return {
+    act: mapped.act,
+    reason: firstNonEmpty(normalizeString(action['reason']), mapped.reason) ?? mapped.reason,
+    text: normalizeString(action['text']),
+    clearText: normalizeBoolean(action['clear_text']),
+    direction: normalizeString(action['direction']),
+    durationSeconds: normalizeNumber(action['duration']),
+    url: normalizeString(action['url']),
+    repeat: normalizeNumber(action['repeat']),
+    delayBetweenTapMs: normalizeNumber(
+      action['delay_between_tap'] ?? action['delayBetweenTap'],
+    ),
+    result: normalizeString(action['result']),
+    analysis: normalizeString(action['analysis']),
+    severity: normalizeString(action['severity']),
+  };
 }
 
 function asRecord(value: unknown): JsonRecord | undefined {

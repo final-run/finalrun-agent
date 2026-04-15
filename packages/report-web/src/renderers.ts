@@ -1892,6 +1892,83 @@ export function renderRunHtml(manifest: ReportRunManifest): string {
         selectStep(test.testId, 0);
       }
     }
+
+    // =====================================================================
+    // Multi-device synced playback (T021)
+    // Scoped per-test via data-multi-test-id. Both devices are seeked and
+    // played together; bubble clicks and scrubber clicks both target the
+    // entire device pair in sync. Autoplay rejections are swallowed.
+    // =====================================================================
+    function multiDeviceFindPanel(testId) {
+      return document.querySelector('[data-multi-test-id="' + testId + '"]');
+    }
+    function multiDeviceAllVideos(testId) {
+      const panel = document.querySelector('[data-test-panel="' + testId + '"]');
+      if (!panel) return [];
+      return Array.from(panel.querySelectorAll('.md-device-video'));
+    }
+    function multiDeviceSelectStep(testId, bubbleEl) {
+      const panel = document.querySelector('[data-test-panel="' + testId + '"]');
+      if (!panel) return;
+      for (const b of panel.querySelectorAll('[data-step-bubble]')) {
+        b.classList.remove('selected');
+      }
+      bubbleEl.classList.add('selected');
+      const offsetMs = Number(bubbleEl.getAttribute('data-video-offset-ms') || '0');
+      const seconds = offsetMs / 1000;
+      for (const video of multiDeviceAllVideos(testId)) {
+        try { video.currentTime = seconds; } catch (_) {}
+      }
+    }
+    function multiDeviceTogglePlayPause(testId) {
+      const videos = multiDeviceAllVideos(testId);
+      if (videos.length === 0) return;
+      const anyPaused = videos.some((v) => v.paused);
+      if (anyPaused) {
+        for (const v of videos) {
+          v.play().catch(() => {});
+        }
+      } else {
+        for (const v of videos) v.pause();
+      }
+    }
+    function multiDeviceOnTimelineClick(testId, event) {
+      const track = event.currentTarget;
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const totalMs = Number(track.getAttribute('data-total-ms') || '0');
+      const seconds = (ratio * totalMs) / 1000;
+      for (const video of multiDeviceAllVideos(testId)) {
+        try { video.currentTime = seconds; } catch (_) {}
+      }
+      const playhead = track.querySelector('[data-role="md-playhead"]');
+      if (playhead) playhead.style.left = (ratio * 100) + '%';
+    }
+    // Wire a timeupdate handler on the first video to move the playhead for
+    // each multi-device test panel.
+    for (const track of document.querySelectorAll('.md-scrubber-track')) {
+      const testId = track.getAttribute('data-multi-test-id');
+      if (!testId) continue;
+      const videos = multiDeviceAllVideos(testId);
+      if (videos.length === 0) continue;
+      const totalMs = Number(track.getAttribute('data-total-ms') || '0');
+      const first = videos[0];
+      first.addEventListener('timeupdate', () => {
+        if (!Number.isFinite(first.currentTime) || totalMs <= 0) return;
+        const ratio = Math.max(0, Math.min(1, (first.currentTime * 1000) / totalMs));
+        const playhead = track.querySelector('[data-role="md-playhead"]');
+        if (playhead) playhead.style.left = (ratio * 100) + '%';
+        const panel = document.querySelector('[data-test-panel="' + testId + '"]');
+        if (panel) {
+          const current = panel.querySelector('[data-role="md-current"]');
+          const total = panel.querySelector('[data-role="md-total"]');
+          if (current) current.textContent = formatVideoClock(first.currentTime);
+          if (total && Number.isFinite(first.duration)) {
+            total.textContent = formatVideoClock(first.duration);
+          }
+        }
+      });
+    }
   </script>
 </body>
 </html>`;
@@ -2106,6 +2183,17 @@ function renderTestDetailSection(
   parentLabel?: string,
   manifest?: ReportRunManifest,
 ): string {
+  // Multi-device dispatch — when the run manifest flags a multi-device run,
+  // render the sandwich workspace layout instead of the single-device panel.
+  // Guarded on both `manifest.multiDevice` and the per-test `multiDevice`
+  // discriminator so mixed edge cases stay deterministic.
+  if (
+    manifest?.multiDevice &&
+    item.executed?.multiDevice &&
+    item.executed?.perDeviceArtifacts
+  ) {
+    return renderMultiDeviceWorkspace(item, visible, parentLabel, manifest);
+  }
   const detailClass = visible ? 'detail-shell is-visible' : 'detail-shell';
   const detailSubtitle = parentLabel
     ? `${parentLabel} · ${item.input.relativePath ?? ''}`
@@ -2234,6 +2322,422 @@ function renderTestDetailSection(
       </div>
     </section>
   `;
+}
+
+// ===========================================================================
+// Multi-device sandwich UI (T020, T021)
+//
+// Layout:
+//   [TopBar: name + status chip + playback controls]
+//   [Grid: 200px  |  minmax(0, 1fr)  |  200px]
+//          device1    timeline/chat    device2
+//   [Scrubber: step segments + playhead (timeupdate-driven)]
+//
+// Colors pinned to spec §Sandwich UI:
+//   alice = `#7F77DD` / `#EEEDFE` / `#26215C`
+//   bob   = `#1D9E75` / `#E1F5EE` / `#04342C`
+//   selected bubble: `box-shadow: 0 0 0 2px #AFA9EC`
+//
+// All rendering is self-contained: invoked only when
+// `manifest.multiDevice && test.perDeviceArtifacts`. The single-device path
+// remains byte-identical.
+// ===========================================================================
+
+interface MultiDeviceBubble {
+  deviceKey: string;
+  iteration: number;
+  text: string;
+  reason: string;
+  success: boolean;
+  parallel: boolean;
+  /** Per-device offset into the device's own recording, in milliseconds. */
+  videoOffsetMs?: number;
+}
+
+const MULTI_DEVICE_COLOR_PALETTE: Record<
+  string,
+  { border: string; bg: string; text: string; selectedRing: string }
+> = {
+  alice: {
+    border: '#7F77DD',
+    bg: '#EEEDFE',
+    text: '#26215C',
+    selectedRing: '#AFA9EC',
+  },
+  bob: {
+    border: '#1D9E75',
+    bg: '#E1F5EE',
+    text: '#04342C',
+    selectedRing: '#8FD5BA',
+  },
+};
+
+function multiDevicePaletteFor(key: string, index: number) {
+  return (
+    MULTI_DEVICE_COLOR_PALETTE[key] ??
+    (index === 0 ? MULTI_DEVICE_COLOR_PALETTE['alice']! : MULTI_DEVICE_COLOR_PALETTE['bob']!)
+  );
+}
+
+function renderMultiDeviceWorkspace(
+  item: ReportTestListItem,
+  visible: boolean,
+  parentLabel: string | undefined,
+  manifest: ReportRunManifest,
+): string {
+  const detailClass = visible ? 'detail-shell is-visible' : 'detail-shell';
+  const detailSubtitle = parentLabel
+    ? `${parentLabel} · ${item.input.relativePath ?? ''}`
+    : item.input.relativePath ?? '';
+  const test = item.executed!;
+  const perDeviceArtifacts = test.perDeviceArtifacts ?? {};
+
+  // Device keys ordered by the manifest so left/right sides are deterministic
+  // (alice first, bob second when present — otherwise insertion order).
+  const deviceKeys = Object.keys(manifest.multiDevice!.devices);
+
+  // Group orchestrator steps by iteration to surface parallel steps in the
+  // center timeline panel; each bubble carries its device tag.
+  const iterationMap = new Map<number, MultiDeviceBubble[]>();
+  for (const step of test.steps) {
+    const deviceKey = step.device ?? deviceKeys[0] ?? '';
+    const bucket = iterationMap.get(step.iteration) ?? [];
+    bucket.push({
+      deviceKey,
+      iteration: step.iteration,
+      text: step.naturalLanguageAction,
+      reason: step.reason,
+      success: step.success,
+      parallel: false, // set in a second pass
+      videoOffsetMs: step.videoOffsetMs,
+    });
+    iterationMap.set(step.iteration, bucket);
+  }
+  const iterations = Array.from(iterationMap.keys()).sort((a, b) => a - b);
+  const bubbles: MultiDeviceBubble[] = [];
+  for (const iteration of iterations) {
+    const bucket = iterationMap.get(iteration)!;
+    const parallel = bucket.length > 1;
+    for (const bubble of bucket) {
+      bubble.parallel = parallel;
+      bubbles.push(bubble);
+    }
+  }
+
+  const statusText = statusLabelFor(item.status);
+
+  return `
+    <section class="${detailClass} multi-device-shell" data-test-panel="${escapeHtml(item.input.testId!)}">
+      ${renderMultiDeviceStyles()}
+      <div class="detail-header">
+        <div class="detail-header-main">
+          <div class="detail-header-copy">
+            <h2>${escapeHtml(item.input.name)}</h2>
+            <p>${escapeHtml(detailSubtitle)}</p>
+          </div>
+        </div>
+        ${renderStatusPill(item.status)}
+      </div>
+      <div class="detail-meta">
+        <div class="detail-meta-card"><strong>Status</strong><span>${escapeHtml(statusText)}</span></div>
+        <div class="detail-meta-card"><strong>Duration</strong><span>${escapeHtml(formatLongDuration(test.durationMs))}</span></div>
+        <div class="detail-meta-card"><strong>Iterations</strong><span>${iterations.length}</span></div>
+        <div class="detail-meta-card"><strong>Devices</strong><span>${deviceKeys.map(escapeHtml).join(' · ')}</span></div>
+      </div>
+      ${renderMultiDeviceTopBar(item.input.testId!, deviceKeys, perDeviceArtifacts)}
+      ${renderMultiDeviceSandwichGrid({
+        testId: item.input.testId!,
+        deviceKeys,
+        perDeviceArtifacts,
+        bubbles,
+        manifest,
+      })}
+      ${renderMultiDeviceSyncedScrubber(item.input.testId!, bubbles)}
+    </section>
+  `;
+}
+
+function renderMultiDeviceTopBar(
+  testId: string,
+  deviceKeys: string[],
+  perDeviceArtifacts: NonNullable<ReportManifestTestRecord['perDeviceArtifacts']>,
+): string {
+  // Playback control row: play/pause + time readout. Applies to both videos
+  // in sync via `togglePlayPause()` from the inline script block.
+  const anyRecording = deviceKeys.some((k) => perDeviceArtifacts[k]?.recordingFile);
+  if (!anyRecording) return '';
+  return `
+    <div class="md-topbar" data-multi-test-id="${escapeHtml(testId)}">
+      <button
+        class="md-playpause"
+        type="button"
+        data-role="md-playpause"
+        onclick="multiDeviceTogglePlayPause('${escapeHtml(testId)}')"
+        aria-label="Play both videos"
+        title="Play/pause both devices in sync"
+      >${renderPlayIconSvg()}</button>
+      <span class="md-time" data-role="md-current">0:00</span>
+      <span class="md-time-sep">/</span>
+      <span class="md-time" data-role="md-total">0:00</span>
+    </div>
+  `;
+}
+
+function renderMultiDeviceSandwichGrid(params: {
+  testId: string;
+  deviceKeys: string[];
+  perDeviceArtifacts: NonNullable<ReportManifestTestRecord['perDeviceArtifacts']>;
+  bubbles: MultiDeviceBubble[];
+  manifest: ReportRunManifest;
+}): string {
+  const leftKey = params.deviceKeys[0] ?? '';
+  const rightKey = params.deviceKeys[1] ?? '';
+  const leftDevice = params.manifest.multiDevice!.devices[leftKey];
+  const rightDevice = params.manifest.multiDevice!.devices[rightKey];
+  return `
+    <div class="md-sandwich-grid" data-multi-test-id="${escapeHtml(params.testId)}">
+      ${renderMultiDeviceColumn({
+        deviceKey: leftKey,
+        side: 'left',
+        paletteIndex: 0,
+        platform: leftDevice?.platform ?? '',
+        hardwareName: leftDevice?.hardwareName ?? leftKey,
+        artifact: params.perDeviceArtifacts[leftKey],
+      })}
+      ${renderMultiDeviceStepPanel(params.testId, params.bubbles, params.deviceKeys)}
+      ${renderMultiDeviceColumn({
+        deviceKey: rightKey,
+        side: 'right',
+        paletteIndex: 1,
+        platform: rightDevice?.platform ?? '',
+        hardwareName: rightDevice?.hardwareName ?? rightKey,
+        artifact: params.perDeviceArtifacts[rightKey],
+      })}
+    </div>
+  `;
+}
+
+type PerDeviceArtifactRecord = NonNullable<
+  ReportManifestTestRecord['perDeviceArtifacts']
+>[string];
+
+function renderMultiDeviceColumn(params: {
+  deviceKey: string;
+  side: 'left' | 'right';
+  paletteIndex: number;
+  platform: string;
+  hardwareName: string;
+  artifact?: PerDeviceArtifactRecord;
+}): string {
+  const palette = multiDevicePaletteFor(params.deviceKey, params.paletteIndex);
+  const headerDirection = params.side === 'right' ? 'row-reverse' : 'row';
+  const recordingFile = params.artifact?.recordingFile;
+  return `
+    <div class="md-device-col md-device-col-${params.side}">
+      <div class="md-device-header" style="flex-direction:${headerDirection};">
+        <span class="md-device-dot" style="background:${palette.border}"></span>
+        <div class="md-device-name" style="color:${palette.text}">
+          <strong>${escapeHtml(params.deviceKey)}</strong>
+          <small>${escapeHtml(params.platform)}${params.hardwareName ? ' · ' + escapeHtml(params.hardwareName) : ''}</small>
+        </div>
+      </div>
+      <div class="md-video-shell">
+        ${
+          recordingFile
+            ? `<video
+                class="md-device-video"
+                data-device="${escapeHtml(params.deviceKey)}"
+                data-role="recording-video"
+                playsinline
+                preload="metadata"
+                src="${escapeHtml(recordingFile)}"
+              ></video>`
+            : `<div class="md-video-empty">No recording captured for ${escapeHtml(params.deviceKey)}.</div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderMultiDeviceStepPanel(
+  testId: string,
+  bubbles: MultiDeviceBubble[],
+  deviceKeys: string[],
+): string {
+  if (bubbles.length === 0) {
+    return '<div class="md-step-panel"><div class="empty-panel">No steps recorded.</div></div>';
+  }
+  return `
+    <div class="md-step-panel" data-multi-test-id="${escapeHtml(testId)}">
+      ${bubbles
+        .map((b, idx) => renderMultiDeviceChatBubble(testId, b, idx, deviceKeys))
+        .join('')}
+    </div>
+  `;
+}
+
+function renderMultiDeviceChatBubble(
+  testId: string,
+  bubble: MultiDeviceBubble,
+  index: number,
+  deviceKeys: string[],
+): string {
+  const isLeft = bubble.deviceKey === deviceKeys[0];
+  const paletteIdx = isLeft ? 0 : 1;
+  const palette = multiDevicePaletteFor(bubble.deviceKey, paletteIdx);
+  const alignmentClass = bubble.parallel
+    ? 'md-bubble-parallel'
+    : isLeft
+      ? 'md-bubble-left'
+      : 'md-bubble-right';
+  const style = bubble.parallel
+    ? `border:1px dashed ${palette.border};background:var(--color-background-secondary, #F7F7F9);color:${palette.text};`
+    : `background:${palette.bg};border:1px solid ${palette.border};color:${palette.text};`;
+  const failChip = bubble.success
+    ? ''
+    : '<span class="md-bubble-fail-chip" title="Step failed">FAIL</span>';
+  return `
+    <button
+      class="md-bubble ${alignmentClass}"
+      style="${style}"
+      type="button"
+      data-step-bubble
+      data-iteration="${bubble.iteration}"
+      data-device="${escapeHtml(bubble.deviceKey)}"
+      data-video-offset-ms="${bubble.videoOffsetMs ?? 0}"
+      data-bubble-index="${index}"
+      onclick="multiDeviceSelectStep('${escapeHtml(testId)}', this)"
+    >
+      <span class="md-bubble-step-number" style="color:${palette.border}">#${bubble.iteration}</span>
+      <span class="md-bubble-text">${escapeHtml(bubble.text)}</span>
+      ${bubble.reason ? `<span class="md-bubble-reason">${escapeHtml(bubble.reason)}</span>` : ''}
+      ${failChip}
+    </button>
+  `;
+}
+
+function renderMultiDeviceSyncedScrubber(
+  testId: string,
+  bubbles: MultiDeviceBubble[],
+): string {
+  if (bubbles.length === 0) return '';
+  // Compute total recording duration as max(videoOffsetMs). Fall back to 1 so
+  // segments still render as full-width when no offsets are available.
+  const maxOffsetMs = Math.max(
+    1,
+    ...bubbles.map((b) => b.videoOffsetMs ?? 0),
+  );
+  const segments = bubbles.map((b, idx) => {
+    const nextOffset = bubbles[idx + 1]?.videoOffsetMs;
+    const startMs = b.videoOffsetMs ?? 0;
+    const endMs = nextOffset ?? maxOffsetMs;
+    const leftPct = (startMs / maxOffsetMs) * 100;
+    const widthPct = Math.max(0.5, ((endMs - startMs) / maxOffsetMs) * 100);
+    const isLeft = idx === 0 || bubbles[idx - 1]?.parallel !== b.parallel;
+    const palette = multiDevicePaletteFor(b.deviceKey, isLeft ? 0 : 1);
+    const color = b.parallel
+      ? `linear-gradient(90deg, ${MULTI_DEVICE_COLOR_PALETTE['alice']!.border} 0%, ${MULTI_DEVICE_COLOR_PALETTE['bob']!.border} 100%)`
+      : palette.border;
+    return `<div
+      class="md-scrubber-segment"
+      style="left:${leftPct}%;width:${widthPct}%;background:${color};"
+      data-iteration="${b.iteration}"
+    ></div>`;
+  });
+  return `
+    <div
+      class="md-scrubber-track"
+      data-multi-test-id="${escapeHtml(testId)}"
+      data-total-ms="${maxOffsetMs}"
+      onclick="multiDeviceOnTimelineClick('${escapeHtml(testId)}', event)"
+    >
+      ${segments.join('')}
+      <div class="md-scrubber-playhead" data-role="md-playhead" style="left:0%"></div>
+    </div>
+  `;
+}
+
+function renderMultiDeviceStyles(): string {
+  // Scoped styles emitted once per test panel — inline so they ship with the
+  // static HTML without relying on the shared `renderSharedCss()` block.
+  return `
+    <style>
+      .md-topbar { display:flex; align-items:center; gap:12px; padding:12px 0; }
+      .md-playpause {
+        background: var(--color-background-secondary, #F7F7F9);
+        border: 1px solid var(--color-border, #D8DAE3);
+        border-radius: 8px; padding: 6px 10px; cursor: pointer;
+      }
+      .md-time { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--muted); }
+      .md-time-sep { color: var(--muted); }
+      .md-sandwich-grid {
+        display: grid;
+        grid-template-columns: 200px minmax(0, 1fr) 200px;
+        gap: 12px;
+        align-items: start;
+        padding: 16px;
+        background: var(--color-background-secondary, #F7F7F9);
+        border-radius: 12px;
+      }
+      .md-device-col { display:flex; flex-direction:column; gap:8px; }
+      .md-device-header { display:flex; align-items:center; gap:8px; }
+      .md-device-dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
+      .md-device-name strong { display:block; font-size:14px; }
+      .md-device-name small { display:block; font-size:11px; color: var(--muted); }
+      .md-video-shell { width:100%; }
+      .md-device-video {
+        width:100%; aspect-ratio: 9/19; border-radius: 14px; background:#000; object-fit:cover;
+      }
+      .md-video-empty {
+        padding:24px 12px; text-align:center; font-size:12px; color:var(--muted);
+        border:1px dashed var(--color-border, #D8DAE3); border-radius:14px; aspect-ratio:9/19;
+        display:flex; align-items:center; justify-content:center;
+      }
+      .md-step-panel {
+        display:flex; flex-direction:column; gap:8px; padding:0 4px; min-width:0;
+      }
+      .md-bubble {
+        display:block; width:75%; padding:10px 12px; border-radius:12px;
+        font: inherit; text-align:left; cursor:pointer;
+        transition: box-shadow 0.15s ease;
+      }
+      .md-bubble.selected { box-shadow: 0 0 0 2px #AFA9EC; }
+      .md-bubble-left { align-self: flex-start; }
+      .md-bubble-right { align-self: flex-end; }
+      .md-bubble-parallel { width: 100%; align-self: stretch; text-align:center; }
+      .md-bubble-step-number { display:inline-block; margin-right:8px; font-weight:600; font-size:12px; }
+      .md-bubble-text { display:block; font-size:13px; line-height:1.4; }
+      .md-bubble-reason { display:block; font-size:11px; opacity:0.75; margin-top:4px; }
+      .md-bubble-fail-chip {
+        display:inline-block; margin-left:8px; padding:2px 6px; border-radius:4px;
+        background:#F9C9C4; color:#7A1A13; font-size:10px; font-weight:600;
+      }
+      .md-scrubber-track {
+        position:relative; height:20px; margin-top:12px; border-radius:4px;
+        background: var(--color-background-secondary, #EEEFF3); cursor:pointer;
+        overflow:hidden;
+      }
+      .md-scrubber-segment {
+        position:absolute; top:0; bottom:0; opacity:0.85; border-right:1px solid rgba(255,255,255,0.35);
+      }
+      .md-scrubber-playhead {
+        position:absolute; top:-4px; bottom:-4px; width:1px; background:#111;
+        pointer-events:none;
+      }
+    </style>
+  `;
+}
+
+function statusLabelFor(status: TestOutcomeStatus): string {
+  return status === 'error'
+    ? 'Error'
+    : status === 'aborted'
+      ? 'Aborted'
+      : status === 'failure'
+        ? 'Failed'
+        : status === 'not_executed'
+          ? 'Not executed'
+          : 'Passed';
 }
 
 function renderTestSpecSection(
@@ -2385,6 +2889,27 @@ function toSelectedTestViewModel(
 }
 
 function toTestViewModel(runId: string, test: ReportManifestTestRecord): ReportManifestTestRecord {
+  // Multi-device: project per-device artifact file paths through the same
+  // `/artifacts/<runId>/...` route wrapper as single-device fields. Keeps the
+  // single-device path untouched when `multiDevice`/`perDeviceArtifacts` are
+  // absent.
+  let perDeviceArtifacts = test.perDeviceArtifacts;
+  if (perDeviceArtifacts) {
+    const projected: typeof perDeviceArtifacts = {};
+    for (const [key, artifact] of Object.entries(perDeviceArtifacts)) {
+      projected[key] = {
+        folder: artifact.folder,
+        recordingFile: artifact.recordingFile
+          ? buildRunScopedArtifactPath(runId, artifact.recordingFile)
+          : undefined,
+        deviceLogFile: artifact.deviceLogFile
+          ? buildRunScopedArtifactPath(runId, artifact.deviceLogFile)
+          : undefined,
+        recordingStartedAt: artifact.recordingStartedAt,
+      };
+    }
+    perDeviceArtifacts = projected;
+  }
   return {
     ...test,
     snapshotYamlPath: test.snapshotYamlPath
@@ -2425,6 +2950,7 @@ function toTestViewModel(runId: string, test: ReportManifestTestRecord): ReportM
             : undefined,
         }
       : undefined,
+    perDeviceArtifacts,
   };
 }
 

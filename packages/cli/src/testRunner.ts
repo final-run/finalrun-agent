@@ -38,6 +38,10 @@ import {
   resolveWorkspace,
   type FinalRunWorkspace,
 } from './workspace.js';
+import {
+  isMultiDeviceSelector,
+  runMultiDeviceTests,
+} from './multiDeviceTestRunner.js';
 
 export interface TestRunnerOptions extends CheckRunnerOptions {
   apiKey: string;
@@ -104,6 +108,21 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
     resetSinks: true,
   });
   const workspace = await testRunnerDependencies.resolveWorkspace(options.cwd);
+
+  // Multi-device selectors (260415-1mzp) route to a sibling runner. Single-device
+  // selectors fall through to the untouched TestExecutor path below.
+  const multiDeviceSelectors = (options.selectors ?? []).filter(isMultiDeviceSelector);
+  const singleDeviceSelectors = (options.selectors ?? []).filter(
+    (s) => !isMultiDeviceSelector(s),
+  );
+  if (multiDeviceSelectors.length > 0) {
+    if (singleDeviceSelectors.length > 0) {
+      throw new Error(
+        'Cannot mix multi-device/tests/* selectors with single-device selectors in the same run.',
+      );
+    }
+    return runMultiDeviceTests({ ...options, workspace });
+  }
 
   const startedAt = new Date();
   const testResults: TestResult[] = [];

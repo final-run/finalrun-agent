@@ -137,7 +137,10 @@ async function resolveRunTarget(
     };
   }
 
-  const suiteFilePath = await resolveSuiteManifestPath(workspace.suitesDir, options.suitePath);
+  const suiteFilePath = await resolveSuiteManifestPath(workspace.suitesDir, options.suitePath, {
+    multiDeviceSuitesDir: workspace.multiDeviceSuitesDir,
+    finalrunDir: workspace.finalrunDir,
+  });
   const suite = await loadTestSuite(suiteFilePath, workspace.suitesDir);
   return {
     target: {

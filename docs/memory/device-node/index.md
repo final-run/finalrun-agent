@@ -7,3 +7,4 @@ The `packages/device-node` package manages physical/simulator device interaction
 | File | Description |
 |------|-------------|
 | [log-capture.md](log-capture.md) | Per-test device log capture: manager, providers, Device integration |
+| [recording-manager.md](recording-manager.md) | `RecordingManager` map-key scoping and parallel per-device recording |

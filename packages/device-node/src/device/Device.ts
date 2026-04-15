@@ -235,10 +235,51 @@ export class Device implements DeviceAgent {
     });
   }
 
+  /**
+   * Multi-device sibling to `startRecording()`. Opts into a device-scoped
+   * internal map key so two parallel recordings for the same `(runId, testId)`
+   * on distinct devices do not collide. Single-device code should continue to
+   * use `startRecording()` for byte-identical behavior.
+   */
+  async startRecordingScoped(
+    recordingRequest: RecordingRequest,
+  ): Promise<DeviceNodeResponse> {
+    if (!this._deviceInfo.id) {
+      return new DeviceNodeResponse({
+        success: false,
+        message: 'Device ID is required to start recording.',
+      });
+    }
+
+    return await this._recordingController.startRecording({
+      deviceId: this._deviceInfo.id,
+      recordingRequest,
+      platform: this._deviceInfo.getPlatform(),
+      sdkVersion:
+        this._deviceInfo.sdkVersion > 0 ? String(this._deviceInfo.sdkVersion) : undefined,
+      useDeviceScopedKey: true,
+    });
+  }
+
   async stopRecording(runId: string, testId: string): Promise<DeviceNodeResponse> {
     return await this._recordingController.stopRecording(runId, testId, {
       platform: this._deviceInfo.getPlatform(),
       keepOutput: true,
+    });
+  }
+
+  /**
+   * Multi-device sibling to `stopRecording()`. Pairs with
+   * `startRecordingScoped()` to tear down a device-scoped recording session.
+   */
+  async stopRecordingScoped(
+    runId: string,
+    testId: string,
+  ): Promise<DeviceNodeResponse> {
+    return await this._recordingController.stopRecording(runId, testId, {
+      platform: this._deviceInfo.getPlatform(),
+      keepOutput: true,
+      deviceId: this._deviceInfo.id ?? undefined,
     });
   }
 

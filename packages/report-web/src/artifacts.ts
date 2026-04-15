@@ -43,6 +43,14 @@ export interface ReportManifestSelectedTestRecord extends TestDefinition {
 export interface ReportManifestTestRecord extends TestResult {
   snapshotYamlText?: string;
   deviceLogTailText?: string;
+  /**
+   * Per-device log tails for multi-device runs. Keyed by device identifier
+   * (e.g. `"alice"`, `"bob"`). Only populated when `manifest.multiDevice` is
+   * present and each device's `perDeviceArtifacts[key].deviceLogFile` exists.
+   * Single-device tests omit this field entirely so the existing path stays
+   * byte-identical.
+   */
+  perDeviceLogTailText?: Record<string, string>;
 }
 
 export interface ReportRunManifest extends Omit<RunManifest, 'input' | 'tests'> {
@@ -315,11 +323,31 @@ async function enrichRunManifestRecord(
       ),
     },
     tests: await Promise.all(
-      manifest.tests.map(async (t) => ({
-        ...t,
-        snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
-        deviceLogTailText: await readDeviceLogTail(t.deviceLogFile),
-      })),
+      manifest.tests.map(async (t) => {
+        // Multi-device tests: surface per-device log tails keyed by device id.
+        // Single-device tests are unaffected — `perDeviceLogTailText` is
+        // omitted when `manifest.multiDevice` is absent so JSON/shape stay
+        // byte-identical to the pre-change path.
+        let perDeviceLogTailText: Record<string, string> | undefined;
+        if (manifest.multiDevice && t.perDeviceArtifacts) {
+          const entries = await Promise.all(
+            Object.entries(t.perDeviceArtifacts).map(async ([key, artifact]) => {
+              const tail = await readDeviceLogTail(artifact.deviceLogFile);
+              return [key, tail] as const;
+            }),
+          );
+          const populated = entries.filter((e): e is readonly [string, string] => Boolean(e[1]));
+          if (populated.length > 0) {
+            perDeviceLogTailText = Object.fromEntries(populated);
+          }
+        }
+        return {
+          ...t,
+          snapshotYamlText: await readSnapshotYamlText(t.snapshotYamlPath),
+          deviceLogTailText: await readDeviceLogTail(t.deviceLogFile),
+          ...(perDeviceLogTailText ? { perDeviceLogTailText } : {}),
+        };
+      }),
     ),
   };
 }

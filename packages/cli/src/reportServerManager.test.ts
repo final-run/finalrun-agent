@@ -25,6 +25,9 @@ function createWorkspace(): FinalRunWorkspace {
   const testsDir = path.join(finalrunDir, 'tests');
   const suitesDir = path.join(finalrunDir, 'suites');
   const envDir = path.join(finalrunDir, 'env');
+  const multiDeviceDir = path.join(finalrunDir, 'multi-device');
+  const multiDeviceTestsDir = path.join(multiDeviceDir, 'tests');
+  const multiDeviceSuitesDir = path.join(multiDeviceDir, 'suites');
   const artifactsDir = path.join(
     rootDir,
     '.artifacts-home',
@@ -44,6 +47,9 @@ function createWorkspace(): FinalRunWorkspace {
     suitesDir,
     envDir,
     artifactsDir,
+    multiDeviceDir,
+    multiDeviceTestsDir,
+    multiDeviceSuitesDir,
   };
 }
 

@@ -10,6 +10,7 @@ import {
   RotateAction,
   GetAppListAction,
   FEATURE_GROUNDER,
+  FEATURE_VISUAL_GROUNDER,
   FEATURE_INPUT_FOCUS_GROUNDER,
   FEATURE_LAUNCH_APP_GROUNDER,
   PLANNER_ACTION_TAP,
@@ -448,6 +449,7 @@ test('ActionExecutor records visual fallback explicitly in the trace', async () 
   const aiAgent = createAiAgent(async (request) => {
     groundCalls += 1;
     if (request.tracePhase === 'action.visual_fallback') {
+      assert.equal(request.feature, FEATURE_VISUAL_GROUNDER);
       return {
         output: { x: 42, y: 84, reason: 'Found visually' },
         raw: '{}',
@@ -460,6 +462,7 @@ test('ActionExecutor records visual fallback explicitly in the trace', async () 
       };
     }
 
+    assert.equal(request.feature, FEATURE_GROUNDER);
     return {
       output: { needsVisualGrounding: true },
       raw: '{}',

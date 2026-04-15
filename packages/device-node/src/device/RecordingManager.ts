@@ -18,11 +18,25 @@ export interface RecordingSessionStartParams {
   recordingRequest: RecordingRequest;
   platform: string;
   sdkVersion?: string;
+  /**
+   * Multi-device opt-in: when `true`, the internal recording map key is scoped
+   * per device (`${runId}###${testId}###${deviceId}`) so two parallel
+   * recordings for the same `(runId, testId)` on distinct devices do not
+   * collide. Defaults to `false` for byte-identical single-device behavior.
+   */
+  useDeviceScopedKey?: boolean;
 }
 
 export interface RecordingStopOptions {
   platform: string;
   keepOutput?: boolean;
+  /**
+   * Multi-device opt-in: when provided, the recording manager looks up the
+   * per-device map key `${runId}###${testId}###${deviceId}` (mirrors the
+   * `useDeviceScopedKey` flag passed to `startRecording`). Omit for
+   * byte-identical single-device behavior.
+   */
+  deviceId?: string;
 }
 
 export interface RecordingCleanupOptions {
@@ -69,14 +83,23 @@ export class RecordingManager implements DeviceRecordingController {
     this._cwdProvider = params?.cwdProvider ?? (() => process.cwd());
   }
 
-  getMapKey(runId: string, testId: string): string {
-    return `${runId}${MAP_KEY_DELIMITER}${testId}`;
+  getMapKey(runId: string, testId: string, deviceId?: string): string {
+    // Backward-compat: 2-arg calls (all existing single-device call sites) return
+    // the original byte-identical `${runId}###${testId}` key. Only when an
+    // explicit non-empty deviceId is supplied (multi-device path) do we append
+    // the sanitized device discriminator.
+    if (deviceId === undefined || deviceId === '') {
+      return `${runId}${MAP_KEY_DELIMITER}${testId}`;
+    }
+    const sanitizedDeviceId = this._sanitizeForFilename(deviceId);
+    return `${runId}${MAP_KEY_DELIMITER}${testId}${MAP_KEY_DELIMITER}${sanitizedDeviceId}`;
   }
 
   async startRecording(params: RecordingSessionStartParams): Promise<DeviceNodeResponse> {
     const mapKey = this.getMapKey(
       params.recordingRequest.runId,
       params.recordingRequest.testId,
+      params.useDeviceScopedKey ? params.deviceId : undefined,
     );
 
     this._stoppedTestCases.delete(mapKey);
@@ -177,7 +200,7 @@ export class RecordingManager implements DeviceRecordingController {
     testId: string,
     options: RecordingStopOptions,
   ): Promise<DeviceNodeResponse> {
-    const mapKey = this.getMapKey(runId, testId);
+    const mapKey = this.getMapKey(runId, testId, options.deviceId);
 
     if (this._stoppedTestCases.has(mapKey)) {
       return new DeviceNodeResponse({
@@ -255,11 +278,22 @@ export class RecordingManager implements DeviceRecordingController {
   async cleanupDevice(deviceId: string, options: RecordingCleanupOptions): Promise<void> {
     const recordingKeys = [...(this._deviceToRecordingKeysMap.get(deviceId) ?? [])];
     for (const mapKey of recordingKeys) {
-      const [runId, testId] = mapKey.split(MAP_KEY_DELIMITER);
+      // Resolve via the recordingInfo map rather than splitting the map key,
+      // because the key may have an appended sanitized deviceId (multi-device)
+      // that isn't byte-reversible. RecordingInfo carries the original deviceId.
+      const recordingInfo = this._recordingInfoMap.get(mapKey);
+      const runId = recordingInfo?.runId ?? mapKey.split(MAP_KEY_DELIMITER)[0];
+      const testId = recordingInfo?.testId ?? mapKey.split(MAP_KEY_DELIMITER)[1];
       if (runId && testId) {
         await this.stopRecording(runId, testId, {
           platform: options.platform,
           keepOutput: options.keepOutput ?? false,
+          // When a device-scoped key is in the map, pass the original deviceId
+          // through so stopRecording's getMapKey() reconstructs the same key.
+          deviceId:
+            recordingInfo && mapKey.split(MAP_KEY_DELIMITER).length === 3
+              ? recordingInfo.deviceId
+              : undefined,
         });
       }
     }
@@ -284,10 +318,17 @@ export class RecordingManager implements DeviceRecordingController {
         recordingInfo.runId === runId && recordingInfo.deviceId === options.deviceId,
     );
 
-    for (const [, recordingInfo] of matchingEntries) {
+    for (const [mapKey, recordingInfo] of matchingEntries) {
       await this.stopRecording(recordingInfo.runId, recordingInfo.testId, {
         platform: options.platform,
         keepOutput: options.keepOutput ?? false,
+        // Device-scoped key → pass deviceId through so stopRecording can
+        // reconstruct the same key. Two-part key → leave deviceId undefined
+        // to preserve byte-identical single-device behavior.
+        deviceId:
+          mapKey.split(MAP_KEY_DELIMITER).length === 3
+            ? recordingInfo.deviceId
+            : undefined,
       });
     }
   }
