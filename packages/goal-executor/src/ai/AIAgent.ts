@@ -23,6 +23,7 @@ import {
   Hierarchy,
   FEATURE_PLANNER,
   FEATURE_GROUNDER,
+  FEATURE_VISUAL_GROUNDER,
   FEATURE_SCROLL_INDEX_GROUNDER,
   FEATURE_INPUT_FOCUS_GROUNDER,
   FEATURE_LAUNCH_APP_GROUNDER,
@@ -597,6 +598,8 @@ export class AIAgent {
     switch (feature) {
       case FEATURE_GROUNDER:
         return 'grounder';
+      case FEATURE_VISUAL_GROUNDER:
+        return 'visual-grounder';
       case FEATURE_SCROLL_INDEX_GROUNDER:
         return 'scroll-grounder';
       case FEATURE_INPUT_FOCUS_GROUNDER:
