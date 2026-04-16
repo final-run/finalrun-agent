@@ -6,6 +6,17 @@ import { Logger } from '@finalrun/common';
 import { runCheck } from './checkRunner.js';
 
 const FINALRUN_CLOUD_URL = process.env['FINALRUN_CLOUD_URL'] || 'https://cloud.finalrun.io';
+const FINALRUN_API_KEY = process.env['FINALRUN_API_KEY'] || '';
+
+function getAuthHeaders(): Record<string, string> {
+  if (!FINALRUN_API_KEY) {
+    throw new Error(
+      'FINALRUN_API_KEY is not set. Get your API key from the FinalRun Cloud dashboard and set it:\n' +
+      '  export FINALRUN_API_KEY=fr_your_key_here',
+    );
+  }
+  return { Authorization: `Bearer ${FINALRUN_API_KEY}` };
+}
 
 export interface CloudRunnerOptions {
   selectors: string[];
@@ -22,7 +33,9 @@ interface AppUploadEntry {
 }
 
 async function fetchLatestAppUpload(): Promise<AppUploadEntry> {
-  const res = await fetch(`${FINALRUN_CLOUD_URL}/api/v1/app_uploads`);
+  const res = await fetch(`${FINALRUN_CLOUD_URL}/api/v1/app_uploads`, {
+    headers: getAuthHeaders(),
+  });
   if (!res.ok) {
     throw new Error(`Failed to fetch app uploads (HTTP ${res.status})`);
   }
@@ -189,6 +202,7 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     try {
       response = await fetch(url, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData,
       });
     } catch (e) {
@@ -263,6 +277,7 @@ export async function uploadApp(appPath: string): Promise<void> {
   try {
     response = await fetch(`${FINALRUN_CLOUD_URL}/api/v1/app_uploads`, {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: formData,
     });
   } catch (e) {
