@@ -40,6 +40,7 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  ${renderThemeInitScript()}
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FinalRun Reports</title>
   ${renderFontLinks()}
@@ -56,7 +57,7 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
       display: flex;
       justify-content: space-between;
       gap: 24px;
-      align-items: flex-start;
+      align-items: center;
       flex-wrap: wrap;
     }
 
@@ -198,7 +199,7 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
       height: 18px;
       flex: 0 0 auto;
       display: inline-block;
-      background-color: #707EAE;
+      background-color: var(--muted);
       -webkit-mask-image: var(--icon-mask);
       mask-image: var(--icon-mask);
       -webkit-mask-repeat: no-repeat;
@@ -260,6 +261,7 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
         <h1>Test Runs</h1>
         <p>Local FinalRun run history for the current workspace.</p>
       </div>
+      ${renderThemeToggleButton()}
     </section>
 
     <section class="summary-grid">
@@ -295,6 +297,7 @@ export function renderRunIndexHtml(index: ReportIndexViewModel): string {
       `}
     </section>
   </main>
+  ${renderThemeToggleScript()}
 </body>
 </html>`;
 }
@@ -427,9 +430,23 @@ function renderFontLinks(): string {
   `;
 }
 
+function renderThemeInitScript(): string {
+  return `<script>(function(){try{var t=localStorage.getItem('finalrun-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>`;
+}
+
+function renderThemeToggleButton(): string {
+  return `<button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle color theme"></button>`;
+}
+
+function renderThemeToggleScript(): string {
+  return `<script>(function(){function init(){document.querySelectorAll('[data-theme-toggle]').forEach(function(btn){btn.addEventListener('click',function(){var dark=document.documentElement.getAttribute('data-theme')==='dark';var next=dark?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('finalrun-theme',next);}catch(e){}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();})();</script>`;
+}
+
 function renderSharedCss(): string {
   return `
-    :root {
+    :root,
+    html[data-theme="light"] {
+      color-scheme: light;
       --bg: #F4F7FE;
       --panel: #FFFFFF;
       --panel-alt: #F4F7FE;
@@ -437,6 +454,7 @@ function renderSharedCss(): string {
       --muted: #707EAE;
       --icon: #8E9AB9;
       --accent: #4318FF;
+      --accent-soft: rgba(67, 24, 255, 0.1);
       --success: #05CD99;
       --aborted: #475569;
       --warning: #FF920C;
@@ -445,6 +463,59 @@ function renderSharedCss(): string {
       --border-light: #E9EDF7;
       --selected: #F0F2F7;
       --shadow: 0 18px 40px rgba(112, 126, 174, 0.12);
+      --radius: 20px;
+      --surface: #FFFFFF;
+      --body-gradient: radial-gradient(circle at top right, rgba(67, 24, 255, 0.08), transparent 32%),
+        linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+      --tabs-panel-bg: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
+      --video-panel-bg: var(--panel);
+      --tab-bar-bg: var(--panel);
+      --recording-controls-bg: rgba(255, 255, 255, 0.92);
+      --recording-controls-border: rgba(224, 229, 242, 0.9);
+      --recording-speed-bg: rgba(244, 247, 254, 0.95);
+      --empty-panel-bg: rgba(244, 247, 254, 0.9);
+      --empty-panel-border: rgba(188, 197, 225, 0.9);
+      --step-border: rgba(188, 197, 225, 0.65);
+      --empty-shot-text: #d9e0ef;
+      --device-log-area-bg: rgba(0, 0, 0, 0.02);
+      --step-hover-border: rgba(67, 24, 255, 0.14);
+      --step-selected-border: rgba(67, 24, 255, 0.24);
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1e1e1e;
+      --panel: #1e1e1e;
+      --panel-alt: #1e1e1e;
+      --text: #e4e4e4;
+      --muted: #a3a3a3;
+      --icon: #858585;
+      --accent: #818cf8;
+      --accent-soft: rgba(129, 140, 248, 0.22);
+      --success: #34d399;
+      --aborted: #a3a3a3;
+      --warning: #fbbf24;
+      --failure: #f87171;
+      --border: #3e3e3e;
+      --border-light: #2f2f2f;
+      --selected: rgba(255, 255, 255, 0.06);
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+      --surface: #1e1e1e;
+      --body-gradient: radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 40%),
+        #1e1e1e;
+      --tabs-panel-bg: #1e1e1e;
+      --video-panel-bg: var(--panel);
+      --tab-bar-bg: var(--panel);
+      --recording-controls-bg: #1e1e1e;
+      --recording-controls-border: #3e3e3e;
+      --recording-speed-bg: #1e1e1e;
+      --empty-panel-bg: #1e1e1e;
+      --empty-panel-border: #3e3e3e;
+      --step-border: #3e3e3e;
+      --empty-shot-text: #b0b0b0;
+      --device-log-area-bg: rgba(0, 0, 0, 0.2);
+      --step-hover-border: rgba(129, 140, 248, 0.35);
+      --step-selected-border: rgba(129, 140, 248, 0.55);
     }
 
     * { box-sizing: border-box; }
@@ -458,9 +529,7 @@ function renderSharedCss(): string {
     }
 
     body {
-      background:
-        radial-gradient(circle at top right, rgba(67, 24, 255, 0.08), transparent 32%),
-        linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+      background: var(--body-gradient);
     }
 
     a {
@@ -476,6 +545,41 @@ function renderSharedCss(): string {
       max-width: 1360px;
       margin: 0 auto;
       padding: 28px;
+    }
+
+    .theme-toggle {
+      position: relative;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 18px;
+      min-height: 42px;
+      min-width: 88px;
+      cursor: pointer;
+      font: inherit;
+      box-shadow: var(--shadow);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .theme-toggle::after {
+      content: 'Dark';
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    html[data-theme="dark"] .theme-toggle::after {
+      content: 'Light';
+    }
+
+    .report-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     .status-pill {

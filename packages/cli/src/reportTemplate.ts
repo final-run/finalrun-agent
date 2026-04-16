@@ -62,6 +62,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  ${renderThemeInitScript()}
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(reportTitle)}</title>
   ${renderFontLinks()}
@@ -78,7 +79,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       display: flex;
       justify-content: space-between;
       gap: 20px;
-      align-items: flex-start;
+      align-items: center;
       flex-wrap: wrap;
     }
 
@@ -232,7 +233,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       padding: 20px 22px;
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: white;
+      background: var(--panel);
     }
 
     .metric-value {
@@ -414,7 +415,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       padding: 18px 20px;
       border: 1px solid var(--border);
       border-radius: 16px;
-      background: white;
+      background: var(--panel);
     }
 
     .detail-section-header {
@@ -472,7 +473,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     .tab-bar {
       display: flex;
       border-bottom: 1px solid var(--border-light);
-      background: white;
+      background: var(--tab-bar-bg);
       flex-shrink: 0;
     }
 
@@ -542,7 +543,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .device-log-search:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(67, 24, 255, 0.10);
+      box-shadow: 0 0 0 2px var(--accent-soft);
     }
 
     .device-log-match-count {
@@ -589,7 +590,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       flex: 1;
       overflow-y: auto;
       padding: 8px 0;
-      background: rgba(0, 0, 0, 0.02);
+      background: var(--device-log-area-bg);
     }
 
     .device-log-lines::-webkit-scrollbar {
@@ -740,7 +741,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     .video-panel {
       padding: 22px;
       border-right: 1px solid var(--border-light);
-      background: white;
+      background: var(--video-panel-bg);
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -750,7 +751,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .tabs-panel {
       padding: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
+      background: var(--tabs-panel-bg);
       display: flex;
       flex-direction: column;
       min-height: 0;
@@ -790,12 +791,12 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .step-button:hover {
       background: var(--selected);
-      border-color: rgba(67, 24, 255, 0.14);
+      border-color: var(--step-hover-border);
     }
 
     .step-button.is-selected {
       background: var(--selected);
-      border-color: rgba(67, 24, 255, 0.24);
+      border-color: var(--step-selected-border);
     }
 
     .step-row {
@@ -835,7 +836,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       display: none;
       margin-top: 12px;
       padding-top: 12px;
-      border-top: 1px solid rgba(188, 197, 225, 0.65);
+      border-top: 1px solid var(--step-border);
     }
 
     .step-button.is-selected .step-expanded {
@@ -862,9 +863,9 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .empty-panel {
       padding: 24px;
-      border: 1px dashed rgba(188, 197, 225, 0.9);
+      border: 1px dashed var(--empty-panel-border);
       border-radius: 16px;
-      background: rgba(244, 247, 254, 0.9);
+      background: var(--empty-panel-bg);
       color: var(--muted);
       line-height: 1.6;
     }
@@ -909,7 +910,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
 
     .empty-shot {
       padding: 18px;
-      color: #d9e0ef;
+      color: var(--empty-shot-text);
       text-align: center;
       font-size: 14px;
       line-height: 1.5;
@@ -919,9 +920,9 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       width: min(100%, 420px);
       margin: 0 auto;
       padding: 10px 12px;
-      border: 1px solid rgba(224, 229, 242, 0.9);
+      border: 1px solid var(--recording-controls-border);
       border-radius: 16px;
-      background: rgba(255, 255, 255, 0.92);
+      background: var(--recording-controls-bg);
       backdrop-filter: blur(10px);
     }
 
@@ -992,10 +993,10 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       flex: 0 0 56px;
       width: 56px;
       height: 28px;
-      border: 1px solid rgba(224, 229, 242, 0.9);
+      border: 1px solid var(--recording-controls-border);
       border-radius: 9px;
       padding: 0 8px;
-      background: rgba(244, 247, 254, 0.95);
+      background: var(--recording-speed-bg);
       color: var(--muted);
       font: inherit;
       font-size: 11px;
@@ -1079,7 +1080,10 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
           <p class="report-subtitle">${escapeHtml(run.runId)} · Completed ${escapeHtml(formatRelativeTime(run.completedAt))} ago</p>
         </div>
       </div>
-      ${renderStatusPill(resolveRunStatus(run))}
+      <div class="report-header-actions">
+        ${renderStatusPill(resolveRunStatus(run))}
+        ${renderThemeToggleButton()}
+      </div>
     </section>
 
     ${isSingleTest
@@ -1634,6 +1638,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       }
     }
   </script>
+  ${renderThemeToggleScript()}
 </body>
 </html>`;
 }
@@ -2319,9 +2324,23 @@ function renderFontLinks(): string {
   `;
 }
 
+function renderThemeInitScript(): string {
+  return `<script>(function(){try{var t=localStorage.getItem('finalrun-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>`;
+}
+
+function renderThemeToggleButton(): string {
+  return `<button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle color theme"></button>`;
+}
+
+function renderThemeToggleScript(): string {
+  return `<script>(function(){function init(){document.querySelectorAll('[data-theme-toggle]').forEach(function(btn){btn.addEventListener('click',function(){var dark=document.documentElement.getAttribute('data-theme')==='dark';var next=dark?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('finalrun-theme',next);}catch(e){}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();})();</script>`;
+}
+
 function renderSharedCss(): string {
   return `
-    :root {
+    :root,
+    html[data-theme="light"] {
+      color-scheme: light;
       --bg: #F4F7FE;
       --panel: #FFFFFF;
       --panel-alt: #F4F7FE;
@@ -2329,6 +2348,7 @@ function renderSharedCss(): string {
       --muted: #707EAE;
       --icon: #8E9AB9;
       --accent: #4318FF;
+      --accent-soft: rgba(67, 24, 255, 0.1);
       --success: #05CD99;
       --aborted: #475569;
       --warning: #FF920C;
@@ -2337,6 +2357,67 @@ function renderSharedCss(): string {
       --border-light: #E9EDF7;
       --selected: #F0F2F7;
       --shadow: 0 18px 40px rgba(112, 126, 174, 0.12);
+      --radius: 20px;
+      --surface: #FFFFFF;
+      --body-gradient: radial-gradient(circle at top right, rgba(67, 24, 255, 0.08), transparent 32%),
+        linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+      --tabs-panel-bg: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,254,0.96) 100%);
+      --video-panel-bg: var(--panel);
+      --tab-bar-bg: var(--panel);
+      --recording-controls-bg: rgba(255, 255, 255, 0.92);
+      --recording-controls-border: rgba(224, 229, 242, 0.9);
+      --recording-speed-bg: rgba(244, 247, 254, 0.95);
+      --empty-panel-bg: rgba(244, 247, 254, 0.9);
+      --empty-panel-border: rgba(188, 197, 225, 0.9);
+      --step-border: rgba(188, 197, 225, 0.65);
+      --empty-shot-text: #d9e0ef;
+      --device-log-area-bg: rgba(0, 0, 0, 0.02);
+      --step-hover-border: rgba(67, 24, 255, 0.14);
+      --step-selected-border: rgba(67, 24, 255, 0.24);
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1e1e1e;
+      --panel: #1e1e1e;
+      --panel-alt: #1e1e1e;
+      --text: #e4e4e4;
+      --muted: #a3a3a3;
+      --icon: #858585;
+      --accent: #818cf8;
+      --accent-soft: rgba(129, 140, 248, 0.22);
+      --success: #34d399;
+      --aborted: #a3a3a3;
+      --warning: #fbbf24;
+      --failure: #f87171;
+      --border: #3e3e3e;
+      --border-light: #2f2f2f;
+      --selected: rgba(255, 255, 255, 0.06);
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+      --surface: #1e1e1e;
+      --body-gradient: radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 40%),
+        #1e1e1e;
+      --tabs-panel-bg: #1e1e1e;
+      --video-panel-bg: var(--panel);
+      --tab-bar-bg: var(--panel);
+      --recording-controls-bg: #1e1e1e;
+      --recording-controls-border: #3e3e3e;
+      --recording-speed-bg: #1e1e1e;
+      --empty-panel-bg: #1e1e1e;
+      --empty-panel-border: #3e3e3e;
+      --step-border: #3e3e3e;
+      --empty-shot-text: #b0b0b0;
+      --device-log-area-bg: rgba(0, 0, 0, 0.2);
+      --step-hover-border: rgba(129, 140, 248, 0.35);
+      --step-selected-border: rgba(129, 140, 248, 0.55);
+    }
+
+    html[data-theme="dark"] .analysis-card.success,
+    html[data-theme="dark"] .analysis-card.failure,
+    html[data-theme="dark"] .analysis-card.error,
+    html[data-theme="dark"] .analysis-card.aborted,
+    html[data-theme="dark"] .analysis-card.not_executed {
+      background: #1e1e1e;
     }
 
     * { box-sizing: border-box; }
@@ -2350,9 +2431,7 @@ function renderSharedCss(): string {
     }
 
     body {
-      background:
-        radial-gradient(circle at top right, rgba(67, 24, 255, 0.08), transparent 32%),
-        linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+      background: var(--body-gradient);
     }
 
     a {
@@ -2368,6 +2447,41 @@ function renderSharedCss(): string {
       max-width: 1360px;
       margin: 0 auto;
       padding: 28px;
+    }
+
+    .theme-toggle {
+      position: relative;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 18px;
+      min-height: 42px;
+      min-width: 88px;
+      cursor: pointer;
+      font: inherit;
+      box-shadow: var(--shadow);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .theme-toggle::after {
+      content: 'Dark';
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    html[data-theme="dark"] .theme-toggle::after {
+      content: 'Light';
+    }
+
+    .report-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     .status-pill {
@@ -2426,7 +2540,7 @@ function renderSharedCss(): string {
       height: 18px;
       flex: 0 0 auto;
       display: inline-block;
-      background-color: #707EAE;
+      background-color: var(--muted);
       -webkit-mask-image: var(--icon-mask);
       mask-image: var(--icon-mask);
       -webkit-mask-repeat: no-repeat;

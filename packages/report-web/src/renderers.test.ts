@@ -384,14 +384,14 @@ function assertTestDetailSectionOrder(html: string, testId: string): void {
   const testIndex = panel.indexOf('>Test<');
   const runContextIndex = panel.indexOf('>Run Context<');
   const analysisIndex = panel.indexOf('>Analysis<');
-  const actionsIndex = panel.indexOf('Agent Actions');
-  const recordingIndex = panel.indexOf('Session Recording');
+  const videoColumnIndex = panel.indexOf('class="video-panel"');
+  const actionsIndex = panel.indexOf('data-tab="actions"');
 
   assert.ok(testIndex >= 0);
   assert.ok(runContextIndex > testIndex);
   assert.ok(analysisIndex > runContextIndex);
-  assert.ok(actionsIndex > analysisIndex);
-  assert.ok(recordingIndex > actionsIndex);
+  assert.ok(videoColumnIndex > analysisIndex);
+  assert.ok(actionsIndex > videoColumnIndex);
 }
 
 function assertSimplifiedTestDetailHtml(html: string): void {
@@ -399,8 +399,8 @@ function assertSimplifiedTestDetailHtml(html: string): void {
   assert.match(html, /Open raw YAML/);
   assert.match(html, />Run Context<\/h3>/);
   assert.match(html, />Analysis<\/h3>/);
-  assert.match(html, /Agent Actions/);
-  assert.match(html, /Session Recording/);
+  assert.match(html, /data-tab="actions"/);
+  assert.match(html, /data-role="recording-video"/);
   assert.match(html, /function selectNearestStepForTime/);
   assert.match(html, /function findNearestStepIndex/);
   assert.match(html, /selectNearestStepForTime\(testId, nextTime\)/);
@@ -462,7 +462,7 @@ test('renderRunIndexHtml renders the Flutter-style history table with derived di
   assert.match(html, /Suite/);
   assert.match(html, /Direct/);
   assert.match(html, /class="tinted-png-icon"/);
-  assert.match(html, /background-color: #707EAE/);
+  assert.match(html, /background-color: var\(--muted\)/);
   assert.match(html, /<img class="png-icon" src="data:image\/svg\+xml,/);
   assert.match(html, /\/runs\/2026-03-24T18-00-00\.000Z-dev-android/);
 });
