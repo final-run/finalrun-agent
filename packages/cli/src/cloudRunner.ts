@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import AdmZip from 'adm-zip';
 import { Logger } from '@finalrun/common';
 import { runCheck } from './checkRunner.js';
+import { inspectApp, formatAppInfo, type AppMetadata } from './appInspector.js';
 
 const FINALRUN_CLOUD_URL = process.env['FINALRUN_CLOUD_URL'] || 'https://cloud.finalrun.io';
 const FINALRUN_API_KEY = process.env['FINALRUN_API_KEY'] || '';
@@ -61,10 +62,33 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
   // 2. Resolve app — either from --app flag or latest upload
   let appMode: { type: 'file'; path: string } | { type: 'existing'; upload: AppUploadEntry };
 
+  let inlineMetadata: AppMetadata | undefined;
   if (options.appPath) {
     if (!fs.existsSync(options.appPath)) {
       throw new Error(`App file not found: ${options.appPath}`);
     }
+
+    // Inspect inline app and print info before submitting
+    try {
+      inlineMetadata = await inspectApp(options.appPath);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`\n\x1b[31mx ${msg}\x1b[0m\n`);
+    }
+
+    if (inlineMetadata.platform === 'ios' && inlineMetadata.simulatorCompatible === false) {
+      throw new Error(
+        `\n\x1b[31mx This iOS app is a device-only build and cannot run on simulators.\x1b[0m\n` +
+        `   Rebuild with the iphonesimulator SDK:\n` +
+        `     • Flutter:  flutter build ios --simulator --debug\n` +
+        `     • Xcode:    xcodebuild -sdk iphonesimulator ...\n`,
+      );
+    }
+
+    console.log('');
+    console.log(formatAppInfo(inlineMetadata));
+    console.log('');
+
     appMode = { type: 'file', path: options.appPath };
   } else {
     const latest = await fetchLatestAppUpload();
@@ -180,6 +204,13 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
       formData.append('appFile', new Blob([appBuffer]), appFileName);
       formData.append('appFilename', appFileName);
 
+      // Include inspected metadata as a hint — server re-validates authoritatively.
+      // Don't append `platform` here: the --platform flag is already sent above,
+      // and multer would combine duplicates into an array breaking downstream .trim().
+      if (inlineMetadata) {
+        formData.append('packageName', inlineMetadata.packageName);
+      }
+
       const submissionLabel = options.suitePath
         ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
         : `${checked.tests.length} test(s)`;
@@ -262,6 +293,28 @@ export async function uploadApp(appPath: string): Promise<void> {
     throw new Error(`App file not found: ${appPath}`);
   }
 
+  // 1. Inspect and print info before uploading
+  let metadata: AppMetadata;
+  try {
+    metadata = await inspectApp(appPath);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`\n\x1b[31mx ${msg}\x1b[0m\n`);
+  }
+
+  if (metadata.platform === 'ios' && metadata.simulatorCompatible === false) {
+    throw new Error(
+      `\n\x1b[31mx This iOS app is a device-only build and cannot run on simulators.\x1b[0m\n` +
+      `   Rebuild with the iphonesimulator SDK:\n` +
+      `     • Flutter:  flutter build ios --simulator --debug\n` +
+      `     • Xcode:    xcodebuild -sdk iphonesimulator ...\n`,
+    );
+  }
+
+  console.log('');
+  console.log(formatAppInfo(metadata));
+  console.log('');
+
   const appBuffer = fs.readFileSync(appPath);
   const appFileName = path.basename(appPath);
   const appSize = appBuffer.byteLength;
@@ -270,8 +323,11 @@ export async function uploadApp(appPath: string): Promise<void> {
   const spinner = ora(`Uploading ${appFileName} (${formatBytes(appSize)})...`).start();
   const uploadStart = Date.now();
 
+  // 2. Build form data with metadata hints — server will re-validate
   const formData = new FormData();
   formData.append('appFile', new Blob([appBuffer]), appFileName);
+  formData.append('platform', metadata.platform);
+  formData.append('packageName', metadata.packageName);
 
   let response: Response;
   try {
