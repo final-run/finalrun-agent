@@ -51,6 +51,32 @@ Inspect the code base files and infer them when possible. take decision on wheth
   - Do **not** silently overwrite an existing `.finalrun/config.yaml` app block. Show the proposed change first.
   - Ask the user only when multiple app modules/targets are plausible or the identifiers cannot be resolved confidently.
 
+### Step 1B — Edge Case & State Analysis
+
+After understanding the happy-path functionality in Step 1, systematically review the source code for **state-dependent flows** and **empty/error states** that affect the UI the user asked you to test. The goal is to surface testable edge cases and propose them alongside the happy path in Step 4.
+
+**State-dependent flows:**
+Identify places where the UI renders differently based on prior state. Read the code for conditional rendering, route guards, and data checks that change what the user sees.
+
+- **Authentication gates** — Does the screen require login? What does the user see if their session has expired or they are logged out? Look for auth checks, redirects to login, or guest-mode fallbacks.
+- **First-run vs returning user** — Is there an onboarding flow, tutorial overlay, or welcome screen that only appears once? Look for flags like `hasSeenOnboarding`, `isFirstLaunch`, or similar stored preferences.
+- **Permission-dependent UI** — Does the feature degrade or show a fallback when a required permission (camera, location, contacts) is denied? Look for permission check results that branch the UI.
+- **Feature flags / A-B tests** — Is the feature behind a flag that could be off? If so, note this as a precondition the user needs to be aware of, not something to test blindly.
+
+**Empty and error states:**
+Identify every place the UI handles zero-data or failure conditions. These are high-value test targets because they are frequently overlooked.
+
+- **Empty collections** — What does the screen show when a list, feed, cart, or search result set has zero items? Look for empty-state illustrations, "no results" messages, or call-to-action prompts (e.g., "Add your first item").
+- **Search with no matches** — Does the search/filter UI show a distinct empty state vs the default empty list?
+- **Form validation errors** — What happens when the user submits invalid input? Look for inline field errors, summary banners, disabled submit buttons, or toast messages. Identify each validation rule the code enforces (required fields, format checks, min/max length, mismatched passwords).
+- **Boundary inputs** — Does the code enforce character limits, numeric ranges, or disallowed characters? These are testable: type the maximum-length input and verify truncation or rejection.
+
+**What to do with findings:**
+- Do **not** generate edge-case tests automatically. Collect them as candidates.
+- In Step 4 (Propose Plan), present the discovered edge cases as an **"Edge cases identified"** section alongside the main test plan. Group them by category (state-dependent, empty state, validation error, etc.).
+- Let the user choose which edge cases to include. Some may be out of scope or lower priority.
+- For each selected edge case, the resulting test must follow the same **Setup & Idempotent Cleanup Rule** — setup must force the app into the specific state the edge case requires (e.g., clear all items to test the empty state, revoke a permission to test the denied flow).
+
 ### Step 2 — Environment profiles (required when tests use `${variables.*}` or `${secrets.*}`, or when app identity differs by environment)
 - **Inspect:** Read `.finalrun/config.yaml` and `.finalrun/env/*.yaml` if present so you reuse the existing app config and binding keys.
 - **Scaffold:** If the folder is missing or empty, create the env files the user needs (ask which names: `dev`, `staging`, `prod`, …) only when the tests need env-specific bindings or env-specific app overrides.
@@ -112,6 +138,7 @@ Present the proposed testing modifications to the user for validation.
 - **Setup checklist:** List every `${variables.*}` and `${secrets.*}` the tests will use, and confirm the matching entries you will add to `.finalrun/env/*.yaml` (secret rows as `${ENV_VAR}` only).
 - **Effective app checklist:** State which app identifier FinalRun should use for each env/platform affected by the change.
 - **Inference checklist:** State which app identifiers were inferred from the repo, which files they came from, and whether any user confirmation is still needed.
+- **Edge cases identified:** Present the edge cases discovered in Step 1B, grouped by category (state-dependent flows, empty states, validation errors). For each, briefly state the scenario and which UI behavior it exercises. Let the user select which ones to include in the test plan.
 
 > [!CAUTION]  
 > **Do NOT write final test/suite `.yaml` until the user explicitly approves the proposed plan and answers your questions.**

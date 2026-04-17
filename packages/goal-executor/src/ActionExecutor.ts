@@ -58,6 +58,7 @@ import {
   roundDuration,
   startTracePhase,
   type LLMTrace,
+  type LLMCallTrace,
   type SpanTiming,
   type TimingMetadata,
   type TraceStatus,
@@ -89,6 +90,8 @@ export interface ActionOutput {
   error?: string;
   trace?: TimingMetadata;
   terminalFailure?: TerminalFailureSignal;
+  /** Raw LLM calls made during this action (grounder + visual grounder). Forwarded to observability. */
+  llmCalls?: LLMCallTrace[];
 }
 
 interface GroundToPointResult {
@@ -125,6 +128,9 @@ export class ActionExecutor {
   private _platform: string;
   private _appIdentifier?: string;
   private _runtimeBindings?: RuntimeBindings;
+  // Accumulates LLM call traces during a single executeAction() invocation.
+  // Reset at entry; drained into ActionOutput.llmCalls at exit.
+  private _currentLlmCalls: LLMCallTrace[] = [];
 
   constructor(params: {
     agent: DeviceAgent;
@@ -146,49 +152,65 @@ export class ActionExecutor {
    * Routes to the correct handler based on action type.
    */
   async executeAction(input: ActionInput): Promise<ActionOutput> {
+    // Reset per-action accumulator
+    this._currentLlmCalls = [];
+    let output: ActionOutput;
     try {
       switch (input.action) {
         case PLANNER_ACTION_TAP:
-          return await this._executeTap(input);
+          output = await this._executeTap(input);
+          break;
 
         case PLANNER_ACTION_LONG_PRESS:
-          return await this._executeLongPress(input);
+          output = await this._executeLongPress(input);
+          break;
 
         case PLANNER_ACTION_TYPE:
-          return await this._executeType(input);
+          output = await this._executeType(input);
+          break;
 
         case PLANNER_ACTION_SCROLL:
-          return await this._executeScroll(input);
+          output = await this._executeScroll(input);
+          break;
 
         case PLANNER_ACTION_BACK:
-          return await this._executeSimpleAction(input, new BackAction());
+          output = await this._executeSimpleAction(input, new BackAction());
+          break;
 
         case PLANNER_ACTION_HOME:
-          return await this._executeSimpleAction(input, new HomeAction());
+          output = await this._executeSimpleAction(input, new HomeAction());
+          break;
 
         case PLANNER_ACTION_ROTATE:
-          return await this._executeSingleDevicePhase(input, new RotateAction());
+          output = await this._executeSingleDevicePhase(input, new RotateAction());
+          break;
 
         case PLANNER_ACTION_HIDE_KEYBOARD:
-          return await this._executeSimpleAction(input, new HideKeyboardAction());
+          output = await this._executeSimpleAction(input, new HideKeyboardAction());
+          break;
 
         case PLANNER_ACTION_PRESS_ENTER:
-          return await this._executePressEnter(input);
+          output = await this._executePressEnter(input);
+          break;
 
         case PLANNER_ACTION_LAUNCH_APP:
-          return await this._executeLaunchApp(input);
+          output = await this._executeLaunchApp(input);
+          break;
 
         case PLANNER_ACTION_SET_LOCATION:
-          return await this._executeSetLocation(input);
+          output = await this._executeSetLocation(input);
+          break;
 
         case PLANNER_ACTION_WAIT:
-          return await this._executeWait(input);
+          output = await this._executeWait(input);
+          break;
 
         case PLANNER_ACTION_DEEPLINK:
-          return await this._executeDeeplink(input);
+          output = await this._executeDeeplink(input);
+          break;
 
         default:
-          return { success: false, error: `Unknown action: ${input.action}` };
+          output = { success: false, error: `Unknown action: ${input.action}` };
       }
     } catch (error) {
       const terminalFailure = terminalFailureFromError(error);
@@ -197,8 +219,15 @@ export class ActionExecutor {
       } else {
         Logger.e(`Action ${input.action} failed:`, error);
       }
-      return this._failure([], error);
+      output = this._failure([], error);
     }
+
+    // Attach accumulated LLM calls, if any
+    if (this._currentLlmCalls.length > 0) {
+      output = { ...output, llmCalls: this._currentLlmCalls };
+    }
+    this._currentLlmCalls = [];
+    return output;
   }
 
   private async _executeTap(input: ActionInput): Promise<ActionOutput> {
@@ -828,6 +857,9 @@ export class ActionExecutor {
         platform: this._platform,
         traceStep: input.traceStep,
       });
+      if (result.llmCall) {
+        this._currentLlmCalls.push(result.llmCall);
+      }
     } catch (error) {
       const message = this._redactRuntimeString(
         error instanceof Error ? error.message : String(error),
@@ -949,6 +981,10 @@ export class ActionExecutor {
         traceStep: input.traceStep,
         tracePhase: request.tracePhase ?? 'action.ground',
       });
+
+      if (response.llmCall) {
+        this._currentLlmCalls.push(response.llmCall);
+      }
 
       return {
         ...response,

@@ -87,6 +87,16 @@ Example:
 /finalrun-use-cli Run the auth tests on Android
 ```
 
+### Debug and fix failing tests
+
+`/finalrun-test-and-fix` skill orchestrates the full **generate → run → diagnose → fix** loop. It authors tests via `finalrun-generate-test`, runs them via `finalrun-use-cli`, reads the CLI artifacts (`result.json`, `actions/`, screenshots, `device.log`) on failure, classifies whether the bug is in the **app code** or the **test**, applies the narrowest fix, and re-runs until the run is green.
+
+Example:
+
+```sh
+/finalrun-test-and-fix Verify and fix the checkout feature end-to-end on Android
+```
+
 
 ## How to auto trigger Finalrun to generate and test once feature development is completed
 
