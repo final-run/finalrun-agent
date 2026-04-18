@@ -87,26 +87,6 @@ export class HierarchyNode {
     };
   }
 
-  /**
-   * Convert this node to a JSON object suitable for AI prompts.
-   * Includes only non-null, meaningful fields.
-   */
-  toPromptJson(): Record<string, unknown> {
-    const obj: Record<string, unknown> = { index: this.index };
-    if (this.text) obj['text'] = this.text;
-    if (this.accessibilityText) obj['contentDesc'] = this.accessibilityText;
-    if (this.id) obj['id'] = this.id;
-    if (this.clazz) obj['class'] = this.clazz;
-    if (this.bounds) obj['bounds'] = this.bounds;
-    if (this.isScrollable) obj['isScrollable'] = true;
-    if (this.isFocused) obj['isFocused'] = true;
-    if (this.isEditable) obj['isEditable'] = true;
-    if (this.isImage) obj['isImage'] = true;
-    if (this.hintText) obj['hintText'] = this.hintText;
-    if (this.error) obj['error'] = this.error;
-    if (this.isSelected) obj['isSelected'] = true;
-    return obj;
-  }
 }
 
 // ============================================================================
@@ -182,28 +162,15 @@ export class Hierarchy {
   }
 
   /**
-   * @deprecated Prefer {@link toPromptElementsForPlanner} or
-   * {@link toPromptElementsForGrounder} — they match the Dart reference's
-   * caller-specific filtering (planner gets minimal tappable elements,
-   * grounder gets the full flattened tree).
-   */
-  toPromptElements(): Record<string, unknown>[] {
-    return this.flattenedHierarchy
-      .filter((node) => Hierarchy._isRelevantForAI(node))
-      .map((node) => node.toPromptJson());
-  }
-
-  /**
    * Hierarchy subset for the PLANNER — minimal, tappable/image elements only.
    *
-   * Mirrors Dart `convertHierarchyForAI(..., forPlanner: true)`:
-   *   filter: hasAccText && (isImage
-   *           || (iOS && isElementTypeButton())
-   *           || (android && classContainsButton()))
-   *   fields: index, contentDesc, class (Android-shortened), bounds
+   * Filter: a node is kept only if it has accessibility text AND is either an
+   * image, an iOS button, or an Android button-class node.
+   * Fields: index, contentDesc, class (Android class name shortened), bounds.
    *
    * The planner treats the screenshot as the source of truth and uses the
-   * hierarchy only for disambiguation of interactive targets.
+   * hierarchy only to disambiguate interactive targets, so the slim payload
+   * is sufficient and keeps token cost low.
    */
   toPromptElementsForPlanner(platform?: string): Record<string, unknown>[] {
     const isAndroid = platform === PLATFORM_ANDROID;
@@ -231,14 +198,12 @@ export class Hierarchy {
    * Hierarchy subset for the GROUNDER — every flattened node with a rich
    * field set.
    *
-   * Mirrors Dart `convertHierarchyForAI(..., forPlanner: false)`:
-   *   filter: none
-   *   fields: index, text, contentDesc, id, class (Android-shortened),
-   *           bounds, isScrollable, isFocused, isEditable, hintText, error,
-   *           isSelected
+   * Filter: none (all flattened nodes are included).
+   * Fields: index, text, contentDesc, id, class (Android class name shortened),
+   * bounds, isScrollable, isFocused, isEditable, hintText, error, isSelected.
    *
    * The grounder needs maximum context to map a natural-language target
-   * description to an element index.
+   * description to an element index reliably.
    */
   toPromptElementsForGrounder(platform?: string): Record<string, unknown>[] {
     return this.flattenedHierarchy.map((node) => {
@@ -263,8 +228,8 @@ export class Hierarchy {
 
   /**
    * Android classes come through fully qualified (e.g. `android.widget.Button`).
-   * Match Dart's shortening — take the last `.`-separated segment so prompts
-   * stay terse. iOS classes are left alone.
+   * Shorten to the last `.`-separated segment so prompts stay terse.
+   * iOS classes are left alone.
    */
   private static _shortenAndroidClass(
     clazz: string | null,
@@ -428,23 +393,5 @@ export class Hierarchy {
     }
 
     return null;
-  }
-
-  /**
-   * Determine if a node is relevant for AI prompts.
-   * Filters out layout-only / container nodes that add noise.
-   */
-  private static _isRelevantForAI(node: HierarchyNode): boolean {
-    // Keep nodes that have any meaningful content
-    if (node.text) return true;
-    if (node.accessibilityText) return true;
-    if (node.id) return true;
-    if (node.hintText) return true;
-    if (node.isScrollable) return true;
-    if (node.isFocused) return true;
-    if (node.isEditable) return true;
-    if (node.isImage) return true;
-    if (node.isElementTypeButton()) return true;
-    return false;
   }
 }
