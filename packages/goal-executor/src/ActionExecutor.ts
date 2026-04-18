@@ -125,6 +125,7 @@ export class ActionExecutor {
   private _platform: string;
   private _appIdentifier?: string;
   private _runtimeBindings?: RuntimeBindings;
+  private _logContext?: string;
 
   constructor(params: {
     agent: DeviceAgent;
@@ -132,6 +133,8 @@ export class ActionExecutor {
     platform: string;
     appIdentifier?: string;
     runtimeBindings?: RuntimeBindings;
+    /** Attached to every grounder log line. See TestExecutorConfig.logContext. */
+    logContext?: string;
   }) {
     this._agent = params.agent;
     this._aiAgent = params.aiAgent;
@@ -139,6 +142,7 @@ export class ActionExecutor {
     this._platform = params.platform;
     this._appIdentifier = params.appIdentifier;
     this._runtimeBindings = params.runtimeBindings;
+    this._logContext = params.logContext;
   }
 
   /**
@@ -827,6 +831,7 @@ export class ActionExecutor {
         screenshot: input.screenshot,
         platform: this._platform,
         traceStep: input.traceStep,
+        logContext: this._logContext,
       });
     } catch (error) {
       const message = this._redactRuntimeString(
@@ -948,6 +953,7 @@ export class ActionExecutor {
         ...request,
         traceStep: input.traceStep,
         tracePhase: request.tracePhase ?? 'action.ground',
+        logContext: this._logContext,
       });
 
       return {
