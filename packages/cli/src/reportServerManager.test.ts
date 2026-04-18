@@ -37,11 +37,13 @@ function createWorkspace(): FinalRunWorkspace {
   fs.mkdirSync(suitesDir, { recursive: true });
   fs.mkdirSync(envDir, { recursive: true });
   fs.mkdirSync(artifactsDir, { recursive: true });
+  const multiDeviceTestsDir = path.join(finalrunDir, 'multi-device', 'tests');
   return {
     rootDir,
     finalrunDir,
     testsDir,
     suitesDir,
+    multiDeviceTestsDir,
     envDir,
     artifactsDir,
   };

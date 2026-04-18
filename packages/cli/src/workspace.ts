@@ -17,6 +17,7 @@ export interface FinalRunWorkspace {
   finalrunDir: string;
   testsDir: string;
   suitesDir: string;
+  multiDeviceTestsDir: string;
   envDir: string;
   artifactsDir: string;
 }
@@ -148,8 +149,12 @@ async function finalizeResolvedWorkspace(
 export async function ensureWorkspaceDirectories(
   workspace: FinalRunWorkspace,
 ): Promise<void> {
-  if (!(await pathExists(workspace.testsDir))) {
-    throw new Error(`Missing .finalrun/tests directory: ${workspace.testsDir}`);
+  const hasTests = await pathExists(workspace.testsDir);
+  const hasMultiDeviceTests = await pathExists(workspace.multiDeviceTestsDir);
+  if (!hasTests && !hasMultiDeviceTests) {
+    throw new Error(
+      `Missing test directories: neither .finalrun/tests/ nor .finalrun/multi-device/tests/ exists in ${workspace.finalrunDir}`,
+    );
   }
 
   await fs.mkdir(workspace.artifactsDir, { recursive: true });
@@ -506,6 +511,7 @@ async function buildWorkspace(workspaceRoot: string): Promise<FinalRunWorkspace>
     finalrunDir,
     testsDir: path.join(finalrunDir, 'tests'),
     suitesDir: path.join(finalrunDir, 'suites'),
+    multiDeviceTestsDir: path.join(finalrunDir, 'multi-device', 'tests'),
     envDir: path.join(finalrunDir, 'env'),
     artifactsDir: await resolveWorkspaceArtifactsDir(rootDir),
   };
@@ -572,8 +578,14 @@ async function isWorkspaceRootCandidate(candidateRoot: string): Promise<boolean>
 }
 
 async function isSelectableWorkspaceRoot(candidateRoot: string): Promise<boolean> {
-  return (await isWorkspaceRootCandidate(candidateRoot)) &&
-    (await isDirectory(path.join(candidateRoot, '.finalrun', 'tests')));
+  if (!(await isWorkspaceRootCandidate(candidateRoot))) {
+    return false;
+  }
+  const hasTests = await isDirectory(path.join(candidateRoot, '.finalrun', 'tests'));
+  const hasMultiDeviceTests = await isDirectory(
+    path.join(candidateRoot, '.finalrun', 'multi-device', 'tests'),
+  );
+  return hasTests || hasMultiDeviceTests;
 }
 
 function compareRegisteredWorkspaces(
@@ -756,6 +768,30 @@ function formatMissingEnvironmentError(
   }
 
   return `Environment "${requestedEnvName}" was not found in ${envDir}. Available environments: ${availableEnvNames.join(', ')}`;
+}
+
+export function isMultiDeviceSelector(selector: string): boolean {
+  const normalized = selector.split(path.sep).join('/');
+  return (
+    normalized.startsWith('multi-device/tests/') ||
+    normalized.startsWith('.finalrun/multi-device/tests/') ||
+    normalized === 'multi-device/tests' ||
+    normalized === '.finalrun/multi-device/tests'
+  );
+}
+
+export function stripMultiDeviceSelectorPrefix(selector: string): string {
+  const normalized = selector.split(path.sep).join('/');
+  if (normalized.startsWith('.finalrun/multi-device/tests/')) {
+    return normalized.replace(/^\.finalrun\/multi-device\/tests\//, '');
+  }
+  if (normalized.startsWith('multi-device/tests/')) {
+    return normalized.replace(/^multi-device\/tests\//, '');
+  }
+  if (normalized === '.finalrun/multi-device/tests' || normalized === 'multi-device/tests') {
+    return '';
+  }
+  return normalized;
 }
 
 function resolveWorkspaceScopedPath(

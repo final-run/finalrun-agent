@@ -321,6 +321,9 @@ export async function executeTestOnSession(
       preContext: session.launchSummary,
       appIdentifier: session.app?.identifier,
       runtimeBindings: config.runtimeBindings,
+      logContext: session.deviceInfo.id
+        ? `device=${session.deviceInfo.id}`
+        : undefined,
     });
     if (config.abortSignal?.aborted) {
       const abortedResult = createAbortedTestResult(session.platform);

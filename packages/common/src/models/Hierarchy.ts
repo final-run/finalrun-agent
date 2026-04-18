@@ -2,6 +2,8 @@
 // The Dart file is ~108KB. We port only the subset used by FinalRunAgent and
 // HeadlessActionExecutor for AI prompt building and grounding.
 
+import { PLATFORM_ANDROID, PLATFORM_IOS } from '../constants.js';
+
 /**
  * Represents a single node in the UI hierarchy tree.
  *
@@ -180,10 +182,10 @@ export class Hierarchy {
   }
 
   /**
-   * Get a subset of the hierarchy for AI consumption.
-   * Filters out irrelevant nodes and returns a minimal JSON array.
-   *
-   * Dart: convertHierarchyForAI() logic from FinalRunAgent.dart
+   * @deprecated Prefer {@link toPromptElementsForPlanner} or
+   * {@link toPromptElementsForGrounder} — they match the Dart reference's
+   * caller-specific filtering (planner gets minimal tappable elements,
+   * grounder gets the full flattened tree).
    */
   toPromptElements(): Record<string, unknown>[] {
     return this.flattenedHierarchy
@@ -191,7 +193,88 @@ export class Hierarchy {
       .map((node) => node.toPromptJson());
   }
 
+  /**
+   * Hierarchy subset for the PLANNER — minimal, tappable/image elements only.
+   *
+   * Mirrors Dart `convertHierarchyForAI(..., forPlanner: true)`:
+   *   filter: hasAccText && (isImage
+   *           || (iOS && isElementTypeButton())
+   *           || (android && classContainsButton()))
+   *   fields: index, contentDesc, class (Android-shortened), bounds
+   *
+   * The planner treats the screenshot as the source of truth and uses the
+   * hierarchy only for disambiguation of interactive targets.
+   */
+  toPromptElementsForPlanner(platform?: string): Record<string, unknown>[] {
+    const isAndroid = platform === PLATFORM_ANDROID;
+    const isIOS = platform === PLATFORM_IOS;
+    return this.flattenedHierarchy
+      .filter((node) => {
+        const hasAccText = !!node.accessibilityText;
+        if (!hasAccText) return false;
+        if (node.isImage) return true;
+        if (isIOS && node.isElementTypeButton()) return true;
+        if (isAndroid && node.classContainsButton()) return true;
+        return false;
+      })
+      .map((node) => {
+        const out: Record<string, unknown> = { index: node.index };
+        if (node.accessibilityText) out['contentDesc'] = node.accessibilityText;
+        const simpleClass = Hierarchy._shortenAndroidClass(node.clazz, platform);
+        if (simpleClass) out['class'] = simpleClass;
+        if (node.bounds) out['bounds'] = node.bounds;
+        return out;
+      });
+  }
+
+  /**
+   * Hierarchy subset for the GROUNDER — every flattened node with a rich
+   * field set.
+   *
+   * Mirrors Dart `convertHierarchyForAI(..., forPlanner: false)`:
+   *   filter: none
+   *   fields: index, text, contentDesc, id, class (Android-shortened),
+   *           bounds, isScrollable, isFocused, isEditable, hintText, error,
+   *           isSelected
+   *
+   * The grounder needs maximum context to map a natural-language target
+   * description to an element index.
+   */
+  toPromptElementsForGrounder(platform?: string): Record<string, unknown>[] {
+    return this.flattenedHierarchy.map((node) => {
+      const out: Record<string, unknown> = { index: node.index };
+      if (node.text) out['text'] = node.text;
+      if (node.accessibilityText) out['contentDesc'] = node.accessibilityText;
+      if (node.id) out['id'] = node.id;
+      const simpleClass = Hierarchy._shortenAndroidClass(node.clazz, platform);
+      if (simpleClass) out['class'] = simpleClass;
+      if (node.bounds) out['bounds'] = node.bounds;
+      if (node.isScrollable) out['isScrollable'] = true;
+      if (node.isFocused) out['isFocused'] = true;
+      if (node.isEditable) out['isEditable'] = true;
+      if (node.hintText) out['hintText'] = node.hintText;
+      if (node.error) out['error'] = node.error;
+      if (node.isSelected) out['isSelected'] = true;
+      return out;
+    });
+  }
+
   // ---------- private helpers ----------
+
+  /**
+   * Android classes come through fully qualified (e.g. `android.widget.Button`).
+   * Match Dart's shortening — take the last `.`-separated segment so prompts
+   * stay terse. iOS classes are left alone.
+   */
+  private static _shortenAndroidClass(
+    clazz: string | null,
+    platform: string | undefined,
+  ): string | null {
+    if (!clazz) return null;
+    if (platform !== PLATFORM_ANDROID) return clazz;
+    const parts = clazz.split('.');
+    return parts[parts.length - 1] ?? clazz;
+  }
 
   /**
    * Recursively parse a JSON node into a HierarchyNode.

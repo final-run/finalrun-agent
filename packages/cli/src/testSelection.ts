@@ -5,6 +5,9 @@ import { assertPathWithinRoot, isYamlFile } from './workspace.js';
 export const TEST_SELECTION_REQUIRED_ERROR =
   'At least one test selector is required. Pass a YAML file, directory, or glob under .finalrun/tests.';
 
+export const MULTI_DEVICE_TEST_SELECTION_REQUIRED_ERROR =
+  'At least one multi-device test selector is required. Pass a YAML file, directory, or glob under .finalrun/multi-device/tests.';
+
 export interface SelectTestFilesOptions {
   requireSelection?: boolean;
 }
@@ -30,7 +33,11 @@ export async function selectTestFiles(
   options?: SelectTestFilesOptions,
 ): Promise<string[]> {
   const normalizedSelectors = normalizeTestSelectors(selectors);
-  const allTestFiles = (await collectYamlFiles(testsDir)).sort();
+  const dirExists = await fs.stat(testsDir).then(
+    (stats) => stats.isDirectory(),
+    () => false,
+  );
+  const allTestFiles = dirExists ? (await collectYamlFiles(testsDir)).sort() : [];
 
   if (normalizedSelectors.length === 0) {
     if (options?.requireSelection) {
@@ -220,6 +227,49 @@ function findSimilarFiles(selector: string, allTestFiles: string[], testsDir: st
     .filter((entry) => entry.distance > 0 && entry.distance <= maxDistance)
     .sort((a, b) => a.distance - b.distance);
   return scored.slice(0, 3).map((entry) => entry.relative);
+}
+
+export async function selectMultiDeviceTestFiles(
+  multiDeviceTestsDir: string,
+  selectors?: string[],
+  options?: SelectTestFilesOptions,
+): Promise<string[]> {
+  const dirExists = await fs.stat(multiDeviceTestsDir).then(
+    (stats) => stats.isDirectory(),
+    () => false,
+  );
+
+  if (!dirExists) {
+    if (options?.requireSelection) {
+      throw new Error(
+        `Multi-device tests directory not found: ${multiDeviceTestsDir}. Create .finalrun/multi-device/tests/ and add YAML test files.`,
+      );
+    }
+    return [];
+  }
+
+  const normalizedSelectors = normalizeTestSelectors(selectors);
+  const allTestFiles = (await collectYamlFiles(multiDeviceTestsDir)).sort();
+
+  if (normalizedSelectors.length === 0) {
+    if (options?.requireSelection) {
+      throw new Error(MULTI_DEVICE_TEST_SELECTION_REQUIRED_ERROR);
+    }
+    if (allTestFiles.length === 0) {
+      throw new Error(`No YAML tests found under ${multiDeviceTestsDir}`);
+    }
+    return allTestFiles;
+  }
+
+  const selectedFiles = new Set<string>();
+  for (const selector of normalizedSelectors) {
+    const matchedFiles = await expandSelector(multiDeviceTestsDir, selector, allTestFiles);
+    for (const filePath of matchedFiles) {
+      selectedFiles.add(filePath);
+    }
+  }
+
+  return Array.from(selectedFiles);
 }
 
 async function collectYamlFiles(dirPath: string): Promise<string[]> {

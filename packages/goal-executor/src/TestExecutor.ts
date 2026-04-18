@@ -58,6 +58,18 @@ export interface TestExecutorConfig {
   appKnowledge?: string;
   appIdentifier?: string;
   runtimeBindings?: RuntimeBindings;
+  /**
+   * Optional initial `remember` array to seed the planner's cross-turn memory.
+   * Used by MultiDeviceTestExecutor to thread shared memory across step
+   * sub-executions (e.g., a code remembered on device A used by device B).
+   */
+  initialRemember?: string[];
+  /**
+   * Free-form label attached to every planner/grounder log line for this run.
+   * Typically a device serial (single-device) or "role(displayName) step=N"
+   * (multi-device). Helps distinguish concurrent/sequential runs in the logs.
+   */
+  logContext?: string;
 }
 
 export interface AgentActionResult {
@@ -100,6 +112,12 @@ export interface TestExecutionResult {
   deviceLog?: import('@finalrun/common').DeviceLogCaptureResult;
   steps: AgentActionResult[];
   totalIterations: number;
+  /**
+   * Final `remember` array as accumulated by the planner across iterations.
+   * Used by MultiDeviceTestExecutor to thread memory into the next step.
+   * Optional so legacy result constructors don't have to provide it.
+   */
+  remember?: string[];
 }
 
 /**
@@ -190,6 +208,7 @@ export class TestExecutor {
       platform: config.platform,
       appIdentifier: config.appIdentifier,
       runtimeBindings: config.runtimeBindings,
+      logContext: config.logContext,
     });
   }
 
@@ -218,7 +237,7 @@ export class TestExecutor {
     const maxIterations = this._config.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     const startedAt = new Date().toISOString();
     let history = '';
-    let remember: string[] = [];
+    let remember: string[] = [...(this._config.initialRemember ?? [])];
     let consecutiveTransientCaptureFailures = 0;
 
     Logger.i(`Starting goal execution: "${this._config.goal}"`);
@@ -237,6 +256,7 @@ export class TestExecutor {
           completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration - 1,
+          remember,
         };
       }
 
@@ -296,6 +316,7 @@ export class TestExecutor {
             completedAt: new Date().toISOString(),
             steps: this._steps,
             totalIterations: iteration,
+            remember,
           };
         }
 
@@ -315,6 +336,7 @@ export class TestExecutor {
             completedAt: new Date().toISOString(),
             steps: this._steps,
             totalIterations: iteration,
+            remember,
           };
         }
 
@@ -344,6 +366,7 @@ export class TestExecutor {
           preContext: this._config.preContext,
           appKnowledge: this._config.appKnowledge,
           traceStep: iteration,
+          logContext: this._config.logContext,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -390,6 +413,7 @@ export class TestExecutor {
             completedAt: new Date().toISOString(),
             steps: this._steps,
             totalIterations: iteration,
+            remember,
           };
         }
         continue;
@@ -450,6 +474,7 @@ export class TestExecutor {
           completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration,
+          remember,
         };
       }
 
@@ -494,6 +519,7 @@ export class TestExecutor {
           completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration,
+          remember,
         };
       }
 
@@ -572,6 +598,7 @@ export class TestExecutor {
           completedAt: new Date().toISOString(),
           steps: this._steps,
           totalIterations: iteration,
+          remember,
         };
       }
 
@@ -646,6 +673,7 @@ export class TestExecutor {
       completedAt: new Date().toISOString(),
       steps: this._steps,
       totalIterations: maxIterations,
+      remember,
     };
   }
 

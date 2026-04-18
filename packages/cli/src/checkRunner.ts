@@ -1,4 +1,9 @@
-import { type SuiteDefinition, type TestDefinition, type RunTarget } from '@finalrun/common';
+import {
+  type SuiteDefinition,
+  type TestDefinition,
+  type MultiDeviceTestDefinition,
+  type RunTarget,
+} from '@finalrun/common';
 import { CliEnv } from './env.js';
 import {
   resolveAppOverrideIdentifier,
@@ -11,12 +16,21 @@ import {
   loadTestSuite,
   validateTestBindings,
 } from './testLoader.js';
-import { normalizeTestSelectors, selectTestFiles } from './testSelection.js';
+import {
+  loadMultiDeviceTest,
+  validateMultiDeviceTestBindings,
+} from './multiDeviceTestLoader.js';
+import {
+  normalizeTestSelectors,
+  selectTestFiles,
+  selectMultiDeviceTestFiles,
+} from './testSelection.js';
 import {
   loadWorkspaceConfig,
   resolveWorkspace,
   resolveConfiguredEnvironmentFile,
   resolveSuiteManifestPath,
+  stripMultiDeviceSelectorPrefix,
   validateAppOverride,
   type AppOverrideValidationResult,
   type FinalRunWorkspace,
@@ -114,6 +128,65 @@ export async function runCheck(
     suite: resolvedRunTarget.suite,
     resolvedApp,
     appOverride,
+  };
+}
+
+export interface MultiDeviceCheckRunnerOptions {
+  envName?: string;
+  selectors: string[];
+  platform?: string;
+  cwd?: string;
+}
+
+export interface MultiDeviceCheckRunnerResult {
+  workspace: FinalRunWorkspace;
+  environment: LoadedEnvironmentConfig;
+  tests: MultiDeviceTestDefinition[];
+}
+
+export async function runMultiDeviceCheck(
+  options: MultiDeviceCheckRunnerOptions,
+): Promise<MultiDeviceCheckRunnerResult> {
+  const workspace = await resolveWorkspace(options.cwd);
+  const resolvedEnvironment = await resolveConfiguredEnvironmentFile(
+    workspace,
+    options.envName,
+  );
+
+  const runtimeEnv = new CliEnv();
+  if (resolvedEnvironment.usesEmptyBindings) {
+    runtimeEnv.load(undefined, { includeDotEnv: false, cwd: workspace.rootDir });
+  } else {
+    runtimeEnv.load(resolvedEnvironment.envName, { cwd: workspace.rootDir });
+  }
+
+  const environment = await loadEnvironmentConfig(
+    resolvedEnvironment.envPath,
+    resolvedEnvironment.envName,
+    runtimeEnv,
+  );
+
+  const strippedSelectors = options.selectors.map(stripMultiDeviceSelectorPrefix);
+  const selectedFiles = await selectMultiDeviceTestFiles(
+    workspace.multiDeviceTestsDir,
+    strippedSelectors.length > 0 ? strippedSelectors : undefined,
+    { requireSelection: true },
+  );
+
+  const tests = await Promise.all(
+    selectedFiles.map(async (filePath) => {
+      const test = await loadMultiDeviceTest(filePath, workspace.multiDeviceTestsDir);
+      validateMultiDeviceTestBindings(test, environment.config, {
+        environmentResolved: !resolvedEnvironment.usesEmptyBindings,
+      });
+      return test;
+    }),
+  );
+
+  return {
+    workspace,
+    environment,
+    tests,
   };
 }
 

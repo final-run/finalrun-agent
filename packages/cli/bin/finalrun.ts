@@ -6,7 +6,7 @@ import { Logger, LogLevel, type TestResult } from '@finalrun/common';
 import { formatResolvedAppSummary } from '../src/appConfig.js';
 import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
 import { resolveApiKey } from '../src/apiKey.js';
-import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
+import { runCheck, runMultiDeviceCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
 import { runDoctorCommand } from '../src/doctorRunner.js';
 import {
   buildRunReportUrl,
@@ -23,12 +23,15 @@ import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
 import { initializeCliRuntimeEnvironment, resolveCliPackageVersion } from '../src/runtimePaths.js';
 import {
+  isMultiDeviceSelector,
   loadWorkspaceConfig,
   resolveConfiguredEnvironmentFile,
   resolveWorkspace,
   resolveWorkspaceForCommand,
 } from '../src/workspace.js';
 import { WorkspaceSelectionCancelledError } from '../src/workspacePicker.js';
+import { prepareMultiDeviceSession } from '../src/multiDeviceSessionRunner.js';
+import { AIAgent, MultiDeviceTestExecutor } from '@finalrun/goal-executor';
 
 // ============================================================================
 // CLI definition
@@ -53,6 +56,31 @@ program
     await runCommand(async () => {
       Logger.init({ level: LogLevel.INFO, resetSinks: true });
       const normalizedSelectors = normalizeTestSelectors(selectors);
+
+      const hasMultiDevice = normalizedSelectors.some(isMultiDeviceSelector);
+      if (hasMultiDevice) {
+        const result = await runMultiDeviceCheck({
+          envName: options.env,
+          selectors: normalizedSelectors,
+          platform: options.platform,
+        });
+
+        const envSummary =
+          result.environment.envName === 'none'
+            ? 'using no env bindings.'
+            : `using env ${result.environment.envName}.`;
+        for (const test of result.tests) {
+          const roles = test.devices.map((d) => d.role).join(', ');
+          console.log(
+            `Validated multi-device test "${test.name}" with ${test.devices.length} devices (${roles}).`,
+          );
+        }
+        console.log(
+          `Validated ${result.tests.length} multi-device test(s) in ${result.workspace.multiDeviceTestsDir} ${envSummary}`,
+        );
+        return;
+      }
+
       if (options.suite && normalizedSelectors.length > 0) {
         throw new Error(SUITE_SELECTOR_CONFLICT_ERROR);
       }
@@ -294,6 +322,12 @@ async function runTestCommand(params: {
     if (normalizedSelectors.length === 0 && !normalizedSuitePath) {
       throw new Error(TEST_SELECTION_REQUIRED_ERROR);
     }
+
+    if (normalizedSelectors.some(isMultiDeviceSelector)) {
+      await runMultiDeviceTestCommand(normalizedSelectors, params.options);
+      return;
+    }
+
     const workspace = await resolveWorkspace();
     const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
     const model = parseModel(params.options.model ?? workspaceConfig.model);
@@ -355,6 +389,112 @@ async function runTestCommand(params: {
     } else {
       const message = error instanceof Error ? error.message : String(error);
       await exitWithRawStderr(message, 1);
+    }
+  }
+}
+
+async function runMultiDeviceTestCommand(
+  selectors: string[],
+  options: TestCommandOptions,
+): Promise<void> {
+  const debug = options.debug === true;
+  Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
+
+  // 1. Validate YAML and resolve environment
+  const checked = await runMultiDeviceCheck({
+    envName: options.env,
+    selectors,
+    platform: options.platform,
+  });
+
+  if (checked.tests.length === 0) {
+    throw new Error('No multi-device tests matched the given selectors.');
+  }
+
+  // 2. Resolve model and API key
+  const workspaceConfig = await loadWorkspaceConfig(checked.workspace.finalrunDir);
+  const model = parseModel(options.model ?? workspaceConfig.model);
+  const runtimeEnv = new CliEnv();
+  runtimeEnv.load(
+    checked.environment.envName === 'none' ? undefined : checked.environment.envName,
+    { cwd: checked.workspace.rootDir },
+  );
+  const apiKey = resolveApiKey({
+    env: runtimeEnv,
+    provider: model.provider,
+    providedApiKey: options.apiKey,
+  });
+
+  // 3. Set up multi-device session (connect 2 devices, launch apps)
+  const test = checked.tests[0]!;
+  console.log(`\n\x1b[1mFinalRun Multi-Device Test\x1b[0m`);
+  console.log('─'.repeat(60));
+  console.log(`Test: ${test.name}`);
+  console.log(`Devices: ${test.devices.map((d) => `${d.role} (${d.app})`).join(', ')}`);
+  console.log(`Steps: ${test.steps.length}`);
+  console.log(`Model: ${model.provider}/${model.modelName}`);
+  console.log('─'.repeat(60) + '\n');
+
+  const session = await prepareMultiDeviceSession({
+    deviceRoles: test.devices,
+    platform: options.platform,
+    appOverridePath: options.app,
+  });
+
+  try {
+    // 4. Run executor (lockstep per-step, reuses existing single-device executor)
+    const aiAgent = new AIAgent({
+      provider: model.provider,
+      modelName: model.modelName,
+      apiKey,
+    });
+
+    const deviceApps = new Map(test.devices.map((d) => [d.role, d.app]));
+
+    // Print connected devices with display names
+    console.log('\nConnected devices:');
+    for (const [role, displayName] of session.deviceDisplayNames) {
+      console.log(`  • ${role} → ${displayName} (${deviceApps.get(role)})`);
+    }
+
+    const executor = new MultiDeviceTestExecutor({
+      test,
+      platform: session.platform,
+      devices: session.devices,
+      deviceDisplayNames: session.deviceDisplayNames,
+      deviceApps,
+      aiAgent,
+      maxIterationsPerStep: parseInt(options.maxIterations, 10) || 40,
+      runtimeBindings: checked.environment.bindings,
+    });
+
+    const result = await executor.executeGoal();
+
+    // 5. Print results
+    console.log('\n' + '═'.repeat(60));
+    if (result.success) {
+      console.log(`\x1b[32m✓ Multi-device test passed\x1b[0m`);
+    } else if (result.status === 'aborted') {
+      console.log(`\x1b[33m! Multi-device test aborted\x1b[0m`);
+    } else {
+      console.log(`\x1b[31m✗ Multi-device test failed\x1b[0m`);
+    }
+    console.log('═'.repeat(60));
+    console.log(`  Status: ${result.status}`);
+    console.log(`  Message: ${result.message}`);
+    if (result.analysis) {
+      console.log(`  Analysis: ${result.analysis}`);
+    }
+    console.log(`  Iterations: ${result.totalIterations}`);
+    console.log(`  Steps executed: ${result.steps.length}`);
+    console.log('═'.repeat(60));
+
+    process.exit(result.success ? 0 : result.status === 'aborted' ? 130 : 1);
+  } finally {
+    try {
+      await session.cleanup();
+    } catch (error) {
+      Logger.w('Failed to clean up multi-device session:', error);
     }
   }
 }

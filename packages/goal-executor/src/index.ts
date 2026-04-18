@@ -14,6 +14,13 @@ export type {
 export { ActionExecutor } from './ActionExecutor.js';
 export type { ActionInput, ActionOutput } from './ActionExecutor.js';
 
+export { MultiDeviceTestExecutor } from './MultiDeviceTestExecutor.js';
+export type {
+  MultiDeviceExecutorConfig,
+  MultiDeviceTestExecutionResult,
+  MultiDeviceStepResult,
+} from './MultiDeviceTestExecutor.js';
+
 export { AIAgent } from './ai/AIAgent.js';
 export type { PlannerRequest, PlannerResponse, GrounderRequest, GrounderResponse } from './ai/AIAgent.js';
 

@@ -28,6 +28,14 @@ export type {
   SecretReference,
 } from './models/Environment.js';
 export type { TestDefinition, BindingReference } from './models/TestDefinition.js';
+export type {
+  MultiDeviceTestDevice,
+  MultiDeviceStep,
+  MultiDeviceParallelBlock,
+  MultiDevicePhaseItem,
+  MultiDeviceTestDefinition,
+} from './models/MultiDeviceTestDefinition.js';
+export { isParallelBlock } from './models/MultiDeviceTestDefinition.js';
 export type { SuiteDefinition } from './models/SuiteDefinition.js';
 export type {
   AgentActionTrace,
