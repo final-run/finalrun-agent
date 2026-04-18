@@ -31,6 +31,9 @@ export interface WorkspaceConfig {
   env?: string;
   model?: string;
   app?: AppConfig;
+  network?: {
+    capture?: boolean;
+  };
 }
 
 export interface ResolvedEnvironmentFile {
@@ -57,7 +60,7 @@ export interface RegisteredWorkspaceEntry {
   metadataPath: string;
 }
 
-const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app']);
+const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app', 'network']);
 const WORKSPACE_HASH_LENGTH = 16;
 
 export async function resolveWorkspace(
@@ -421,6 +424,16 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
       allowEmpty: true,
     }),
     app: readAppConfig(parsed['app'], `${configPath} app`),
+    network: readNetworkConfig(parsed['network']),
+  };
+}
+
+function readNetworkConfig(raw: unknown): { capture?: boolean } | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const obj = raw as Record<string, unknown>;
+  return {
+    capture: typeof obj['capture'] === 'boolean' ? obj['capture'] : undefined,
   };
 }
 

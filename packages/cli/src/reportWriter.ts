@@ -24,7 +24,7 @@ import {
   redactResolvedValue,
 } from '@finalrun/common';
 import type { TestExecutionResult, AgentActionResult } from '@finalrun/goal-executor';
-import type { DeviceLogCaptureResult } from '@finalrun/common';
+import type { DeviceLogCaptureResult, NetworkLogCaptureResult } from '@finalrun/common';
 import type { LoadedEnvironmentConfig } from './testLoader.js';
 
 interface TestSnapshotState {
@@ -328,6 +328,10 @@ export class ReportWriter {
     const deviceLogStartedAt = result.deviceLog?.startedAt;
     const deviceLogCompletedAt = result.deviceLog?.completedAt;
 
+    const networkLogRelative = await this._copyNetworkLogArtifact(test.testId!, result.networkLog, bindings);
+    const networkLogStartedAt = result.networkLog?.startedAt;
+    const networkLogCompletedAt = result.networkLog?.completedAt;
+
     const steps: AgentAction[] = [];
     for (const [index, step] of result.steps.entries()) {
       const stepNumber = index + 1;
@@ -379,6 +383,9 @@ export class ReportWriter {
       deviceLogFile: deviceLogRelative,
       deviceLogStartedAt,
       deviceLogCompletedAt,
+      networkLogFile: networkLogRelative,
+      networkLogStartedAt,
+      networkLogCompletedAt,
       steps,
     };
 
@@ -744,6 +751,48 @@ export class ReportWriter {
     return logRelative;
   }
 
+  private async _copyNetworkLogArtifact(
+    testId: string,
+    networkLog: NetworkLogCaptureResult | undefined,
+    bindings: RuntimeBindings,
+  ): Promise<string | undefined> {
+    if (!networkLog?.filePath) {
+      return undefined;
+    }
+
+    const harRelative = path.posix.join('tests', testId, 'network.har');
+    const sourcePath = path.resolve(networkLog.filePath);
+    const targetPath = path.resolve(path.join(this._runDir, harRelative));
+
+    try {
+      await fsp.access(sourcePath);
+    } catch {
+      Logger.w(`Network HAR file not found for report copy: ${networkLog.filePath}`);
+      return undefined;
+    }
+
+    await fsp.copyFile(sourcePath, targetPath);
+
+    // Redact sensitive headers and secret values in the HAR.
+    try {
+      const raw = await fsp.readFile(targetPath, 'utf-8');
+      const har = JSON.parse(raw);
+      if (har?.log?.entries) {
+        for (const entry of har.log.entries) {
+          redactHarHeaders(entry.request?.headers);
+          redactHarHeaders(entry.response?.headers);
+          redactHarQueryParams(entry.request?.queryString);
+        }
+      }
+      await fsp.writeFile(targetPath, JSON.stringify(har, null, 2), 'utf-8');
+    } catch (error) {
+      Logger.w(`Failed to redact network HAR file: ${this._formatError(error)}`);
+      // Keep the unredacted copy rather than deleting — better to have data.
+    }
+
+    return harRelative;
+  }
+
   private _formatError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
@@ -936,4 +985,52 @@ function redactTiming(
       detail: redactResolvedValue(span.detail, bindings),
     })),
   };
+}
+
+// ── HAR redaction helpers ────────────────────────────────────────────────────
+
+const REDACTED_HEADER_NAMES = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+]);
+
+const REDACTED_TOKEN_SUFFIXES = ['-token', '-key', '-secret'];
+
+function shouldRedactHeader(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (REDACTED_HEADER_NAMES.has(lower)) return true;
+  for (const suffix of REDACTED_TOKEN_SUFFIXES) {
+    if (lower.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
+function redactHarHeaders(headers: Array<{ name: string; value: string }> | undefined): void {
+  if (!headers) return;
+  for (const header of headers) {
+    if (shouldRedactHeader(header.name)) {
+      header.value = '[REDACTED]';
+    }
+  }
+}
+
+const REDACTED_QUERY_PARAM_NAMES = new Set([
+  'token',
+  'api_key',
+  'apikey',
+  'access_token',
+  'key',
+  'secret',
+  'password',
+]);
+
+function redactHarQueryParams(queryString: Array<{ name: string; value: string }> | undefined): void {
+  if (!queryString) return;
+  for (const param of queryString) {
+    if (REDACTED_QUERY_PARAM_NAMES.has(param.name.toLowerCase())) {
+      param.value = '[REDACTED]';
+    }
+  }
 }

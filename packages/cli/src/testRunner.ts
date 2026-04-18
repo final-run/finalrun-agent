@@ -38,6 +38,12 @@ import {
   resolveWorkspace,
   type FinalRunWorkspace,
 } from './workspace.js';
+import { loadOrGenerateCA } from './commands/logNetwork/ca.js';
+import {
+  AndroidNetworkProxySetup,
+  IOSNetworkProxySetup,
+  type NetworkProxySetup,
+} from '@finalrun/device-node';
 
 export interface TestRunnerOptions extends CheckRunnerOptions {
   apiKey: string;
@@ -46,6 +52,7 @@ export interface TestRunnerOptions extends CheckRunnerOptions {
   maxIterations?: number;
   debug?: boolean;
   invokedCommand?: 'test' | 'suite';
+  networkCapture?: boolean;
 }
 
 export interface TestRunnerResult {
@@ -230,6 +237,41 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
       });
     }
 
+    // ── Session-level network proxy setup ──────────────────────────────
+    let networkCaptureAvailable = false;
+    let networkProxySetup: NetworkProxySetup | undefined;
+
+    if (options.networkCapture && goalSession) {
+      try {
+        const ca = await loadOrGenerateCA();
+        const sessionResponse = await goalSession.device.startNetworkSession({
+          cert: ca.cert,
+          key: ca.key,
+        });
+
+        if (sessionResponse.success) {
+          const proxyPort = goalSession.device.getNetworkProxyPort();
+          const deviceInfo = goalSession.device.getDeviceInfo();
+          const deviceId = deviceInfo.id ?? deviceInfo.deviceUUID;
+          const platform = goalSession.platform;
+
+          if (platform === 'android') {
+            const adbPath = (await new (await import('./filePathUtil.js')).CliFilePathUtil(undefined, undefined, { downloadAssets: false }).getADBPath()) ?? 'adb';
+            networkProxySetup = new AndroidNetworkProxySetup(adbPath, deviceId);
+          } else {
+            networkProxySetup = new IOSNetworkProxySetup(deviceId);
+          }
+
+          await networkProxySetup.configureProxy(proxyPort);
+          networkCaptureAvailable = true;
+        } else {
+          Logger.w(`Failed to start network capture session: ${sessionResponse.message}`);
+        }
+      } catch (error) {
+        Logger.w('Network capture setup failed:', error);
+      }
+    }
+
     try {
       for (const test of checked.tests) {
         if (runAborted) {
@@ -302,6 +344,14 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
               testId: test.testId!,
               keepPartialOnFailure: true,
             },
+            ...(networkCaptureAvailable
+              ? {
+                  networkCapture: {
+                    runId: path.basename(runDir),
+                    testId: test.testId!,
+                  },
+                }
+              : {}),
           });
 
           const testRecord = await reportWriter.writeTestRecord(
@@ -371,6 +421,21 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
         testResults,
       };
     } finally {
+      // Clean up network proxy before device cleanup.
+      if (networkProxySetup) {
+        try {
+          await networkProxySetup.restoreProxy();
+        } catch (error) {
+          Logger.w('Failed to restore network proxy:', error);
+        }
+      }
+      if (goalSession && networkCaptureAvailable) {
+        try {
+          await goalSession.device.stopNetworkSession();
+        } catch (error) {
+          Logger.w('Failed to stop network capture session:', error);
+        }
+      }
       if (goalSession) {
         try {
           await goalSession.cleanup();

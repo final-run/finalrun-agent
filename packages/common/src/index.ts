@@ -36,6 +36,7 @@ export type {
   SpanTiming,
 } from './models/Trace.js';
 export type { DeviceLogCaptureResult } from './models/DeviceLog.js';
+export type { NetworkLogCaptureResult } from './models/NetworkLog.js';
 export type {
   PlannerThought,
   ActionPayload,

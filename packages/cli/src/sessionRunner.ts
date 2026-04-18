@@ -20,7 +20,7 @@ import {
   type TestRecordingResult,
 } from '@finalrun/goal-executor';
 import type { TestExecutionResult } from '@finalrun/goal-executor';
-import type { DeviceLogCaptureResult } from '@finalrun/common';
+import type { DeviceLogCaptureResult, NetworkLogCaptureResult } from '@finalrun/common';
 import type { ResolvedAppConfig } from './appConfig.js';
 import { CliFilePathUtil } from './filePathUtil.js';
 import {
@@ -76,6 +76,10 @@ export interface TestSessionConfig {
     runId: string;
     testId: string;
     keepPartialOnFailure?: boolean;
+  };
+  networkCapture?: {
+    runId: string;
+    testId: string;
   };
 }
 
@@ -304,6 +308,13 @@ export async function executeTestOnSession(
         keepPartialOnFailure: boolean;
       }
     | undefined;
+  let activeNetworkCapture:
+    | {
+        runId: string;
+        testId: string;
+        startedAt: string;
+      }
+    | undefined;
 
   try {
     const aiAgent = dependencies.createAiAgent({
@@ -409,6 +420,33 @@ export async function executeTestOnSession(
       }
     }
 
+    if (config.networkCapture) {
+      try {
+        const netResponse = await session.device.startNetworkCapture({
+          runId: config.networkCapture.runId,
+          testId: config.networkCapture.testId,
+        });
+        if (netResponse.success) {
+          activeNetworkCapture = {
+            runId: config.networkCapture.runId,
+            testId: config.networkCapture.testId,
+            startedAt:
+              typeof netResponse.data?.['startedAt'] === 'string'
+                ? (netResponse.data['startedAt'] as string)
+                : new Date().toISOString(),
+          };
+          Logger.d(`Network capture marker set for test ${config.networkCapture.testId}`);
+        } else {
+          Logger.w(
+            `Unable to start network capture for test ${config.networkCapture.testId}: ` +
+            `${netResponse.message ?? 'unknown error'}`,
+          );
+        }
+      } catch (error) {
+        Logger.w('Failed to start network capture:', error);
+      }
+    }
+
     // Execute!
     let result = await executor.executeGoal((event) => renderer.onProgress(event));
 
@@ -468,6 +506,43 @@ export async function executeTestOnSession(
       activeRecording = undefined;
     }
 
+    let networkLog: NetworkLogCaptureResult | undefined;
+    if (activeNetworkCapture) {
+      try {
+        const stopNetResponse = await session.device.stopNetworkCapture(
+          activeNetworkCapture.runId,
+          activeNetworkCapture.testId,
+        );
+        if (stopNetResponse.success) {
+          const filePath = stopNetResponse.data?.['filePath'];
+          if (typeof filePath === 'string') {
+            networkLog = {
+              filePath,
+              startedAt:
+                typeof stopNetResponse.data?.['startedAt'] === 'string'
+                  ? (stopNetResponse.data['startedAt'] as string)
+                  : activeNetworkCapture.startedAt,
+              completedAt:
+                typeof stopNetResponse.data?.['completedAt'] === 'string'
+                  ? (stopNetResponse.data['completedAt'] as string)
+                  : new Date().toISOString(),
+            };
+          } else {
+            Logger.w(`Network capture stopped for test ${activeNetworkCapture.testId} but no file path returned.`);
+          }
+          activeNetworkCapture = undefined;
+        } else {
+          Logger.w(
+            `Unable to stop network capture for test ${activeNetworkCapture.testId}: ` +
+            `${stopNetResponse.message ?? 'unknown error'}`,
+          );
+          activeNetworkCapture = undefined;
+        }
+      } catch (error) {
+        Logger.w('Failed to stop network capture:', error);
+      }
+    }
+
     let deviceLog: DeviceLogCaptureResult | undefined;
     if (activeLogCapture) {
       try {
@@ -516,11 +591,12 @@ export async function executeTestOnSession(
       }
     }
 
-    const finalResult = recording
-      ? { ...result, recording, ...(deviceLog ? { deviceLog } : {}) }
-      : deviceLog
-        ? { ...result, deviceLog }
-        : result;
+    const finalResult = {
+      ...result,
+      ...(recording ? { recording } : {}),
+      ...(deviceLog ? { deviceLog } : {}),
+      ...(networkLog ? { networkLog } : {}),
+    };
     // Print summary
     renderer.printSummary(finalResult);
 
@@ -547,6 +623,13 @@ export async function executeTestOnSession(
         );
       } catch (error) {
         Logger.w('Failed to abort active log capture during cleanup:', error);
+      }
+    }
+    if (activeNetworkCapture) {
+      try {
+        await session.device.abortNetworkCapture(activeNetworkCapture.runId);
+      } catch (error) {
+        Logger.w('Failed to abort active network capture during cleanup:', error);
       }
     }
     renderer.destroy();

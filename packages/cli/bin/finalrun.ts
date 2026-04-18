@@ -29,6 +29,7 @@ import {
   resolveWorkspaceForCommand,
 } from '../src/workspace.js';
 import { WorkspaceSelectionCancelledError } from '../src/workspacePicker.js';
+import { runLogNetworkCommand } from '../src/commands/logNetwork/index.js';
 
 // ============================================================================
 // CLI definition
@@ -237,6 +238,16 @@ program
     });
   });
 
+program
+  .command('log-network')
+  .description('Capture and display HTTP(S) network traffic from a connected device')
+  .requiredOption('--platform <platform>', 'Target platform (android)')
+  .option('--device <serial>', 'Device serial (auto-detected if only one)')
+  .option('--out <path>', 'Output HAR file path (default: auto-generated)')
+  .action(async (options: { platform: string; device?: string; out?: string }) => {
+    await runLogNetworkCommand(options);
+  });
+
 program.parse();
 
 interface CommonCommandOptions {
@@ -332,6 +343,7 @@ async function runTestCommand(params: {
       maxIterations: parseInt(params.options.maxIterations, 10) || 110,
       debug,
       invokedCommand: params.invokedCommand,
+      networkCapture: workspaceConfig.network?.capture === true,
     });
 
     const runUrl = reportServer

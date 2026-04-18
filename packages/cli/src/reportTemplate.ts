@@ -21,9 +21,29 @@ export interface ReportManifestSelectedTestRecord extends TestDefinition {
   snapshotYamlText?: string;
 }
 
+export interface NetworkLogEntry {
+  startedDateTime: string;
+  method: string;
+  url: string;
+  status: number;
+  statusText: string;
+  time: number;
+  responseSize: number;
+  requestHeaders?: Array<{ name: string; value: string }>;
+  responseHeaders?: Array<{ name: string; value: string }>;
+}
+
+export interface NetworkTlsErrorEntry {
+  hostname: string;
+  cause: string;
+  timestamp: string;
+}
+
 export interface ReportManifestTestRecord extends TestResult {
   snapshotYamlText?: string;
   deviceLogTailText?: string;
+  networkLogEntries?: NetworkLogEntry[];
+  networkTlsErrors?: NetworkTlsErrorEntry[];
 }
 
 export interface ReportRunManifest extends Omit<SharedRunManifest, 'input' | 'tests'> {
@@ -675,6 +695,48 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
     .device-log-download:hover {
       background: rgba(67, 24, 255, 0.04);
     }
+
+    /* ── Network Log Tab ──────────────────────────────────────────────── */
+    .network-log-inline { display: flex; flex-direction: column; height: 100%; }
+    .network-log-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+    .network-log-search { flex: 1; padding: 6px 10px; font-size: 12px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--surface); color: var(--text-primary); }
+    .network-log-search:focus { outline: 2px solid var(--accent); }
+    .network-log-match-count { font-size: 11px; color: var(--text-muted); min-width: 40px; }
+    .network-log-filters { display: flex; gap: 4px; }
+    .net-filter-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-light); background: transparent; color: var(--text-secondary); cursor: pointer; }
+    .net-filter-chip.is-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .network-log-table-wrap { display: flex; flex: 1; overflow: hidden; }
+    .network-log-table { flex: 1; overflow-y: auto; font-size: 12px; font-family: var(--font-mono); }
+    .network-log-row { display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-bottom: 1px solid var(--border-light); cursor: pointer; }
+    .network-log-row:hover { background: rgba(67, 24, 255, 0.04); }
+    .network-log-row.is-active { background: rgba(67, 24, 255, 0.08); }
+    .network-log-row.is-selected { background: rgba(67, 24, 255, 0.12); border-left: 3px solid var(--accent); padding-left: 9px; }
+    .network-log-row.is-hidden { display: none; }
+    .net-method { width: 50px; font-weight: 600; flex-shrink: 0; }
+    .net-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+    .net-status { width: 40px; text-align: right; flex-shrink: 0; font-weight: 600; }
+    .net-time { width: 55px; text-align: right; flex-shrink: 0; color: var(--text-muted); }
+    .net-size { width: 55px; text-align: right; flex-shrink: 0; color: var(--text-muted); }
+    .network-log-row.status-2xx .net-status { color: #05cd99; }
+    .network-log-row.status-3xx .net-status { color: #3b82f6; }
+    .network-log-row.status-4xx .net-status { color: #e8a735; }
+    .network-log-row.status-5xx .net-status { color: #ee5d50; }
+    .network-log-row.tls-error { opacity: 0.6; }
+    .network-log-row.tls-error .net-method { color: #d946ef; }
+    .network-log-row.tls-error .net-status { color: #d946ef; font-weight: normal; font-size: 11px; width: auto; }
+    .network-log-detail { width: 45%; border-left: 1px solid var(--border-light); overflow-y: auto; display: flex; flex-direction: column; }
+    .network-log-detail-header { padding: 10px 12px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border-light); word-break: break-all; }
+    .network-log-detail-tabs { display: flex; border-bottom: 1px solid var(--border-light); }
+    .net-detail-tab { padding: 6px 14px; font-size: 11px; border: none; background: none; cursor: pointer; color: var(--text-secondary); border-bottom: 2px solid transparent; }
+    .net-detail-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+    .network-log-detail-body { flex: 1; overflow-y: auto; padding: 10px 12px; font-size: 12px; font-family: var(--font-mono); white-space: pre-wrap; word-break: break-all; }
+    .network-log-detail-body .header-section { margin-bottom: 12px; }
+    .network-log-detail-body .header-section-title { font-weight: 600; color: var(--text-muted); margin-bottom: 4px; font-size: 11px; text-transform: uppercase; }
+    .network-log-detail-body .header-row { display: flex; gap: 8px; padding: 2px 0; }
+    .network-log-detail-body .header-name { color: var(--accent); min-width: 120px; flex-shrink: 0; }
+    .network-log-detail-body .header-value { color: var(--text-primary); word-break: break-all; }
+    .network-log-download { display: block; padding: 10px 16px; border-top: 1px solid var(--border-light); font-size: 12px; color: var(--accent); text-decoration: none; flex-shrink: 0; }
+    .network-log-download:hover { background: rgba(67, 24, 255, 0.04); }
 
     .analysis-card.success {
       background: rgba(5, 205, 153, 0.08);
@@ -1415,6 +1477,169 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
       }
     });
 
+    // ── Network Log JS ─────────────────────────────────────────────────
+    function handleNetFilter(chip) {
+      var netInline = chip.closest('.network-log-inline');
+      if (!netInline) return;
+      var status = chip.dataset.netStatus;
+      if (status === 'all') {
+        var chips = netInline.querySelectorAll('.net-filter-chip');
+        for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('is-active', chips[i].dataset.netStatus === 'all');
+      } else {
+        chip.classList.toggle('is-active');
+        var allChip = netInline.querySelector('.net-filter-chip[data-net-status="all"]');
+        var anyActive = false;
+        var levelChips = netInline.querySelectorAll('.net-filter-chip:not([data-net-status="all"])');
+        for (var j = 0; j < levelChips.length; j++) { if (levelChips[j].classList.contains('is-active')) anyActive = true; }
+        if (allChip) allChip.classList.toggle('is-active', !anyActive);
+      }
+      applyNetVisibility(netInline);
+    }
+
+    function applyNetVisibility(netInline) {
+      var searchText = (netInline.querySelector('.network-log-search') || {}).value || '';
+      var activeChips = netInline.querySelectorAll('.net-filter-chip.is-active');
+      var activeStatuses = [];
+      var allActive = false;
+      for (var c = 0; c < activeChips.length; c++) {
+        if (activeChips[c].dataset.netStatus === 'all') allActive = true;
+        else activeStatuses.push(activeChips[c].dataset.netStatus);
+      }
+      var rows = netInline.querySelectorAll('.network-log-row');
+      var visible = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var url = (row.querySelector('.net-url') || {}).textContent || '';
+        var statusCode = row.dataset.netStatusCode || '';
+        var matchesSearch = !searchText || url.toLowerCase().indexOf(searchText.toLowerCase()) !== -1;
+        var matchesFilter = allActive || activeStatuses.length === 0 || activeStatuses.some(function(s) { return statusCode.charAt(0) === s; });
+        var show = matchesSearch && (matchesFilter || row.classList.contains('tls-error'));
+        row.classList.toggle('is-hidden', !show);
+        if (show) visible++;
+      }
+      var countEl = netInline.querySelector('.network-log-match-count');
+      if (countEl) countEl.textContent = visible + ' / ' + rows.length;
+    }
+
+    function handleNetRowClick(row) {
+      if (row.classList.contains('tls-error')) return;
+      var netInline = row.closest('.network-log-inline');
+      if (!netInline) return;
+      var detail = netInline.querySelector('.network-log-detail');
+      if (!detail) return;
+      var wasSelected = row.classList.contains('is-selected');
+      var allRows = netInline.querySelectorAll('.network-log-row.is-selected');
+      for (var i = 0; i < allRows.length; i++) allRows[i].classList.remove('is-selected');
+      if (wasSelected) {
+        detail.style.display = 'none';
+        return;
+      }
+      row.classList.add('is-selected');
+      detail.style.display = '';
+      var entry = JSON.parse(row.dataset.entry || '{}');
+      renderNetDetail(detail, entry);
+      // Video sync: seek to request timestamp
+      var container = netInline.closest('[data-test-panel]');
+      if (container) {
+        var video = container.querySelector('[data-role="recording-video"]');
+        var recStarted = netInline.dataset.recordingStarted;
+        if (video && recStarted && row.dataset.networkTs) {
+          var offset = (new Date(row.dataset.networkTs).getTime() - new Date(recStarted).getTime()) / 1000;
+          if (isFinite(offset) && offset >= 0) video.currentTime = offset;
+        }
+      }
+    }
+
+    function renderNetDetail(detail, entry) {
+      var header = detail.querySelector('.network-log-detail-header');
+      if (header) header.textContent = entry.method + ' ' + entry.url;
+      // Default to Headers tab
+      var tabs = detail.querySelectorAll('.net-detail-tab');
+      for (var t = 0; t < tabs.length; t++) tabs[t].classList.toggle('is-active', tabs[t].dataset.detailTab === 'headers');
+      renderNetDetailContent(detail, entry, 'headers');
+    }
+
+    function switchNetDetailTab(tab) {
+      var detail = tab.closest('.network-log-detail');
+      if (!detail) return;
+      var tabs = detail.querySelectorAll('.net-detail-tab');
+      for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('is-active');
+      tab.classList.add('is-active');
+      var row = detail.closest('.network-log-table-wrap').querySelector('.network-log-row.is-selected');
+      var entry = row ? JSON.parse(row.dataset.entry || '{}') : {};
+      renderNetDetailContent(detail, entry, tab.dataset.detailTab);
+    }
+
+    function renderNetDetailContent(detail, entry, tab) {
+      var body = detail.querySelector('.network-log-detail-body');
+      if (!body) return;
+      body.innerHTML = renderHeaderSection('General', [{ name: 'URL', value: entry.url || '' }, { name: 'Status', value: (entry.status || '') + ' ' + (entry.statusText || '') }, { name: 'Duration', value: (entry.time || 0) + 'ms' }, { name: 'Size', value: formatNetBytes(entry.responseSize || 0) }]) + renderHeaderSection('Response Headers', entry.responseHeaders) + renderHeaderSection('Request Headers', entry.requestHeaders);
+    }
+
+    function renderHeaderSection(title, headers) {
+      if (!headers || headers.length === 0) return '';
+      var html = '<div class="header-section"><div class="header-section-title">' + escapeHtmlJS(title) + '</div>';
+      for (var i = 0; i < headers.length; i++) {
+        html += '<div class="header-row"><span class="header-name">' + escapeHtmlJS(headers[i].name) + '</span><span class="header-value">' + escapeHtmlJS(headers[i].value) + '</span></div>';
+      }
+      return html + '</div>';
+    }
+
+    function formatNetBytes(b) {
+      if (!b || b <= 0) return '0 B';
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+      return (b / 1048576).toFixed(1) + ' MB';
+    }
+
+    function escapeHtmlJS(s) {
+      if (!s) return '';
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // Network search input handler
+    document.addEventListener('input', function(e) {
+      if (e.target && e.target.classList && e.target.classList.contains('network-log-search')) {
+        var netInline = e.target.closest('.network-log-inline');
+        if (netInline) applyNetVisibility(netInline);
+      }
+    });
+
+    // Initialize network log counts
+    var netInlines = document.querySelectorAll('.network-log-inline');
+    for (var ni = 0; ni < netInlines.length; ni++) {
+      var countEl = netInlines[ni].querySelector('.network-log-match-count');
+      var total = netInlines[ni].querySelectorAll('.network-log-row').length;
+      if (countEl) countEl.textContent = total + ' requests';
+    }
+
+    // Network log video sync on playback
+    function syncNetworkLogToVideo(container) {
+      var netInline = container.querySelector('.network-log-inline');
+      if (!netInline) return;
+      var video = container.querySelector('[data-role="recording-video"]');
+      if (!video) return;
+      var recStarted = netInline.dataset.recordingStarted;
+      if (!recStarted) return;
+      var recStartMs = new Date(recStarted).getTime();
+      var rows = netInline.querySelectorAll('.network-log-row[data-network-ts]:not(.is-hidden):not(.tls-error)');
+      if (rows.length === 0) return;
+      var currentMs = recStartMs + video.currentTime * 1000;
+      var bestRow = null;
+      var bestDist = Infinity;
+      for (var i = 0; i < rows.length; i++) {
+        var ts = new Date(rows[i].dataset.networkTs).getTime();
+        var dist = Math.abs(ts - currentMs);
+        if (dist < bestDist) { bestDist = dist; bestRow = rows[i]; }
+      }
+      var prev = netInline.querySelectorAll('.network-log-row.is-active');
+      for (var p = 0; p < prev.length; p++) prev[p].classList.remove('is-active');
+      if (bestRow && bestDist < 5000) {
+        bestRow.classList.add('is-active');
+        bestRow.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
     function syncRecordingShell(container, video) {
       const shell = container.querySelector('.recording-shell');
       if (!shell) {
@@ -1507,6 +1732,7 @@ export function renderHtmlReport(manifest: ReportRunManifest): string {
         if (now - lastLogHighlightTime < 500) return;
         lastLogHighlightTime = now;
         highlightNearestLogLine(container, video.currentTime);
+        syncNetworkLogToVideo(container);
       });
 
       video.dataset.seekbarBound = '1';
@@ -1914,6 +2140,9 @@ function renderSpecDetailSection(
             ${test?.deviceLogFile
               ? '<button class="tab-button" data-tab="logs" onclick="switchTab(this)" type="button">Device Logs</button>'
               : ''}
+            ${test?.networkLogEntries && test.networkLogEntries.length > 0
+              ? `<button class="tab-button" data-tab="network" onclick="switchTab(this)" type="button">Network (${test.networkLogEntries.length})</button>`
+              : ''}
           </div>
           <div class="tab-content is-active" data-tab-content="actions">
             <div class="timeline-scroll">
@@ -1939,10 +2168,97 @@ function renderSpecDetailSection(
                 </div>
               </div>`
             : ''}
+          ${test?.networkLogEntries && test.networkLogEntries.length > 0
+            ? `<div class="tab-content" data-tab-content="network">
+                <div class="network-log-inline" data-recording-started="${escapeHtml(test.recordingStartedAt ?? '')}">
+                  <div class="network-log-toolbar">
+                    <input class="network-log-search" type="text" placeholder="Filter requests..." />
+                    <span class="network-log-match-count"></span>
+                    <div class="network-log-filters">
+                      <button class="net-filter-chip is-active" data-net-status="all" onclick="handleNetFilter(this)" type="button">All</button>
+                      <button class="net-filter-chip" data-net-status="2" onclick="handleNetFilter(this)" type="button">2xx</button>
+                      <button class="net-filter-chip" data-net-status="3" onclick="handleNetFilter(this)" type="button">3xx</button>
+                      <button class="net-filter-chip" data-net-status="4" onclick="handleNetFilter(this)" type="button">4xx</button>
+                      <button class="net-filter-chip" data-net-status="5" onclick="handleNetFilter(this)" type="button">5xx</button>
+                    </div>
+                  </div>
+                  <div class="network-log-table-wrap">
+                    <div class="network-log-table">
+                      ${renderNetworkLogRows(test.networkLogEntries, test.networkTlsErrors)}
+                    </div>
+                    <div class="network-log-detail" style="display:none">
+                      <div class="network-log-detail-header"></div>
+                      <div class="network-log-detail-tabs">
+                        <button class="net-detail-tab is-active" data-detail-tab="headers" onclick="switchNetDetailTab(this)" type="button">Headers</button>
+                      </div>
+                      <div class="network-log-detail-body"></div>
+                    </div>
+                  </div>
+                  ${test.networkLogFile ? `<a class="network-log-download" href="${escapeHtml(test.networkLogFile)}" download>Download network.har</a>` : ''}
+                </div>
+              </div>`
+            : ''}
         </div>
       </div>
     </section>
   `;
+}
+
+function renderNetworkLogRows(entries: NonNullable<ReportManifestTestRecord['networkLogEntries']>, tlsErrors?: ReportManifestTestRecord['networkTlsErrors']): string {
+  let html = '';
+  for (const entry of entries) {
+    const statusClass = entry.status >= 500 ? 'status-5xx' : entry.status >= 400 ? 'status-4xx' : entry.status >= 300 ? 'status-3xx' : 'status-2xx';
+    const duration = entry.time < 1000 ? `${Math.round(entry.time)}ms` : `${(entry.time / 1000).toFixed(1)}s`;
+    const size = formatNetSize(entry.responseSize);
+    const urlPath = extractUrlPath(entry.url);
+    const entryJson = escapeHtml(JSON.stringify({
+      url: entry.url,
+      method: entry.method,
+      status: entry.status,
+      statusText: entry.statusText,
+      time: entry.time,
+      responseSize: entry.responseSize,
+      requestHeaders: entry.requestHeaders,
+      responseHeaders: entry.responseHeaders,
+    }));
+    html += `<div class="network-log-row ${statusClass}" data-network-ts="${escapeHtml(entry.startedDateTime)}" data-net-status-code="${entry.status}" onclick="handleNetRowClick(this)" data-entry='${entryJson}'>
+      <span class="net-method">${escapeHtml(entry.method)}</span>
+      <span class="net-url" title="${escapeHtml(entry.url)}">${escapeHtml(urlPath)}</span>
+      <span class="net-status">${entry.status}</span>
+      <span class="net-time">${duration}</span>
+      <span class="net-size">${size}</span>
+    </div>`;
+  }
+  if (tlsErrors && tlsErrors.length > 0) {
+    for (const err of tlsErrors) {
+      const reason = err.cause === 'cert-rejected' ? 'TLS rejected (pinning)' : err.cause === 'closed' || err.cause === 'reset' ? 'TLS closed (CA not trusted)' : 'TLS failed';
+      html += `<div class="network-log-row tls-error" data-network-ts="${escapeHtml(err.timestamp)}">
+        <span class="net-method">!!!</span>
+        <span class="net-url">${escapeHtml(err.hostname)}</span>
+        <span class="net-status">${escapeHtml(reason)}</span>
+        <span class="net-time"></span>
+        <span class="net-size"></span>
+      </div>`;
+    }
+  }
+  return html;
+}
+
+function formatNetSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function extractUrlPath(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname + u.search;
+    return path.length > 80 ? path.slice(0, 79) + '\u2026' : path;
+  } catch {
+    return url.length > 80 ? url.slice(0, 79) + '\u2026' : url;
+  }
 }
 
 function renderSpecTestSection(

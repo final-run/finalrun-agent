@@ -48,6 +48,16 @@ finalrun suite auth_smoke.yaml --platform ios --model anthropic/claude-sonnet-4-
 finalrun check --env dev --platform android
 ```
 
+## Network Capture
+
+| Command | Description |
+|---|---|
+| `finalrun log-network --platform <android\|ios>` | Set up and capture HTTP/HTTPS traffic from a device. Streams requests live to the terminal, writes a HAR file on Ctrl+C. |
+
+Options: `--device <serial>` to specify a device, `--out <path>` for custom HAR output path.
+
+See [Network Logging](network-logging.md) for setup and configuration.
+
 ## Report Commands
 
 | Command | Description |

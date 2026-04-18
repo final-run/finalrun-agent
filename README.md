@@ -138,6 +138,7 @@ finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, and report tools
 - [Configuration](docs/configuration.md) — workspace config, app identity, `--app` flag, and per-environment overrides
 - [Environment & Secrets](docs/environment.md) — dotenv load order, provider keys, and platform prerequisites
+- [Network Logging](docs/network-logging.md) — capture HTTP/HTTPS traffic from test runs
 - [Troubleshooting](docs/troubleshooting.md) — common errors and fixes
 
 
