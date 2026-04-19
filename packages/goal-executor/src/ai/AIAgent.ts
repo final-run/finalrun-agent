@@ -762,7 +762,8 @@ export class AIAgent {
   private _summarizePlannerRequest(req: PlannerRequest): string {
     const parts: string[] = ['[AI plan]'];
     parts.push(this._formatLogContext(req.logContext, req.traceStep));
-    parts.push(`provider=${this._provider}/${this._modelName}`);
+    const plannerResolved = this._resolveFeatureConfig(FEATURE_PLANNER);
+    parts.push(`provider=${plannerResolved.provider}/${plannerResolved.modelName}`);
     parts.push(this._screenshotMetric('screenshot', req.preActionScreenshot));
     if (req.postActionScreenshot) {
       parts.push(this._screenshotMetric('postScreenshot', req.postActionScreenshot));
@@ -782,7 +783,8 @@ export class AIAgent {
   private _summarizeGrounderRequest(req: GrounderRequest): string {
     const parts: string[] = ['[AI ground]'];
     parts.push(this._formatLogContext(req.logContext, req.traceStep));
-    parts.push(`provider=${this._provider}/${this._modelName}`);
+    const grounderResolved = this._resolveFeatureConfig(req.feature as FeatureName);
+    parts.push(`provider=${grounderResolved.provider}/${grounderResolved.modelName}`);
     parts.push(`feature=${req.feature}`);
     parts.push(this._screenshotMetric('screenshot', req.screenshot));
     const hierarchyCount = req.hierarchy
