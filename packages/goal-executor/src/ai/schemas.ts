@@ -76,6 +76,11 @@ const errorOutputSchema = z.object({
   reason: z.string(),
 });
 
+// Numeric fields use plain z.number() — Anthropic's tool-schema validator
+// rejects `minimum`/`maximum` keywords on the `integer` type, and zod v4's
+// .int() emits those bounds by default. Downstream parsers already coerce
+// to integers where needed (ActionExecutor + GrounderResponseConverter).
+
 // `FEATURE_GROUNDER` — `prompts/grounder.md`
 // Three success variants: visual-fallback, index match, or error.
 const grounderSchema = z.object({
@@ -89,7 +94,7 @@ const grounderSchema = z.object({
       .passthrough(),
     z
       .object({
-        index: z.number().int(),
+        index: z.number(),
         reason: z.string().optional(),
       })
       .passthrough(),
@@ -103,14 +108,14 @@ const inputFocusGrounderSchema = z.object({
     errorOutputSchema,
     z
       .object({
-        index: z.number().int().nullable(),
+        index: z.number().nullable(),
         reason: z.string().optional(),
       })
       .passthrough(),
     z
       .object({
-        x: z.number().int(),
-        y: z.number().int(),
+        x: z.number(),
+        y: z.number(),
         reason: z.string().optional(),
       })
       .passthrough(),
@@ -123,8 +128,8 @@ const visualGrounderSchema = z.object({
     errorOutputSchema,
     z
       .object({
-        x: z.number().int(),
-        y: z.number().int(),
+        x: z.number(),
+        y: z.number(),
         reason: z.string().optional(),
       })
       .passthrough(),

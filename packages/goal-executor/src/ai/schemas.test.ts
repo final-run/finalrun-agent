@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ALL_FEATURES,
   FEATURE_GROUNDER,
   FEATURE_INPUT_FOCUS_GROUNDER,
   FEATURE_LAUNCH_APP_GROUNDER,
@@ -225,16 +226,16 @@ test('set-location grounder schema rejects numeric lat/long (spec requires strin
 // ----------------------------------------------------------------------------
 
 test('schemaForFeature returns a schema for every known feature', () => {
-  const features = [
-    FEATURE_PLANNER,
-    FEATURE_GROUNDER,
-    FEATURE_VISUAL_GROUNDER,
-    FEATURE_SCROLL_INDEX_GROUNDER,
-    FEATURE_INPUT_FOCUS_GROUNDER,
-    FEATURE_LAUNCH_APP_GROUNDER,
-    FEATURE_SET_LOCATION_GROUNDER,
-  ];
-  for (const feature of features) {
+  for (const feature of ALL_FEATURES) {
     assert.ok(schemaForFeature(feature), `missing schema for ${feature}`);
   }
+  // Silence unused-import warnings (these individual constants are tested
+  // implicitly through ALL_FEATURES, but kept explicit for readability).
+  void FEATURE_PLANNER;
+  void FEATURE_GROUNDER;
+  void FEATURE_VISUAL_GROUNDER;
+  void FEATURE_SCROLL_INDEX_GROUNDER;
+  void FEATURE_INPUT_FOCUS_GROUNDER;
+  void FEATURE_LAUNCH_APP_GROUNDER;
+  void FEATURE_SET_LOCATION_GROUNDER;
 });
