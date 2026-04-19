@@ -59,6 +59,7 @@ import {
   type LLMTrace,
 } from '../trace.js';
 import { classifyFatalProviderError, FatalProviderError } from './providerFailure.js';
+import { schemaForFeature } from './schemas.js';
 
 // ============================================================================
 // Types
@@ -536,7 +537,15 @@ export class AIAgent {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
-        output: Output.json(),
+        // Anthropic has no schema-less JSON mode — the @ai-sdk/anthropic
+        // adapter drops responseFormat silently without a schema, letting
+        // Claude free-write multiple candidate JSONs. Passing a schema routes
+        // the call through Anthropic's tool-use API for enforced structured
+        // output. OpenAI and Google keep their working schema-less paths.
+        output:
+          resolved.provider === 'anthropic'
+            ? Output.object({ schema: schemaForFeature(feature) })
+            : Output.json(),
         maxOutputTokens: phase === 'planner' ? 8192 : 4096,
         providerOptions,
       });
