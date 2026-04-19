@@ -617,7 +617,11 @@ export class AIAgent {
     switch (resolved.provider) {
       case 'openai': {
         const openai = createOpenAI({ apiKey });
-        client = openai(resolved.modelName);
+        // Use the Responses API (not Chat Completions) so that
+        // `providerOptions.openai.reasoningEffort` is honored by reasoning
+        // models like gpt-5.4-mini. `openai(modelId)` defaults to Chat
+        // Completions and silently ignores reasoning effort.
+        client = openai.responses(resolved.modelName);
         break;
       }
       case 'google': {
