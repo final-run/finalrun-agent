@@ -1,0 +1,101 @@
+---
+title: "FinalRun environments: secrets, variables, and overrides"
+sidebarTitle: "Environments"
+description: "Use named environment files and dotenv files to manage variable bindings, secret placeholders, and per-environment app identity overrides in FinalRun."
+---
+
+Environments are named profiles that group variable bindings, secret placeholders, and optional app identity overrides. You define an environment by creating a YAML file at `.finalrun/env/<name>.yaml`, then activate it with `--env <name>` or by setting `env: <name>` in `.finalrun/config.yaml`. Separating environments lets you run the same test specs against development, staging, and production configurations without touching the tests themselves.
+
+## Environment file structure
+
+Each environment file lives at `.finalrun/env/<name>.yaml` and can contain three top-level blocks:
+
+<ParamField path="app" type="object">
+  Per-environment app identity override. Values here take priority over the workspace default in `config.yaml`. Useful when your staging or debug build uses a different package name or bundle ID.
+</ParamField>
+
+<ParamField path="secrets" type="object">
+  Placeholder bindings for sensitive values. Each value uses `${SHELL_ENV_VAR}` syntax. The CLI resolves each placeholder from the shell environment or from workspace-root dotenv files at runtime. Do not put real secrets in this file.
+</ParamField>
+
+<ParamField path="variables" type="object">
+  Plain, non-sensitive values such as locale strings, feature flags, or base URLs. Safe to commit.
+</ParamField>
+
+### Full example
+
+```yaml .finalrun/env/dev.yaml
+app:
+  packageName: com.example.myapp.debug
+  bundleId: com.example.myapp.debug
+
+secrets:
+  email: ${TEST_USER_EMAIL}
+  password: ${TEST_USER_PASSWORD}
+
+variables:
+  locale: en-US
+```
+
+In your test specs, you can reference these values as `${secrets.email}` and `${variables.locale}`.
+
+## Dotenv files for secret values
+
+Real secret values — API keys, passwords, tokens — belong in dotenv files at the workspace root, not in the YAML binding file.
+
+| File | Purpose |
+|---|---|
+| `.env` | Shared defaults loaded for all runs |
+| `.env.<name>` | Environment-specific values loaded when `--env <name>` is active (e.g. `.env.dev` for `--env dev`) |
+
+FinalRun finds the workspace root by walking up from your shell's current directory, so dotenv paths are always anchored to the folder that contains `.finalrun/`, regardless of where you run the CLI from.
+
+### Load order
+
+For an active environment named `N`, the CLI loads values in this order:
+
+<Steps>
+  <Step title="Load .env.N">
+    Environment-specific dotenv file is read first. Keys set here take precedence over the shared file.
+  </Step>
+  <Step title="Load .env">
+    Shared dotenv file fills in any keys not already set by `.env.N`.
+  </Step>
+  <Step title="Apply process.env">
+    Shell environment variables win if the same key exists in both a dotenv file and the current shell session.
+  </Step>
+</Steps>
+
+This same load order applies to both `secrets` placeholder resolution and AI provider API key resolution.
+
+## Using environments with the CLI
+
+Pass `--env` to activate a named environment for any command:
+
+```bash
+# Run a test against the dev environment on Android
+finalrun test smoke.yaml --env dev --platform android
+
+# Validate workspace configuration for staging
+finalrun check --env staging
+```
+
+When you set `env: dev` in `.finalrun/config.yaml`, `--env` becomes optional and the CLI uses `dev` by default.
+
+## Keeping secrets out of version control
+
+<Warning>
+  Never commit `.env` files. Add the following to your repository's `.gitignore`:
+
+  ```text .gitignore
+  .env
+  .env.*
+  !.env.example
+  ```
+
+  This ignores `.env`, `.env.dev`, `.env.staging`, and any similar files while keeping `.env.example` tracked.
+</Warning>
+
+<Tip>
+  Create a `.env.example` file that lists every required variable with placeholder values. Commit it so that team members know exactly which variables to set in their local `.env` file.
+</Tip>

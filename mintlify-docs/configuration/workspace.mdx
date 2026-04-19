@@ -1,0 +1,112 @@
+---
+title: "FinalRun workspace config: app identity and defaults"
+sidebarTitle: "Workspace"
+description: "Set up .finalrun/config.yaml with app identity, default environment, and AI model fields to configure your FinalRun workspace for Android and iOS testing."
+---
+
+Every FinalRun project is anchored to a workspace root — the directory that contains the `.finalrun/` folder. The workspace holds your configuration file, test specs, optional suite manifests, and per-environment binding files. Understanding the layout and the fields in `config.yaml` lets the CLI resolve the right app, environment, and AI model without you needing to pass flags on every run.
+
+## Workspace layout
+
+```text
+my-app/                        # workspace root
+  .env                         # optional
+  .env.dev                     # optional
+  .finalrun/
+    config.yaml                # workspace configuration
+    tests/                     # YAML test specs (required)
+      smoke.yaml
+      auth/
+        login.yaml
+    suites/                    # suite manifests (optional)
+      auth_smoke.yaml
+    env/                       # environment bindings (optional)
+      dev.yaml
+```
+
+The `tests/` directory is the only required subdirectory. `suites/` and `env/` are optional and only needed when you run suites or use named environments.
+
+## `.finalrun/config.yaml` fields
+
+The workspace config defines defaults that the CLI uses when flags are omitted. Place this file at `.finalrun/config.yaml` in your workspace root.
+
+<ParamField path="app.name" type="string">
+  Human-readable name for the app. Optional — used only for display purposes.
+</ParamField>
+
+<ParamField path="app.packageName" type="string">
+  Android package identifier (e.g. `com.example.myapp`). Required if you run Android tests and do not pass `--app`.
+</ParamField>
+
+<ParamField path="app.bundleId" type="string">
+  iOS bundle identifier (e.g. `com.example.myapp`). Required if you run iOS tests and do not pass `--app`.
+</ParamField>
+
+<ParamField path="env" type="string">
+  Default environment name. Used when you omit the `--env` flag. Must match a file under `.finalrun/env/<name>.yaml` if one exists.
+</ParamField>
+
+<ParamField path="model" type="string">
+  Default AI model in `provider/model` format (e.g. `google/gemini-3-flash-preview`). Used when you omit `--model`.
+</ParamField>
+
+<Note>
+  At least one of `app.packageName` or `app.bundleId` is required unless you always pass `--app` on the command line.
+</Note>
+
+### Example config
+
+```yaml .finalrun/config.yaml
+app:
+  name: MyApp
+  packageName: com.example.myapp
+  bundleId: com.example.myapp
+env: dev
+model: google/gemini-3-flash-preview
+```
+
+## App identity resolution
+
+FinalRun resolves which app to launch on the device using the following priority order:
+
+<Steps>
+  <Step title="--app CLI flag (highest priority)">
+    When you pass `--app <path>`, FinalRun uses that binary directly. It extracts the package name (Android) or bundle ID (iOS) from the binary and ignores any `app` block in config files.
+  </Step>
+  <Step title="Per-environment app block">
+    If an active environment file at `.finalrun/env/<name>.yaml` contains an `app` block, those values override the workspace defaults.
+  </Step>
+  <Step title="config.yaml app block (workspace default)">
+    If neither of the above applies, FinalRun falls back to the `app` block in `.finalrun/config.yaml`.
+  </Step>
+</Steps>
+
+### Using the `--app` flag
+
+Pass a local binary to run a specific build without changing any config file:
+
+```bash
+finalrun test smoke.yaml --platform android --app path/to/your.apk
+finalrun test smoke.yaml --platform ios --app path/to/YourApp.app
+```
+
+The CLI:
+- Extracts the package name (Android) or bundle ID (iOS) from the binary
+- Infers the platform from the file extension (`.apk` → Android, `.app` → iOS)
+- Validates that the binary matches the `--platform` flag if both are provided
+
+<Note>
+  CLI flags always override values in `config.yaml`. You can use flags for one-off runs without modifying your workspace config.
+</Note>
+
+### Per-environment app overrides
+
+If your app uses different identifiers per environment — for example, a `.staging` suffix — set the override in the corresponding env file instead of changing `config.yaml`:
+
+```yaml .finalrun/env/staging.yaml
+app:
+  packageName: com.example.myapp.staging
+  bundleId: com.example.myapp.staging
+```
+
+Any environment that does not define its own `app` block falls back to the workspace default in `.finalrun/config.yaml`.

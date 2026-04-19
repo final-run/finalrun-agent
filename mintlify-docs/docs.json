@@ -1,0 +1,69 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "FinalRun",
+  "theme": "luma",
+  "colors": {
+    "primary": "#3f4fe8",
+    "light": "#d0a7f7",
+    "dark": "#6c4cfc"
+  },
+  "logo": {
+    "light": "https://media.brand.dev/3ece83f5-5543-48fb-bd61-213417b8ba98.png",
+    "dark": "https://media.brand.dev/3ece83f5-5543-48fb-bd61-213417b8ba98.png"
+  },
+  "favicon": "https://media.brand.dev/31164f48-397c-4036-929b-8153e11d15c1.jpg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/final-run/finalrun-agent"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Writing Tests",
+            "pages": [
+              "tests/yaml-format",
+              "tests/suites",
+              "tests/placeholders"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/workspace",
+              "configuration/environments",
+              "configuration/ai-providers"
+            ]
+          },
+          {
+            "group": "Running Tests",
+            "pages": [
+              "running/cli-reference",
+              "running/ai-agent-skills",
+              "running/reports"
+            ]
+          },
+          {
+            "group": "Help",
+            "pages": [
+              "troubleshooting",
+              "faq"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

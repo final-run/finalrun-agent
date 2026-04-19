@@ -1,0 +1,160 @@
+---
+title: "Troubleshoot FinalRun: common errors and device setup"
+sidebarTitle: "Troubleshooting"
+description: "Diagnose and fix common FinalRun errors — missing workspace, unconfigured API keys, missing device tools — and verify host readiness with finalrun doctor."
+---
+
+When something goes wrong during setup or a test run, the error message usually tells you exactly what FinalRun expected and where to look. The sections below cover the most common errors, their causes, and the steps to resolve them. After fixing a configuration issue, run `finalrun doctor` to confirm your environment is ready before re-running your tests.
+
+## Common errors
+
+<AccordionGroup>
+  <Accordion title="Error: No .finalrun/ workspace found">
+    FinalRun finds your workspace by walking up from your current directory until it finds a folder that contains `.finalrun/`. If you run `finalrun` from outside your app repository — or before creating the workspace — it cannot locate the directory.
+
+    **Fix:** Make sure your shell is inside the app repository where `.finalrun/tests/` exists. You can confirm the structure is in place with:
+
+    ```sh
+    ls .finalrun/tests/
+    ```
+
+    If the directory is missing, follow the workspace setup guide to initialize your `.finalrun/` folder before running any commands.
+  </Accordion>
+
+  <Accordion title="Error: API key not configured">
+    FinalRun reads your AI provider API key from the environment. The key it looks for depends on the provider prefix in your `--model` value or your `.finalrun/config.yaml` default.
+
+    | Model prefix | Required environment variable |
+    |---|---|
+    | `openai/...` | `OPENAI_API_KEY` |
+    | `google/...` | `GOOGLE_API_KEY` |
+    | `anthropic/...` | `ANTHROPIC_API_KEY` |
+
+    **Fix:** Set the correct variable in your shell or in a `.env` file at your workspace root. For example, if you are using a Google model:
+
+    ```sh
+    echo "GOOGLE_API_KEY=your-key-here" >> .env
+    ```
+
+    FinalRun loads `.env` from the workspace root (the folder containing `.finalrun/`). You can also pass the key directly with the `--api-key` flag to override the environment for a single run.
+
+    <Note>
+      Do not commit `.env` to version control. Add `.env` and `.env.*` to your `.gitignore`, keeping `.env.example` tracked as a template.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Error: No Android emulator running">
+    FinalRun requires a running Android Virtual Device (AVD) before it can connect and start a test. If no emulator is active when you run a test, FinalRun cannot proceed.
+
+    **Fix:** Start an emulator before running your test. You can do this from the command line:
+
+    ```sh
+    emulator -avd <your-avd-name>
+    ```
+
+    Or launch one from the **Device Manager** in Android Studio. Once the emulator has fully booted, verify that FinalRun can detect it:
+
+    ```sh
+    finalrun doctor --platform android
+    ```
+  </Accordion>
+
+  <Accordion title="Error: scrcpy not found / adb not found">
+    FinalRun depends on `scrcpy` for Android screen recording and `adb` (Android Debug Bridge) for device communication. If either tool is missing from your `PATH`, Android tests cannot run.
+
+    **Fix:** Install both tools with Homebrew on macOS:
+
+    ```sh
+    brew install scrcpy android-platform-tools
+    ```
+
+    After installation, verify that FinalRun can find all required Android tools:
+
+    ```sh
+    finalrun doctor
+    ```
+
+    <Tip>
+      `android-platform-tools` provides `adb`. Make sure `ANDROID_HOME` or `ANDROID_SDK_ROOT` is set in your shell so FinalRun can locate the full Android SDK.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Unresolved ${secrets.*} placeholder">
+    When a test spec references a value like `${secrets.email}`, FinalRun looks it up in your environment binding file (`.finalrun/env/<name>.yaml`) and then resolves the underlying variable from your shell environment or `.env` file. If either piece is missing, the placeholder cannot be resolved.
+
+    **Fix:** Check two things:
+
+    1. The binding is declared in `.finalrun/env/<name>.yaml` using the `${ENV_VAR}` placeholder syntax:
+
+       ```yaml
+       secrets:
+         email: ${TEST_USER_EMAIL}
+         password: ${TEST_USER_PASSWORD}
+       ```
+
+    2. The actual value is present in your shell environment or in the workspace-root `.env` (or `.env.<name>`) file:
+
+       ```sh
+       echo "TEST_USER_EMAIL=user@example.com" >> .env
+       ```
+
+    The environment name `<name>` must match the `--env` flag you pass (or the `env` value in `.finalrun/config.yaml`).
+  </Accordion>
+
+  <Accordion title="Error: App path invalid">
+    The `--app` flag expects a path to an existing binary that matches the target platform: an `.apk` file for Android or a `.app` directory for iOS. If the path does not exist or the file type does not match the `--platform` value, FinalRun rejects it.
+
+    **Fix:** Verify the path exists and the file matches the platform you are targeting:
+
+    ```sh
+    # Android
+    finalrun test smoke.yaml --platform android --app path/to/your.apk
+
+    # iOS
+    finalrun test smoke.yaml --platform ios --app path/to/YourApp.app
+    ```
+
+    If you omit `--app`, FinalRun uses the app identity defined in `.finalrun/config.yaml`.
+  </Accordion>
+
+  <Accordion title="TTY/terminal issues when running from Claude Code or Cursor">
+    In earlier versions of FinalRun, running the CLI from within AI coding agent terminals (such as Claude Code or Cursor) could cause TTY-related errors because those environments do not always provide a standard terminal interface.
+
+    This issue has been resolved. Upgrade to the latest version of FinalRun to pick up the fix:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Verify host readiness with finalrun doctor
+
+Before running tests, use `finalrun doctor` to check that all required tools and platform dependencies are installed and reachable. The command prints a tick/cross summary for each dependency.
+
+```sh
+# Check both Android and iOS
+finalrun doctor
+
+# Check Android only
+finalrun doctor --platform android
+
+# Check iOS only
+finalrun doctor --platform ios
+```
+
+Fix any items marked with a cross before running tests. For Android, the required tools are `adb`, `emulator`, and `scrcpy`. For iOS (macOS only), FinalRun requires Xcode command line tools with `xcrun simctl`.
+
+## Getting more information
+
+If an error is not covered above or you need more detail during a failing run, use the `--debug` flag to enable verbose logging:
+
+```sh
+finalrun test smoke.yaml --platform android --debug
+```
+
+After a run completes, use `finalrun start-server` to open the visual report UI and inspect screenshots, video, and device logs for the failed run.
+
+If you are still stuck, join the FinalRun community on Slack — the team and other users are active there:
+
+[Join the FinalRun Slack community](https://join.slack.com/t/finalrun-community/shared_invite/zt-38qg6q9fq-9L87nNF8aX4HZ8_pn9KBgw)

@@ -1,0 +1,83 @@
+---
+title: "What is FinalRun? Natural-language mobile app testing"
+description: "FinalRun is an AI-driven CLI that runs mobile app tests written in plain-English YAML. The AI sees your device screen and performs actions on your behalf."
+---
+
+FinalRun is an AI-driven CLI that tests your Android and iOS apps using natural language. You write test scenarios in YAML — describing actions the way a person would — and FinalRun launches your app on a real device or emulator, uses an AI model to see the screen, and performs each action: tapping, swiping, typing, and verifying the result. When the run finishes, you get a pass/fail report with video, screenshots, and device logs.
+
+## How it works
+
+FinalRun connects an AI model to a running device. The AI reads the live screen, interprets your plain-English instructions, decides what action to take, and repeats until your test is complete or a failure is detected.
+
+Each test file has three phases:
+
+- **`setup`** — optional actions that prepare clean state before the test starts (e.g., clear app data)
+- **`steps`** — the ordered natural-language instructions the AI executes
+- **`expected_state`** — the UI state the AI verifies after all steps complete
+
+```yaml
+name: login_smoke
+description: Verify that a user can log in and reach the home screen.
+
+setup:
+  - Clear app data.
+
+steps:
+  - Launch the app.
+  - Enter ${secrets.email} on the login screen.
+  - Enter ${secrets.password} on the password screen.
+  - Tap the login button.
+
+expected_state:
+  - The home screen is visible.
+  - The user's name appears in the header.
+```
+
+## Workspace structure
+
+FinalRun looks for a `.finalrun/` directory at the root of your project. Everything lives there:
+
+| Path | Purpose |
+|---|---|
+| `.finalrun/config.yaml` | Workspace defaults: app identity, AI model, environment |
+| `.finalrun/tests/` | YAML test specs — one file per scenario |
+| `.finalrun/suites/` | Suite manifests that group tests into logical collections |
+| `.finalrun/env/` | Per-environment bindings for secrets and variables |
+
+## Supported platforms
+
+FinalRun runs tests on:
+
+- **Android** — emulators managed via `adb` and `emulator`
+- **iOS** — simulators on macOS via `xcrun simctl`
+
+## Supported AI models
+
+FinalRun uses your own AI provider API key (BYOK — bring your own key). No FinalRun account is required to run tests. The model is selected with the `--model` flag or set as the default in `.finalrun/config.yaml`.
+
+| Provider | Model prefix | Environment variable |
+|---|---|---|
+| Google Gemini | `google/...` | `GOOGLE_API_KEY` |
+| OpenAI GPT | `openai/...` | `OPENAI_API_KEY` |
+| Anthropic Claude | `anthropic/...` | `ANTHROPIC_API_KEY` |
+
+<Note>
+Test runs consume tokens from your configured AI provider. Standard API billing from your provider applies.
+</Note>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Install FinalRun and run your first test in five minutes.
+  </Card>
+  <Card title="YAML test format" icon="file-lines" href="/tests/yaml-format">
+    Learn the full test spec format: fields, placeholders, and suites.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/running/cli-reference">
+    Every command, flag, and option available in the `finalrun` CLI.
+  </Card>
+  <Card title="Workspace configuration" icon="gear" href="/configuration/workspace">
+    Set up your app identity, default model, and environments.
+  </Card>
+</CardGroup>
