@@ -1,0 +1,150 @@
+---
+title: "FinalRun CLI reference: all commands, flags, and options"
+sidebarTitle: "CLI Reference"
+description: "Complete reference for all FinalRun CLI commands — test, suite, check, doctor, runs, and server commands — with flags and copy-paste usage examples."
+---
+
+The `finalrun` CLI is the main interface for validating workspaces, running tests, and inspecting reports. CLI flags always take precedence over settings in `.finalrun/config.yaml`, so you can override any default at the command line without editing your config file.
+
+## Getting started
+
+Use these commands to verify your environment before running tests.
+
+<CardGroup cols={2}>
+  <Card title="finalrun check" icon="circle-check">
+    Validates your `.finalrun` workspace, environment bindings, selectors, and suite manifests. Falls back to the `env` set in `.finalrun/config.yaml` when `--env` is omitted.
+  </Card>
+  <Card title="finalrun doctor" icon="stethoscope">
+    Checks host readiness for local Android and iOS runs. Use `--platform` to check a single platform.
+  </Card>
+</CardGroup>
+
+```sh
+# Check the full workspace
+finalrun check
+
+# Validate a specific environment and platform
+finalrun check --env dev --platform android
+```
+
+## Running tests
+
+<Tabs>
+  <Tab title="finalrun test">
+    Executes one or more YAML specs from `.finalrun/tests/`.
+
+    ```sh
+    finalrun test <selectors...> [flags]
+    ```
+
+    **Examples**
+
+    ```sh
+    # Run a single test
+    finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
+
+    # Run with a specific app binary
+    finalrun test smoke.yaml --platform android --app path/to/your.apk
+
+    # Run two specs at once
+    finalrun test auth/login.yaml auth/logout.yaml --platform ios --env staging
+    ```
+  </Tab>
+  <Tab title="finalrun suite">
+    Executes a suite manifest from `.finalrun/suites/`.
+
+    ```sh
+    finalrun suite <suitePath> [flags]
+    ```
+
+    **Example**
+
+    ```sh
+    finalrun suite auth_smoke.yaml --platform ios --model anthropic/claude-sonnet-4-6
+    ```
+  </Tab>
+</Tabs>
+
+### Common flags
+
+The following flags apply to both `finalrun test` and `finalrun suite`.
+
+<ParamField path="--platform" type="android | ios" required>
+  Target platform for the test run. Required when the platform cannot be inferred from the `--app` extension (`.apk` implies Android, `.app` implies iOS).
+</ParamField>
+
+<ParamField path="--model" type="string">
+  AI model to use, in `provider/model` format. For example: `google/gemini-3-flash-preview`, `anthropic/claude-sonnet-4-6`, `openai/gpt-5`. Falls back to the `model` key in `.finalrun/config.yaml`.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment name. Selects the matching file at `.finalrun/env/<name>.yaml`. Falls back to the `env` key in `.finalrun/config.yaml`.
+</ParamField>
+
+<ParamField path="--app" type="path">
+  Path to the `.apk` or `.app` binary to install and test. Overrides the app identity defined in `.finalrun/config.yaml`.
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  Override the provider API key for this run. Use `--api-key` for one-off runs; for persistent configuration set the provider environment variable (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`).
+</ParamField>
+
+<ParamField path="--debug" type="boolean">
+  Enable debug logging for the run.
+</ParamField>
+
+<ParamField path="--max-iterations" type="number">
+  Cap the number of AI action iterations per step. The run aborts when the limit is reached.
+</ParamField>
+
+<Note>
+  CLI flags always take precedence over `.finalrun/config.yaml`. You can set defaults in config and override them selectively at the command line.
+</Note>
+
+## Report commands
+
+After a test run, FinalRun saves artifacts locally. These commands let you list, browse, and manage those reports.
+
+| Command | Description |
+|---|---|
+| `finalrun runs` | Lists local reports from `~/.finalrun/workspaces/<workspace-hash>/artifacts`. |
+| `finalrun start-server` | Starts or reuses the local report UI for the current workspace. |
+| `finalrun server-status` | Shows the current local report server status. |
+| `finalrun stop-server` | Stops the local report server. |
+
+All report commands accept `--workspace <path>` to target a workspace other than the current directory.
+
+<CodeGroup>
+
+```sh List runs
+finalrun runs
+
+# Machine-readable output
+finalrun runs --json
+
+# Target a different workspace
+finalrun runs --workspace /path/to/other/app
+```
+
+```sh Report server
+# Start the report UI
+finalrun start-server
+
+# Check server status
+finalrun server-status
+
+# Stop the server
+finalrun stop-server
+
+# Target a different workspace
+finalrun start-server --workspace /path/to/other/app
+```
+
+</CodeGroup>
+
+## Getting help
+
+```sh
+finalrun --help
+finalrun <command> --help
+```

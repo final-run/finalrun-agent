@@ -1,0 +1,163 @@
+---
+title: "Quick start: install FinalRun and run your first test"
+sidebarTitle: "Quick Start"
+description: "Install the FinalRun CLI, configure your AI provider key, write a YAML test spec, and execute it on an Android emulator or iOS simulator."
+---
+
+This guide walks you through installing FinalRun, creating a minimal workspace, writing a test, and executing it on a connected Android emulator or iOS simulator. By the end you'll have a working test run and know where to look for results.
+
+<Steps>
+  <Step title="Install FinalRun">
+    Run the one-line install script. It sets up Node.js (if needed), installs the CLI globally, and installs the platform driver assets for Android and iOS.
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+    ```
+
+    Alternatively, if you already have Node.js 20 or later, you can install via npm:
+
+    ```bash
+    npm install -g @finalrun/finalrun-agent
+    ```
+  </Step>
+
+  <Step title="Verify installation">
+    Check that the CLI is available and that your host has the required platform tools:
+
+    ```bash
+    finalrun --help
+    finalrun doctor
+    ```
+
+    `finalrun doctor` checks for `adb`, `emulator`, `scrcpy` (Android), and Xcode command line tools (iOS). Fix any issues it reports before continuing.
+
+    <Tip>
+      Run `finalrun check` from inside your project directory before executing tests. It validates your workspace config, environment bindings, and suite manifests without launching a device.
+    </Tip>
+  </Step>
+
+  <Step title="Set up your AI provider key">
+    FinalRun uses your own AI provider API key. Create a `.env` file at the root of your project with the key for your chosen provider:
+
+    <CodeGroup>
+    ```bash Google Gemini
+    echo "GOOGLE_API_KEY=your-key-here" > .env
+    ```
+
+    ```bash OpenAI
+    echo "OPENAI_API_KEY=your-key-here" > .env
+    ```
+
+    ```bash Anthropic Claude
+    echo "ANTHROPIC_API_KEY=your-key-here" > .env
+    ```
+    </CodeGroup>
+
+    Add `.env` to your `.gitignore` so secrets are never committed.
+
+    <Note>
+      Each test run makes real AI API calls that consume tokens. Standard billing from your AI provider applies.
+    </Note>
+  </Step>
+
+  <Step title="Create the workspace structure">
+    Create the `.finalrun/` directory and a folder for your test specs:
+
+    ```bash
+    mkdir -p .finalrun/tests
+    ```
+
+    Then create `.finalrun/config.yaml` with your app's identity and default settings:
+
+    ```yaml
+    app:
+      name: MyApp
+      packageName: com.example.myapp
+      bundleId: com.example.myapp
+    env: dev
+    model: google/gemini-3-flash-preview
+    ```
+
+    | Field | Description |
+    |---|---|
+    | `app.packageName` | Android package identifier |
+    | `app.bundleId` | iOS bundle identifier |
+    | `env` | Default environment name (can be omitted if not using env files) |
+    | `model` | Default AI model in `provider/model` format |
+
+    At least one of `app.packageName` or `app.bundleId` is required.
+  </Step>
+
+  <Step title="Write your first test">
+    Create `.finalrun/tests/login_smoke.yaml` with a basic login scenario:
+
+    ```yaml
+    name: login_smoke
+    description: Verify that a user can log in and reach the home screen.
+
+    setup:
+      - Clear app data.
+
+    steps:
+      - Launch the app.
+      - Enter ${secrets.email} on the login screen.
+      - Enter ${secrets.password} on the password screen.
+      - Tap the login button.
+
+    expected_state:
+      - The home screen is visible.
+      - The user's name appears in the header.
+    ```
+
+    The `${secrets.email}` and `${secrets.password}` placeholders are resolved from your `.env` file or environment variables at runtime. To use them, add the values to your `.env`:
+
+    ```bash
+    TEST_USER_EMAIL=test@example.com
+    TEST_USER_PASSWORD=password123
+    ```
+
+    Then declare the bindings in `.finalrun/env/dev.yaml`:
+
+    ```yaml
+    secrets:
+      email: ${TEST_USER_EMAIL}
+      password: ${TEST_USER_PASSWORD}
+    ```
+  </Step>
+
+  <Step title="Run the test">
+    Run your test on Android or iOS. The `--model` flag can be omitted if you set a default in `config.yaml`.
+
+    <CodeGroup>
+    ```bash Android
+    finalrun test login_smoke.yaml --platform android --model google/gemini-3-flash-preview
+    ```
+
+    ```bash iOS
+    finalrun test login_smoke.yaml --platform ios --model google/gemini-3-flash-preview
+    ```
+    </CodeGroup>
+
+    FinalRun will boot the emulator or simulator, install the app, and begin executing the test steps. You'll see live output as the AI works through each action.
+  </Step>
+
+  <Step title="View results">
+    List your recent test runs:
+
+    ```bash
+    finalrun runs
+    ```
+
+    Open the local report UI in your browser to see screenshots, video, and device logs:
+
+    ```bash
+    finalrun start-server
+    ```
+  </Step>
+</Steps>
+
+## What's next
+
+- [YAML test format](/tests/yaml-format) — learn all test spec fields, suite manifests, and placeholder syntax
+- [CLI reference](/running/cli-reference) — full list of commands and flags
+- [Workspace configuration](/configuration/workspace) — app identity, per-environment overrides, and `--app` flag

@@ -1,0 +1,63 @@
+---
+title: "FinalRun suite manifests: run groups of tests together"
+sidebarTitle: "Suites"
+description: "Learn how to create suite manifests that group related test files, organize them by feature, and run an entire suite with a single CLI command."
+---
+
+A suite is a YAML manifest that groups individual test files into a logical collection you can run together. Rather than running tests one at a time, you define a suite for each feature and run every scenario in it with a single command. Suite manifests live under `.finalrun/suites/`.
+
+## Suite fields
+
+<ParamField path="name" type="string" required>
+  A stable identifier for the suite. Use `snake_case`. This name is what you pass to `finalrun suite` when you want to run it.
+</ParamField>
+
+<ParamField path="description" type="string">
+  A short, human-readable summary of what the suite covers. One or two sentences is enough.
+</ParamField>
+
+<ParamField path="tests" type="list of strings" required>
+  An ordered list of test file paths. Each path is relative to `.finalrun/tests/`. The agent runs the tests in the order listed.
+</ParamField>
+
+## Example suite
+
+```yaml
+name: auth_smoke
+description: Covers the authentication smoke scenarios.
+tests:
+  - auth/login.yaml
+  - auth/logout.yaml
+```
+
+## Organizing suites by feature
+
+The recommended convention is one suite per feature folder, mirroring the structure of `.finalrun/tests/<feature>/`. A suite named `auth_smoke` covering tests in `.finalrun/tests/auth/` is a clear, predictable mapping that makes it easy to find which suite runs a given test.
+
+<Tip>
+  Name your suite files after their feature folder. If your tests live in `.finalrun/tests/checkout/`, name the suite file `.finalrun/suites/checkout.yaml` and give it the `name: checkout` identifier. This one-to-one convention keeps suites discoverable as the test library grows.
+</Tip>
+
+## Running a suite
+
+Pass the suite manifest path to `finalrun suite`. Specify a platform and AI model:
+
+```bash
+finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-preview
+```
+
+You can also target iOS:
+
+```bash
+finalrun suite auth_smoke.yaml --platform ios --model google/gemini-3-flash-preview
+```
+
+## Validating a suite before running
+
+Run `finalrun check` with the `--suite` flag to validate the suite manifest and all referenced test files — confirming that paths resolve, placeholders are declared, and the workspace is configured correctly — before spending time on a full test run:
+
+```bash
+finalrun check --suite auth_smoke.yaml
+```
+
+Fix any errors reported by `finalrun check` before proceeding. The command output is the source of truth for binding correctness and path resolution.

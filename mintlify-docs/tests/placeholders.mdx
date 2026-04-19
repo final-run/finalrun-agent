@@ -1,0 +1,106 @@
+---
+title: "Inject secrets and variables into FinalRun test specs"
+sidebarTitle: "Placeholders"
+description: "Learn how to use ${secrets.*} and ${variables.*} placeholders in FinalRun test specs, how they resolve at run time, and how to configure env files safely."
+---
+
+FinalRun test specs support two types of placeholders that let you inject dynamic values without hardcoding them in YAML files. You reference a placeholder in a step; FinalRun resolves its value at run time from environment variables or a binding file. This keeps credentials and configuration out of your test source.
+
+## Placeholder types
+
+**`${secrets.*}`** — for sensitive values such as credentials and API keys. The logical key (e.g. `secrets.email`) maps to a shell environment variable declared in your binding file. The actual value is never stored in YAML.
+
+**`${variables.*}`** — for non-sensitive values such as locale codes, search terms, and feature flags. Values are declared directly in the binding file as plain strings.
+
+Both types must be declared in `.finalrun/env/<name>.yaml` before you use them in a test.
+
+## Env binding file
+
+Create a file under `.finalrun/env/` for each environment you use (e.g. `dev.yaml`, `staging.yaml`). Declare secrets as `${SHELL_ENV_VAR}` placeholders and variables as plain values:
+
+```yaml
+secrets:
+  email: ${TEST_USER_EMAIL}
+  password: ${TEST_USER_PASSWORD}
+
+variables:
+  locale: en-US
+  search_term: coffee
+```
+
+The `secrets` entries are placeholders only. The CLI resolves them from shell environment variables and `.env` files at run time. **Do not put real credentials in this YAML file.**
+
+## Using placeholders in tests
+
+Reference declared placeholders with `${secrets.<key>}` or `${variables.<key>}` syntax anywhere in `setup`, `steps`, or `expected_state`:
+
+```yaml
+steps:
+  - Enter ${secrets.email} on the login screen.
+  - Enter ${secrets.password} on the password screen.
+  - Type ${variables.search_term} in the search field.
+```
+
+## Load order
+
+When you run FinalRun with an env named `N` (e.g. `--env dev`), the CLI resolves values in this order:
+
+<Steps>
+  <Step title=".env.N">
+    The environment-specific dotenv file (e.g. `.env.dev`) is loaded first.
+  </Step>
+  <Step title=".env">
+    Fills in any keys not already set by the environment-specific file.
+  </Step>
+  <Step title="process.env">
+    Shell environment variables win if the same key appears in both a file and the current shell environment.
+  </Step>
+</Steps>
+
+<Note>
+  When no env profile is configured, the CLI uses `process.env` and `.env` directly. You do not need a `.env.<name>` file for a simple single-environment workspace.
+</Note>
+
+## Selecting an env profile
+
+Pass `--env <name>` to the CLI to activate a specific env profile. The name must match a file under `.finalrun/env/`:
+
+```bash
+finalrun test auth/login.yaml --platform android --model google/gemini-3-flash-preview --env staging
+```
+
+FinalRun will load `.env.staging`, then `.env`, then `process.env`, and resolve all `${secrets.*}` bindings declared in `.finalrun/env/staging.yaml`.
+
+## Never commit secrets
+
+<Warning>
+  Do not commit `.env` files to your repository. Add the following lines to your `.gitignore` to exclude all dotenv files while keeping `.env.example` tracked as a template:
+</Warning>
+
+```gitignore
+.env
+.env.*
+!.env.example
+```
+
+Use `.env.example` to document which shell variables team members need to export, without including real values.
+
+## Never hardcode secrets
+
+Always use placeholder syntax for sensitive values. Hardcoding credentials in a test spec exposes them in version control and in run reports.
+
+<CodeGroup>
+
+```yaml Good — placeholder syntax
+steps:
+  - Enter ${secrets.email} on the login screen.
+  - Enter ${secrets.password} on the password screen.
+```
+
+```yaml Bad — hardcoded credentials
+steps:
+  - Enter user@example.com on the login screen.
+  - Enter hunter2 on the password screen.
+```
+
+</CodeGroup>

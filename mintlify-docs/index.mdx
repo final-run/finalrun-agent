@@ -1,0 +1,67 @@
+---
+title: "FinalRun: AI-powered Android and iOS test automation"
+description: "FinalRun lets you write plain-English test specs in YAML and run them on Android and iOS using AI models like Gemini, GPT, or Claude."
+---
+
+FinalRun is an AI-driven testing CLI that runs your Android and iOS apps through real user scenarios — written in plain English, executed by AI on a real device or emulator. You describe what to test in a YAML file; FinalRun taps, swipes, types, and verifies on your behalf, then produces a pass/fail report with video, screenshots, and device logs.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Install FinalRun and run your first test in minutes.
+  </Card>
+  <Card title="Write Tests" icon="file-lines" href="/tests/yaml-format">
+    Learn the YAML test format for natural-language mobile testing.
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/running/cli-reference">
+    Every command, flag, and option available in the finalrun CLI.
+  </Card>
+  <Card title="AI Agent Skills" icon="wand-magic-sparkles" href="/running/ai-agent-skills">
+    Use AI coding agents to generate, run, and fix tests automatically.
+  </Card>
+</CardGroup>
+
+## How FinalRun works
+
+FinalRun connects an AI model to a real device or emulator. You write a test spec describing what a user would do; the AI reads the screen, performs each action, and checks the result.
+
+<Steps>
+  <Step title="Install the CLI">
+    Run the one-line install script to get FinalRun, Node.js, and all platform tools set up.
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+    ```
+  </Step>
+  <Step title="Add your AI key">
+    FinalRun uses your own AI provider key (Google, OpenAI, or Anthropic) — no account signup needed.
+    ```bash
+    echo "GOOGLE_API_KEY=your-key-here" > .env
+    ```
+  </Step>
+  <Step title="Write a test">
+    Create a YAML file in `.finalrun/tests/` describing steps in plain English.
+    ```yaml
+    name: login_smoke
+    steps:
+      - Launch the app.
+      - Enter ${secrets.email} on the login screen.
+      - Tap the Login button.
+    expected_state:
+      - The home screen is visible.
+    ```
+  </Step>
+  <Step title="Run it">
+    Execute the test on Android or iOS with a single command.
+    ```bash
+    finalrun test login_smoke.yaml --platform android --model google/gemini-3-flash-preview
+    ```
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration/workspace">
+    Set up your workspace config, app identity, and environments.
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting">
+    Fix common errors and verify host readiness with finalrun doctor.
+  </Card>
+</CardGroup>

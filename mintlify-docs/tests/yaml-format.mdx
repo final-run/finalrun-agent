@@ -1,0 +1,171 @@
+---
+title: "FinalRun YAML test format: fields, phases, examples"
+sidebarTitle: "YAML Format"
+description: "Learn the FinalRun YAML test format: required fields, the three-phase execution model, allowed actions, and how to write reliable natural-language steps."
+---
+
+FinalRun test specs are plain YAML files stored under `.finalrun/tests/`. Each file defines a single test scenario using natural-language steps that the AI agent executes on a real device or emulator. You describe what a user would do; FinalRun taps, swipes, types, and verifies on your behalf.
+
+## Test fields
+
+Every test file follows a fixed schema. The `name` and `steps` fields are required; all others are optional.
+
+<ParamField path="name" type="string" required>
+  A stable, unique identifier for the test scenario. Use `snake_case`. This value appears in run reports and suite manifests, so keep it descriptive and consistent across renames.
+</ParamField>
+
+<ParamField path="description" type="string">
+  A short, human-readable summary of what the test validates. One or two sentences is enough.
+</ParamField>
+
+<ParamField path="setup" type="list of strings">
+  Actions the agent runs before the main steps to prepare a clean starting state. Every setup block must be idempotent — see [Setup and idempotent cleanup](#setup-and-idempotent-cleanup) below.
+</ParamField>
+
+<ParamField path="steps" type="list of strings" required>
+  An ordered list of natural-language steps the agent executes. Each step must use an action from the [allowed action vocabulary](#allowed-action-vocabulary).
+</ParamField>
+
+<ParamField path="expected_state" type="list of strings">
+  The expected UI state after all steps are complete. These are boolean conditions the agent checks against the final screen — not actions to perform. If every condition is met, the test passes; if any fail, the test fails.
+</ParamField>
+
+## Three-phase execution model
+
+At runtime, the agent executes every test in three sequential phases:
+
+<Steps>
+  <Step title="Setup">
+    The agent runs any `setup` steps to guarantee a clean starting state, regardless of what a previous run may have left behind.
+  </Step>
+  <Step title="Steps">
+    The agent performs each `steps` entry in order — tapping, typing, swiping, and verifying as instructed.
+  </Step>
+  <Step title="Expected state">
+    The agent checks each `expected_state` condition against the final screen. The test succeeds only when all conditions pass.
+  </Step>
+</Steps>
+
+## Example: login smoke test
+
+```yaml
+name: login_smoke
+description: Verify that a user can log in and reach the home screen.
+
+setup:
+  - Clear app data.
+
+steps:
+  - Launch the app.
+  - Enter ${secrets.email} on the login screen.
+  - Enter ${secrets.password} on the password screen.
+  - Tap the login button.
+
+expected_state:
+  - The home screen is visible.
+  - The user's name appears in the header.
+```
+
+<Note>
+  The `${secrets.email}` and `${secrets.password}` placeholders are resolved at run time from environment variables or `.env` files. See [Placeholders](/tests/placeholders) for details.
+</Note>
+
+## Allowed action vocabulary
+
+Every step in `setup` or `steps` must use one of the following verbs. Do not write steps that require actions outside this list.
+
+| Verb to use in steps | What the agent does | Needs a UI target? |
+|---|---|---|
+| **Tap** / Click | Taps the specified element | Yes |
+| **Long press** | Long-presses the specified element | Yes |
+| **Type** / Enter text | Inputs text into the specified field | Yes |
+| **Swipe** / Scroll | Swipes in a direction over the specified area | Yes |
+| **Navigate back** | Presses the device back button | No |
+| **Go to home screen** | Returns to the device home screen | No |
+| **Rotate device** | Rotates the device orientation | No |
+| **Hide keyboard** | Dismisses the on-screen keyboard | No |
+| **Open URL / deeplink** | Opens a URL or deeplink | No |
+| **Set location** | Sets the device GPS location | Yes (coordinates) |
+| **Wait** | Pauses execution | No |
+| **Verify** / Check | Visually inspects the screen for a condition | Yes (what to verify) |
+
+<Tip>
+  **Verify** is the one step type that is not a device action. Use it in `setup` to confirm cleanup succeeded, and in `steps` to confirm intermediate states before critical actions.
+</Tip>
+
+## Writing good steps
+
+Good steps are specific and reference actual UI labels — the text or label visible on screen, not internal component names.
+
+- Reference the exact label: `Tap the Login button`, not `Tap the button`.
+- Name the screen when it matters: `Enter the password on the Password screen`.
+- Add inline `Verify` steps before critical actions so failures are caught with a clear message rather than a confusing grounding error:
+
+```yaml
+steps:
+  - Verify the hamburger menu icon is visible in the top-left corner of the toolbar.
+  - Tap the hamburger menu icon in the top-left corner of the toolbar.
+```
+
+- Use `Verify` steps in `steps` to confirm intermediate states during multi-step flows.
+- Reserve `expected_state` for the final screen only. Do not put navigation or interaction instructions there.
+
+### Avoid verifying ephemeral UI
+
+Do not assert on toasts, snackbars, or transient banners in `steps` or `expected_state`. These short-lived messages disappear on their own timer and can race against the agent's verification step. Verify the persistent consequence instead — the updated list, the changed badge count, the screen that appeared.
+
+```yaml
+# Good — verifies a persistent outcome
+expected_state:
+  - The item appears in the shopping cart.
+
+# Bad — toast may have already dismissed
+expected_state:
+  - The "Added to cart" toast is visible.
+```
+
+## Positional strictness
+
+When a step specifies the position of a UI element — `top-left corner`, `in the header`, `first item` — the agent treats that position as a strict assertion. If the element is not found at the described location, the test fails; the agent will not search elsewhere.
+
+Use positional context when the element's location is part of what you are testing. Omit it when you only need to confirm the element exists, so the agent can scroll to find it.
+
+```yaml
+# Position matters — include it
+expected_state:
+  - The navigation drawer is open and visible on the left side of the screen.
+  - The profile avatar is visible at the top of the drawer.
+
+# Position doesn't matter — keep it generic
+expected_state:
+  - The navigation drawer is open.
+  - The profile avatar is visible.
+```
+
+The second `expected_state` block above is too vague — `The navigation drawer is open` could match an unintended element. The first block is spatially precise and will only pass if the layout matches exactly.
+
+## Setup and idempotent cleanup
+
+Every test must be idempotent: assume it has already run and failed. If a previous run added data, enabled a toggle, or navigated to a new screen, your `setup` must reverse that state before the test begins.
+
+| If the test validates... | Setup must... |
+|---|---|
+| **Adding** an item | Check if the item exists and delete it first. |
+| **Deleting** an item | Check if the item exists and add it first if missing. |
+| **Enabling** a toggle | Disable the toggle first if it is already on. |
+| **Moving or reordering** | Reset the list to a known default order first. |
+
+Always add a `Verify` step after each cleanup action to confirm the app is in the expected starting state. If cleanup fails, the test will fail early in setup rather than produce a misleading failure in the main steps.
+
+```yaml
+setup:
+  - Navigate to the Shopping List screen.
+  - If the item 'Milk' is visible, swipe left on it and tap Delete.
+  - Verify that 'Milk' is no longer visible on the Shopping List screen.
+```
+
+## File organization
+
+<Note>
+  Group tests by feature under `.finalrun/tests/<feature>/`. For example, authentication tests belong in `.finalrun/tests/auth/`, and onboarding tests in `.finalrun/tests/onboarding/`. This mirrors the suite structure and makes it easy to run all tests for a given feature at once.
+</Note>
