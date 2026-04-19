@@ -264,6 +264,10 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
             effectiveGoals,
             cli: buildCliContext(options),
             model: buildModelContext(options.defaults.provider, options.defaults.modelName),
+            ...(options.defaults.reasoning !== undefined
+              ? { reasoning: options.defaults.reasoning }
+              : {}),
+            ...(options.features !== undefined ? { features: options.features } : {}),
             app: buildAppContext(checked.resolvedApp, checked.appOverride?.appPath ?? options.appPath),
             target: checked.target,
             suite: checked.suite,

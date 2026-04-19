@@ -5,6 +5,15 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import { REASONING_LEVELS, type ReasoningLevel } from '@finalrun/common';
+export {
+  MODEL_FORMAT_EXAMPLE,
+  PROVIDER_ENV_VARS,
+  SUPPORTED_AI_PROVIDERS,
+  SUPPORTED_AI_PROVIDERS_LABEL,
+  parseModel,
+  type ParsedModel,
+  type SupportedProvider,
+} from '@finalrun/common';
 
 /**
  * Environment configuration for the CLI.
@@ -79,55 +88,6 @@ export class CliEnv {
   set(key: string, value: string): void {
     this._values.set(key, value);
   }
-}
-
-export interface ParsedModel {
-  provider: string;
-  modelName: string;
-}
-
-export const SUPPORTED_AI_PROVIDERS = ['openai', 'google', 'anthropic'] as const;
-export const SUPPORTED_AI_PROVIDERS_LABEL = SUPPORTED_AI_PROVIDERS.join(', ');
-export const MODEL_FORMAT_EXAMPLE = 'google/gemini-3-flash-preview';
-export const PROVIDER_ENV_VARS: Record<(typeof SUPPORTED_AI_PROVIDERS)[number], string> = {
-  openai: 'OPENAI_API_KEY',
-  google: 'GOOGLE_API_KEY',
-  anthropic: 'ANTHROPIC_API_KEY',
-};
-
-export function parseModel(modelStr: string | undefined): ParsedModel {
-  const normalizedModel = modelStr?.trim();
-  if (!normalizedModel) {
-    throw new Error(
-      `--model is required. Use provider/model, for example ${MODEL_FORMAT_EXAMPLE}. Supported providers: ${SUPPORTED_AI_PROVIDERS_LABEL}.`,
-    );
-  }
-
-  const segments = normalizedModel.split('/');
-  if (
-    segments.length !== 2 ||
-    segments[0] === undefined ||
-    segments[1] === undefined ||
-    segments[0].trim() === '' ||
-    segments[1].trim() === ''
-  ) {
-    throw new Error(
-      `Invalid model format: "${normalizedModel}". Expected provider/model with non-empty provider and model name. Supported providers: ${SUPPORTED_AI_PROVIDERS_LABEL}.`,
-    );
-  }
-
-  const provider = segments[0].trim();
-  const modelName = segments[1].trim();
-  if (!SUPPORTED_AI_PROVIDERS.includes(provider as (typeof SUPPORTED_AI_PROVIDERS)[number])) {
-    throw new Error(
-      `Unsupported AI provider: "${provider}". Supported providers: ${SUPPORTED_AI_PROVIDERS_LABEL}.`,
-    );
-  }
-
-  return {
-    provider,
-    modelName,
-  };
 }
 
 export const REASONING_LEVELS_LABEL = REASONING_LEVELS.join(', ');

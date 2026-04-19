@@ -44,6 +44,26 @@ test('parseModel rejects unsupported providers', () => {
   );
 });
 
+test('parseModel prefixes errors with the provided label for context', () => {
+  // Trailing whitespace after the slash collapses under the outer trim, so
+  // the echoed value is "openai/" (empty model half) and the label prefix
+  // points the user at the exact config entry that tripped validation.
+  assert.throws(
+    () => parseModel('openai/ ', 'features.planner.model'),
+    /features\.planner\.model has invalid model format: "openai\/"\./,
+  );
+  assert.throws(
+    () => parseModel('bedrock/claude', 'features.planner.model'),
+    /features\.planner\.model has unsupported AI provider: "bedrock"\./,
+  );
+  // Sanity: omitting the label keeps the pre-existing CLI-style error text
+  // that other tests (and --model users) depend on.
+  assert.throws(
+    () => parseModel(undefined),
+    /--model is required\./,
+  );
+});
+
 test('parseReasoningLevel returns undefined when unset', () => {
   assert.equal(parseReasoningLevel(undefined, 'reasoning'), undefined);
   assert.equal(parseReasoningLevel(null, 'reasoning'), undefined);

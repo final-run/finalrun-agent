@@ -143,6 +143,16 @@ test('resolveApiKeys routes --api-key to the single active provider', () => {
   assert.deepEqual(keys, { openai: 'flag-key' });
 });
 
+test('resolveApiKeys treats empty --api-key as unset and falls through to env vars', () => {
+  const keys = resolveApiKeys({
+    env: createEnv({ OPENAI_API_KEY: 'env-key' }),
+    providers: ['openai'],
+    providedApiKey: '',
+  });
+
+  assert.deepEqual(keys, { openai: 'env-key' });
+});
+
 test('resolveApiKeys rejects --api-key when multiple providers are configured', () => {
   assert.throws(
     () =>

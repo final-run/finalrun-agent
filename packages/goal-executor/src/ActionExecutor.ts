@@ -40,6 +40,7 @@ import {
   PLANNER_ACTION_SET_LOCATION,
   PLANNER_ACTION_WAIT,
   PLANNER_ACTION_DEEPLINK,
+  type FeatureName,
   type RuntimeBindings,
   redactResolvedValue,
   resolveRuntimePlaceholders,
@@ -773,7 +774,7 @@ export class ActionExecutor {
 
   private async _groundToPoint(
     input: ActionInput,
-    feature: string,
+    feature: FeatureName,
     tracePhase: string,
   ): Promise<GroundToPointResult> {
     const grounderResponse = await this._callGrounder(input, {
@@ -937,7 +938,7 @@ export class ActionExecutor {
   private async _callGrounder(
     input: ActionInput,
     request: {
-      feature: string;
+      feature: FeatureName;
       act: string;
       hierarchy?: Hierarchy;
       screenshot?: string;
@@ -1094,7 +1095,7 @@ export class ActionExecutor {
 
   private _groundTraceDetail(
     trace: LLMTrace | undefined,
-    feature: string,
+    feature: FeatureName,
     reason?: string,
   ): string {
     const detail = `feature=${feature}${reason ? ` reason=${reason}` : ''}`;

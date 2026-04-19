@@ -43,6 +43,7 @@ import {
   PLANNER_ACTION_COMPLETED,
   PLANNER_ACTION_FAILED,
   PLANNER_ACTION_DEEPLINK,
+  parseModel,
   type FeatureName,
   type FeatureOverrides,
   type ModelDefaults,
@@ -107,7 +108,7 @@ export interface PlannerResponse {
 }
 
 export interface GrounderRequest {
-  feature: string;
+  feature: FeatureName;
   act: string;
   hierarchy?: Hierarchy;
   screenshot?: string; // base64
@@ -412,7 +413,7 @@ export class AIAgent {
         const llmResult = await this._callLLM(
           systemPrompt,
           userParts,
-          request.feature as FeatureName,
+          request.feature,
         );
         rawOutput = llmResult.output;
         rawText = llmResult.text;
@@ -582,14 +583,12 @@ export class AIAgent {
     let provider = this._defaults.provider;
     let modelName = this._defaults.modelName;
     if (override?.model) {
-      const slash = override.model.indexOf('/');
-      if (slash <= 0 || slash === override.model.length - 1) {
-        throw new Error(
-          `Invalid model override for feature "${feature}": "${override.model}". Expected provider/model.`,
-        );
-      }
-      provider = override.model.slice(0, slash).trim();
-      modelName = override.model.slice(slash + 1).trim();
+      // Reuse the shared parser so per-feature overrides fail with the same
+      // validation errors (empty provider/model, unsupported provider) as
+      // workspace-level `model:` and the `--model` CLI flag.
+      const parsed = parseModel(override.model, `features.${feature}.model`);
+      provider = parsed.provider;
+      modelName = parsed.modelName;
     }
     const reasoning: ReasoningLevel =
       override?.reasoning ?? this._defaults.reasoning ?? DEFAULT_REASONING_BY_PHASE[phaseForFeature(feature)];
@@ -805,7 +804,7 @@ export class AIAgent {
   private _summarizeGrounderRequest(req: GrounderRequest): string {
     const parts: string[] = ['[AI ground]'];
     parts.push(this._formatLogContext(req.logContext, req.traceStep));
-    const grounderResolved = this._resolveFeatureConfig(req.feature as FeatureName);
+    const grounderResolved = this._resolveFeatureConfig(req.feature);
     parts.push(`provider=${grounderResolved.provider}/${grounderResolved.modelName}`);
     parts.push(`feature=${req.feature}`);
     parts.push(this._screenshotMetric('screenshot', req.screenshot));

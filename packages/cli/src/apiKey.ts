@@ -38,7 +38,10 @@ export function resolveApiKeys(params: {
     throw new Error('At least one provider must be specified when resolving API keys.');
   }
 
-  if (params.providedApiKey !== undefined) {
+  // Match `resolveApiKey` semantics: an empty/whitespace --api-key value
+  // falls through to env-var lookup rather than being treated as "this is
+  // the key." Keeps the two resolvers consistent.
+  if (params.providedApiKey) {
     if (providers.length > 1) {
       throw new Error(
         `--api-key is only valid when a single provider is active. This run uses multiple providers (${providers.join(', ')}). Provide the per-provider env vars instead: ${providers
