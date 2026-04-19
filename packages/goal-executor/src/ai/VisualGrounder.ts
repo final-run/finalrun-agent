@@ -40,6 +40,7 @@ export class VisualGrounder {
     screenshot: string; // base64
     platform: string;
     traceStep?: number;
+    logContext?: string;
   }): Promise<VisualGroundingResult> {
     try {
       Logger.i('Attempting visual grounding fallback (no hierarchy)...');
@@ -51,6 +52,7 @@ export class VisualGrounder {
         platform: params.platform,
         traceStep: params.traceStep,
         tracePhase: 'action.visual_fallback',
+        logContext: params.logContext,
       });
 
       const output = response.output;

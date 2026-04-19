@@ -76,6 +76,11 @@ export interface PlannerRequest {
   appKnowledge?: string;
   postActionHierarchy?: Hierarchy;
   traceStep?: number;
+  /**
+   * Free-form label used only for logging (e.g. "primary(Pixel_10) step=3").
+   * Helps distinguish which device/step a plan call belongs to in multi-device runs.
+   */
+  logContext?: string;
 }
 
 export interface PlannerResponse {
@@ -109,6 +114,10 @@ export interface GrounderRequest {
   availableApps?: Array<{ packageName: string; name: string }>;
   traceStep?: number;
   tracePhase?: string;
+  /**
+   * Free-form label used only for logging (e.g. "primary(Pixel_10) step=3").
+   */
+  logContext?: string;
 }
 
 export interface GrounderResponse {
@@ -210,7 +219,7 @@ export class AIAgent {
     }
 
     if (request.hierarchy) {
-      const elements = request.hierarchy.toPromptElements();
+      const elements = request.hierarchy.toPromptElementsForPlanner(request.platform);
       textPrompt += `\nui_elements:\n${JSON.stringify(elements)}\n`;
     }
 
@@ -219,13 +228,17 @@ export class AIAgent {
     }
 
     if (request.postActionHierarchy) {
-      const postElements = request.postActionHierarchy.toPromptElements();
+      const postElements = request.postActionHierarchy.toPromptElementsForPlanner(request.platform);
       textPrompt += `\nPost-action ui_elements:\n${JSON.stringify(postElements)}\n`;
     }
 
     userParts.push({ type: 'text', text: textPrompt });
 
     const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
+
+    // Input visibility: one INFO summary line + one DEBUG detail blob per plan call.
+    Logger.i(this._summarizePlannerRequest(request));
+    Logger.d(this._detailPlannerRequest(request, textPrompt));
 
     const maxAttempts = MAX_LLM_ATTEMPTS;
     let lastError: unknown;
@@ -362,7 +375,7 @@ export class AIAgent {
     }
 
     if (request.hierarchy) {
-      const elements = request.hierarchy.toPromptElements();
+      const elements = request.hierarchy.toPromptElementsForGrounder(request.platform);
       text += `\nui_elements:\n${JSON.stringify(elements)}\n`;
     }
 
@@ -373,6 +386,10 @@ export class AIAgent {
     userParts.push({ type: 'text', text });
 
     const promptBuildMs = roundDuration(performance.now() - promptBuildStartedAt);
+
+    // Input visibility: one INFO summary line + one DEBUG detail blob per grounder call.
+    Logger.i(this._summarizeGrounderRequest(request));
+    Logger.d(this._detailGrounderRequest(request, text));
 
     const maxAttempts = MAX_LLM_ATTEMPTS;
     let lastError: unknown;
@@ -738,6 +755,115 @@ export class AIAgent {
 
     const grounderOutput = asRecord(record['output']) ?? record;
     return { output: grounderOutput, raw: rawText };
+  }
+
+  // ---------- Input visibility logging ----------
+
+  private _summarizePlannerRequest(req: PlannerRequest): string {
+    const parts: string[] = ['[AI plan]'];
+    parts.push(this._formatLogContext(req.logContext, req.traceStep));
+    parts.push(`provider=${this._provider}/${this._modelName}`);
+    parts.push(this._screenshotMetric('screenshot', req.preActionScreenshot));
+    if (req.postActionScreenshot) {
+      parts.push(this._screenshotMetric('postScreenshot', req.postActionScreenshot));
+    }
+    const hierarchyCount = req.hierarchy
+      ? req.hierarchy.toPromptElementsForPlanner(req.platform).length
+      : 0;
+    parts.push(`hierarchy=${hierarchyCount}`);
+    parts.push(`history=${this._countHistoryLines(req.history)}`);
+    parts.push(`remember=${req.remember?.length ?? 0}`);
+    parts.push(`preContext=${req.preContext ? 'yes' : 'no'}`);
+    parts.push(`appKnowledge=${req.appKnowledge ? 'yes' : 'no'}`);
+    parts.push(`goal=${req.testObjective.length}ch`);
+    return parts.join(' ');
+  }
+
+  private _summarizeGrounderRequest(req: GrounderRequest): string {
+    const parts: string[] = ['[AI ground]'];
+    parts.push(this._formatLogContext(req.logContext, req.traceStep));
+    parts.push(`provider=${this._provider}/${this._modelName}`);
+    parts.push(`feature=${req.feature}`);
+    parts.push(this._screenshotMetric('screenshot', req.screenshot));
+    const hierarchyCount = req.hierarchy
+      ? req.hierarchy.toPromptElementsForGrounder(req.platform).length
+      : 0;
+    parts.push(`hierarchy=${hierarchyCount}`);
+    const actSnippet = req.act.length > 80 ? `${req.act.slice(0, 80)}…` : req.act;
+    parts.push(`act="${actSnippet}"`);
+    return parts.join(' ');
+  }
+
+  private _detailPlannerRequest(req: PlannerRequest, prompt: string): string {
+    const payload = {
+      logContext: req.logContext,
+      platform: req.platform,
+      goal: req.testObjective,
+      screenshot: req.preActionScreenshot
+        ? `<base64 ${req.preActionScreenshot.length} chars>`
+        : null,
+      postScreenshot: req.postActionScreenshot
+        ? `<base64 ${req.postActionScreenshot.length} chars>`
+        : null,
+      hierarchy: req.hierarchy
+        ? {
+            count: req.hierarchy.toPromptElementsForPlanner(req.platform).length,
+            firstFew: req.hierarchy
+              .toPromptElementsForPlanner(req.platform)
+              .slice(0, 3),
+          }
+        : null,
+      history: req.history ? req.history.split('\n').filter(Boolean) : [],
+      remember: req.remember ?? [],
+      preContext: req.preContext ?? null,
+      appKnowledge: req.appKnowledge ?? null,
+      promptLength: prompt.length,
+    };
+    return `[AI plan detail] ${this._formatLogContext(req.logContext, req.traceStep)} ${JSON.stringify(payload, null, 2)}`;
+  }
+
+  private _detailGrounderRequest(req: GrounderRequest, prompt: string): string {
+    const payload = {
+      logContext: req.logContext,
+      feature: req.feature,
+      platform: req.platform,
+      act: req.act,
+      screenshot: req.screenshot
+        ? `<base64 ${req.screenshot.length} chars>`
+        : null,
+      hierarchy: req.hierarchy
+        ? {
+            count: req.hierarchy.toPromptElementsForGrounder(req.platform).length,
+            firstFew: req.hierarchy
+              .toPromptElementsForGrounder(req.platform)
+              .slice(0, 3),
+          }
+        : null,
+      availableApps: req.availableApps ?? null,
+      promptLength: prompt.length,
+    };
+    return `[AI ground detail] ${this._formatLogContext(req.logContext, req.traceStep)} ${JSON.stringify(payload, null, 2)}`;
+  }
+
+  private _formatLogContext(
+    logContext: string | undefined,
+    traceStep: number | undefined,
+  ): string {
+    const ctx = logContext && logContext.length > 0 ? logContext : 'no-ctx';
+    return traceStep !== undefined ? `ctx=${ctx} iter=${traceStep}` : `ctx=${ctx}`;
+  }
+
+  private _screenshotMetric(label: string, base64: string | undefined): string {
+    if (!base64 || base64.length === 0) return `${label}=no`;
+    // base64 → bytes: length * 3/4, rounded.
+    const bytes = Math.round((base64.length * 3) / 4);
+    const kb = Math.max(1, Math.round(bytes / 1024));
+    return `${label}=${kb}KB`;
+  }
+
+  private _countHistoryLines(history: string | undefined): number {
+    if (!history) return 0;
+    return history.split('\n').filter((line) => line.trim().length > 0).length;
   }
 }
 
