@@ -32,6 +32,8 @@ Flags for `test` and `suite`:
 
 CLI flags always take precedence over `.finalrun/config.yaml`.
 
+For workspace-level `model`, `reasoning`, and per-feature `features:` overrides (including mixed-provider setups), see [configuration.md](configuration.md#supported-configurations).
+
 ### Examples
 
 ```sh

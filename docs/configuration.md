@@ -59,6 +59,73 @@ features:
     reasoning: low
 ```
 
+### Supported Providers
+
+Use any of these prefixes in the `provider/model` format:
+
+- `openai/<model>` (e.g. `openai/gpt-5.4-mini`)
+- `google/<model>` (e.g. `google/gemini-3-flash-preview`)
+- `anthropic/<model>` (e.g. `anthropic/claude-opus-4-7`)
+
+Model names are passed straight to the provider — consult the provider's docs for which models accept reasoning effort.
+
+### Reasoning Levels by Provider
+
+| Provider | Accepted `reasoning` values |
+|---|---|
+| `openai` | `minimal`, `low`, `medium`, `high` |
+| `google` | `low`, `medium`, `high` |
+| `anthropic` | `low`, `medium`, `high` |
+
+Setting `reasoning: minimal` on a Google- or Anthropic-routed feature fails at run time with a message naming the offending feature.
+
+When neither workspace `reasoning:` nor a per-feature `reasoning:` is set, FinalRun applies built-in fallbacks:
+
+- `planner` → `medium`
+- every grounder (`grounder`, `visual-grounder`, `scroll-index-grounder`, `input-focus-grounder`, `launch-app-grounder`, `set-location-grounder`) → `low`
+
+### Supported Configurations
+
+Three shapes are supported. Pick the simplest one that fits.
+
+**1. One model, one reasoning level (simplest).** Every feature uses the same model and effort:
+
+```yaml
+model: openai/gpt-5.4-mini
+reasoning: low
+```
+
+**2. Same provider, per-feature reasoning tuning.** One API key, one provider, but effort tuned per feature:
+
+```yaml
+model: openai/gpt-5.4-mini
+reasoning: low
+
+features:
+  planner:
+    reasoning: high              # planner only — keeps the workspace model
+  scroll-index-grounder:
+    reasoning: minimal           # cheap fast grounding
+  # unlisted features inherit model + reasoning from the top
+```
+
+**3. Mixed providers across features.** Different providers for different features:
+
+```yaml
+model: google/gemini-3-flash-preview   # default for anything unlisted
+reasoning: medium
+
+features:
+  planner:
+    model: anthropic/claude-opus-4-7
+    reasoning: high
+  grounder:
+    model: openai/gpt-5.4-mini
+    reasoning: minimal
+```
+
+Mixed-provider mode requires **every** referenced provider's env var to be set (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY` — see [environment.md](environment.md)). The `--api-key` CLI flag is rejected in this mode.
+
 ### Per-Feature Overrides
 
 The `features:` block lets you tune each LLM call independently. Each feature drives a distinct prompt:
@@ -69,8 +136,6 @@ The `features:` block lets you tune each LLM call independently. Each feature dr
 - `scroll-index-grounder`, `input-focus-grounder`, `launch-app-grounder`, `set-location-grounder` — specialized grounders for their respective actions.
 
 Both `model` and `reasoning` are optional per feature. Any unset field falls back to the workspace-level default (`model:` / `reasoning:`), and any unlisted feature inherits both defaults.
-
-If features target **different providers** (e.g. planner on Anthropic, grounder on Google), you must set each provider's env var (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) — see [environment.md](environment.md). The `--api-key` CLI flag only works when a single provider is active across all features.
 
 ## App Identity
 
