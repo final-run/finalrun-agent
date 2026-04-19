@@ -43,6 +43,10 @@ import {
   PLANNER_ACTION_COMPLETED,
   PLANNER_ACTION_FAILED,
   PLANNER_ACTION_DEEPLINK,
+  type FeatureName,
+  type FeatureOverrides,
+  type ModelDefaults,
+  type ReasoningLevel,
 } from '@finalrun/common';
 import {
   describeLLMTrace,
@@ -121,6 +125,23 @@ type AIAgentProviderOptions = {
   anthropic?: AnthropicLanguageModelOptions;
 };
 
+interface ResolvedFeatureConfig {
+  provider: string;
+  modelName: string;
+  reasoning: ReasoningLevel;
+}
+
+/** Fallback reasoning levels used when neither feature override nor workspace default is set. */
+const DEFAULT_REASONING_BY_PHASE: Record<LLMPhase, ReasoningLevel> = {
+  planner: 'medium',
+  grounder: 'low',
+};
+
+/** Map a feature to its phase (controls token budget + default reasoning). */
+function phaseForFeature(feature: FeatureName): LLMPhase {
+  return feature === FEATURE_PLANNER ? 'planner' : 'grounder';
+}
+
 const MAX_LLM_ATTEMPTS = 2;
 
 // ============================================================================
@@ -134,17 +155,24 @@ const MAX_LLM_ATTEMPTS = 2;
  * Dart equivalent: FinalRunAgent in goal_executor/lib/src/FinalRunAgent.dart
  */
 export class AIAgent {
-  private _provider: string; // e.g., 'openai', 'google', 'anthropic'
-  private _modelName: string; // e.g., 'gpt-5.4-mini', 'gemini-2.0-flash'
-  private _apiKey: string;
+  private _apiKeys: Record<string, string>;
+  private _defaults: ModelDefaults;
+  private _features: FeatureOverrides;
 
   // Cached prompt contents
   private _promptCache: Map<string, string> = new Map();
+  // Cached Vercel AI SDK clients, keyed by provider
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _clientCache: Map<string, any> = new Map();
 
-  constructor(params: { provider: string; modelName: string; apiKey: string }) {
-    this._provider = params.provider;
-    this._modelName = params.modelName;
-    this._apiKey = params.apiKey;
+  constructor(params: {
+    apiKeys: Record<string, string>;
+    defaults: ModelDefaults;
+    features?: FeatureOverrides;
+  }) {
+    this._apiKeys = params.apiKeys;
+    this._defaults = params.defaults;
+    this._features = params.features ?? {};
   }
 
   /**
@@ -205,18 +233,19 @@ export class AIAgent {
     let llmMs = 0;
     let parseMs = 0;
 
+    const plannerResolved = this._resolveFeatureConfig(FEATURE_PLANNER);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const llmPhase = startTracePhase(
         request.traceStep,
         'planning.llm',
-        `provider=${this._provider} model=${this._modelName} attempt=${attempt}/${maxAttempts}`,
+        `provider=${plannerResolved.provider} model=${plannerResolved.modelName} attempt=${attempt}/${maxAttempts}`,
       );
       const llmStartedAt = performance.now();
 
       let rawOutput: unknown;
       let rawText: string;
       try {
-        const llmResult = await this._callLLM(systemPrompt, userParts, 'planner');
+        const llmResult = await this._callLLM(systemPrompt, userParts, FEATURE_PLANNER);
         rawOutput = llmResult.output;
         rawText = llmResult.text;
       } catch (error) {
@@ -362,7 +391,11 @@ export class AIAgent {
       let rawOutput: unknown;
       let rawText: string;
       try {
-        const llmResult = await this._callLLM(systemPrompt, userParts, 'grounder');
+        const llmResult = await this._callLLM(
+          systemPrompt,
+          userParts,
+          request.feature as FeatureName,
+        );
         rawOutput = llmResult.output;
         rawText = llmResult.text;
       } catch (error) {
@@ -461,10 +494,12 @@ export class AIAgent {
   private async _callLLM(
     systemPrompt: string,
     userParts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }>,
-    phase: LLMPhase,
+    feature: FeatureName,
   ): Promise<{ output: unknown; text: string }> {
-    const model = this._getModel();
-    const providerOptions = this._getProviderOptions(phase);
+    const resolved = this._resolveFeatureConfig(feature);
+    const model = this._getModel(resolved);
+    const providerOptions = this._getProviderOptions(resolved, feature);
+    const phase = phaseForFeature(feature);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userContent: any[] = userParts.map((part) => {
@@ -494,68 +529,119 @@ export class AIAgent {
     } catch (error) {
       throw (
         classifyFatalProviderError(error, {
-          provider: this._provider,
-          modelName: this._modelName,
+          provider: resolved.provider,
+          modelName: resolved.modelName,
         }) ?? error
       );
     }
 
     if (reasoningText) {
       Logger.d(
-        `LLM reasoning [${phase}] (${this._provider}/${this._modelName}):\n${reasoningText}`,
+        `LLM reasoning [${feature}] (${resolved.provider}/${resolved.modelName}):\n${reasoningText}`,
       );
     }
 
     Logger.d(
-      `LLM response [${phase}] (${this._provider}/${this._modelName}):\n${text || '<empty response>'}`,
+      `LLM response [${feature}] (${resolved.provider}/${resolved.modelName}):\n${text || '<empty response>'}`,
     );
     return { output, text };
   }
 
   /**
-   * Create the appropriate Vercel AI SDK model instance.
+   * Resolve the effective provider / model / reasoning for a feature by
+   * merging the optional per-feature override on top of workspace defaults.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _getModel(): any {
-    switch (this._provider) {
-      case 'openai': {
-        const openai = createOpenAI({ apiKey: this._apiKey });
-        return openai(this._modelName);
+  private _resolveFeatureConfig(feature: FeatureName): ResolvedFeatureConfig {
+    const override = this._features[feature];
+    let provider = this._defaults.provider;
+    let modelName = this._defaults.modelName;
+    if (override?.model) {
+      const slash = override.model.indexOf('/');
+      if (slash <= 0 || slash === override.model.length - 1) {
+        throw new Error(
+          `Invalid model override for feature "${feature}": "${override.model}". Expected provider/model.`,
+        );
       }
-      case 'google': {
-        const google = createGoogleGenerativeAI({ apiKey: this._apiKey });
-        return google(this._modelName);
-      }
-      case 'anthropic': {
-        const anthropic = createAnthropic({ apiKey: this._apiKey });
-        return anthropic(this._modelName);
-      }
-      default:
-        throw new Error(`Unsupported AI provider: ${this._provider}`);
+      provider = override.model.slice(0, slash).trim();
+      modelName = override.model.slice(slash + 1).trim();
     }
+    const reasoning: ReasoningLevel =
+      override?.reasoning ?? this._defaults.reasoning ?? DEFAULT_REASONING_BY_PHASE[phaseForFeature(feature)];
+    return { provider, modelName, reasoning };
   }
 
-  private _getProviderOptions(phase: LLMPhase): AIAgentProviderOptions | undefined {
-    switch (this._provider) {
-      case 'google':
+  /**
+   * Create (or reuse a cached) Vercel AI SDK model instance for the
+   * resolved provider/modelName.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _getModel(resolved: ResolvedFeatureConfig): any {
+    const cacheKey = `${resolved.provider}/${resolved.modelName}`;
+    const cached = this._clientCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const apiKey = this._apiKeys[resolved.provider];
+    if (!apiKey) {
+      throw new Error(
+        `Missing API key for provider "${resolved.provider}". Set the corresponding env var (e.g. OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY).`,
+      );
+    }
+    let client: unknown;
+    switch (resolved.provider) {
+      case 'openai': {
+        const openai = createOpenAI({ apiKey });
+        client = openai(resolved.modelName);
+        break;
+      }
+      case 'google': {
+        const google = createGoogleGenerativeAI({ apiKey });
+        client = google(resolved.modelName);
+        break;
+      }
+      case 'anthropic': {
+        const anthropic = createAnthropic({ apiKey });
+        client = anthropic(resolved.modelName);
+        break;
+      }
+      default:
+        throw new Error(`Unsupported AI provider: ${resolved.provider}`);
+    }
+    this._clientCache.set(cacheKey, client);
+    return client;
+  }
+
+  private _getProviderOptions(
+    resolved: ResolvedFeatureConfig,
+    feature: FeatureName,
+  ): AIAgentProviderOptions | undefined {
+    const { provider, reasoning } = resolved;
+    if (reasoning === 'minimal' && provider !== 'openai') {
+      throw new Error(
+        `Reasoning level "minimal" is only supported for OpenAI. Feature "${feature}" is configured for provider "${provider}".`,
+      );
+    }
+    switch (provider) {
+      case 'google': {
         return {
           google: {
             thinkingConfig: {
-              thinkingLevel: phase === 'planner' ? 'high' : 'medium',
+              thinkingLevel: reasoning as 'low' | 'medium' | 'high',
               includeThoughts: false,
             },
           } satisfies GoogleLanguageModelOptions,
         };
+      }
       case 'openai':
         return {
           openai: {
-            reasoningEffort: phase === 'planner' ? 'medium' : 'low',
+            reasoningEffort: reasoning,
           } satisfies OpenAILanguageModelResponsesOptions,
         };
       case 'anthropic':
         return {
           anthropic: {
-            effort: phase === 'planner' ? 'medium' : 'low',
+            effort: reasoning as 'low' | 'medium' | 'high',
           } satisfies AnthropicLanguageModelOptions,
         };
       default:

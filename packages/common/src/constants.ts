@@ -52,6 +52,42 @@ export const FEATURE_INPUT_FOCUS_GROUNDER = 'input-focus-grounder';
 export const FEATURE_LAUNCH_APP_GROUNDER = 'launch-app-grounder';
 export const FEATURE_SET_LOCATION_GROUNDER = 'set-location-grounder';
 
+export const ALL_FEATURES = [
+  FEATURE_PLANNER,
+  FEATURE_GROUNDER,
+  FEATURE_VISUAL_GROUNDER,
+  FEATURE_SCROLL_INDEX_GROUNDER,
+  FEATURE_INPUT_FOCUS_GROUNDER,
+  FEATURE_LAUNCH_APP_GROUNDER,
+  FEATURE_SET_LOCATION_GROUNDER,
+] as const;
+export type FeatureName = (typeof ALL_FEATURES)[number];
+
+// ============================================================================
+// Reasoning effort — unified level mapped per-provider inside AIAgent.
+// 'minimal' is OpenAI-only; Google/Anthropic reject it at call time.
+// ============================================================================
+export const REASONING_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
+/**
+ * Per-feature override resolved from `features:` in .finalrun/config.yaml.
+ * Each field is optional; unset fields inherit workspace-level defaults.
+ * `model` is a "provider/modelName" string (validated via parseModel at use site).
+ */
+export interface FeatureOverride {
+  model?: string;
+  reasoning?: ReasoningLevel;
+}
+
+export type FeatureOverrides = Partial<Record<FeatureName, FeatureOverride>>;
+
+export interface ModelDefaults {
+  provider: string;
+  modelName: string;
+  reasoning?: ReasoningLevel;
+}
+
 // ============================================================================
 // Defaults
 // ============================================================================

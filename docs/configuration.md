@@ -31,8 +31,13 @@ The workspace config defines defaults used by the CLI when flags are omitted.
 | `app.bundleId` | iOS bundle identifier (e.g. `com.example.myapp`) |
 | `env` | Default environment name (used when `--env` is omitted) |
 | `model` | Default AI model in `provider/model` format (used when `--model` is omitted) |
+| `reasoning` | Default reasoning effort for all features: `minimal`, `low`, `medium`, or `high`. `minimal` is OpenAI-only. |
+| `features.<name>.model` | Per-feature model override in `provider/model` format. |
+| `features.<name>.reasoning` | Per-feature reasoning effort override. |
 
 At least one of `app.packageName` or `app.bundleId` is required.
+
+Valid feature names: `planner`, `grounder`, `visual-grounder`, `scroll-index-grounder`, `input-focus-grounder`, `launch-app-grounder`, `set-location-grounder`.
 
 ### Example
 
@@ -43,7 +48,29 @@ app:
   bundleId: com.example.myapp
 env: dev
 model: google/gemini-3-flash-preview
+reasoning: medium
+
+# Optional — unlisted features inherit the default model and reasoning.
+features:
+  planner:
+    model: anthropic/claude-opus-4-7
+    reasoning: high
+  scroll-index-grounder:
+    reasoning: low
 ```
+
+### Per-Feature Overrides
+
+The `features:` block lets you tune each LLM call independently. Each feature drives a distinct prompt:
+
+- `planner` — decides the next user action from the current screen.
+- `grounder` — picks the UI element for an action.
+- `visual-grounder` — visual fallback when text grounding fails.
+- `scroll-index-grounder`, `input-focus-grounder`, `launch-app-grounder`, `set-location-grounder` — specialized grounders for their respective actions.
+
+Both `model` and `reasoning` are optional per feature. Any unset field falls back to the workspace-level default (`model:` / `reasoning:`), and any unlisted feature inherits both defaults.
+
+If features target **different providers** (e.g. planner on Anthropic, grounder on Google), you must set each provider's env var (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) — see [environment.md](environment.md). The `--api-key` CLI flag only works when a single provider is active across all features.
 
 ## App Identity
 

@@ -4,6 +4,7 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
+import { REASONING_LEVELS, type ReasoningLevel } from '@finalrun/common';
 
 /**
  * Environment configuration for the CLI.
@@ -127,4 +128,25 @@ export function parseModel(modelStr: string | undefined): ParsedModel {
     provider,
     modelName,
   };
+}
+
+export const REASONING_LEVELS_LABEL = REASONING_LEVELS.join(', ');
+
+export function parseReasoningLevel(value: unknown, label: string): ReasoningLevel | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a string. Allowed values: ${REASONING_LEVELS_LABEL}.`);
+  }
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return undefined;
+  }
+  if (!REASONING_LEVELS.includes(trimmed as ReasoningLevel)) {
+    throw new Error(
+      `${label} has invalid value "${trimmed}". Allowed values: ${REASONING_LEVELS_LABEL}.`,
+    );
+  }
+  return trimmed as ReasoningLevel;
 }
