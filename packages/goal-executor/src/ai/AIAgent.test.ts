@@ -195,6 +195,7 @@ test('AIAgent uses medium Anthropic effort defaults for planner feature', () => 
   assert.deepEqual(providerOptions, {
     anthropic: {
       effort: 'medium',
+      structuredOutputMode: 'outputFormat',
     },
   });
 });
@@ -209,6 +210,7 @@ test('AIAgent uses low Anthropic effort defaults for grounder feature', () => {
   assert.deepEqual(providerOptions, {
     anthropic: {
       effort: 'low',
+      structuredOutputMode: 'outputFormat',
     },
   });
 });
@@ -223,6 +225,7 @@ test('AIAgent applies Anthropic effort defaults without model-family gating', ()
   assert.deepEqual(providerOptions, {
     anthropic: {
       effort: 'medium',
+      structuredOutputMode: 'outputFormat',
     },
   });
 });

@@ -84,6 +84,10 @@ When neither workspace `reasoning:` nor a per-feature `reasoning:` is set, Final
 - `planner` → `medium`
 - every grounder (`grounder`, `visual-grounder`, `scroll-index-grounder`, `input-focus-grounder`, `launch-app-grounder`, `set-location-grounder`) → `low`
 
+### Anthropic Model Compatibility
+
+`anthropic/...` models must be Claude 4.5 or later (Sonnet 4.5+, Opus 4.5+, Haiku 4.5+, including Sonnet 4.6, Opus 4.6, and Opus 4.7). FinalRun uses Anthropic's native structured-output API (`output_config.format`) for guaranteed JSON, and only Claude 4.5+ supports it. Older Anthropic models will return HTTP 400 from the API. OpenAI and Google paths have no equivalent restriction.
+
 ### Supported Configurations
 
 Three shapes are supported. Pick the simplest one that fits.

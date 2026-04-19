@@ -668,6 +668,15 @@ export class AIAgent {
         return {
           anthropic: {
             effort: reasoning as 'low' | 'medium' | 'high',
+            // Force Anthropic's native structured-output API
+            // (`output_config.format`). The SDK's `auto` mode falls back to a
+            // `json` tool wrapper when its hardcoded model-capability table
+            // doesn't recognize the model — but that table lags behind new
+            // releases (e.g. Opus 4.7 isn't listed even though it supports
+            // structured output). Pinning `outputFormat` makes us forward-
+            // compatible with every Claude 4.5+ model without any
+            // model-version checks on our side.
+            structuredOutputMode: 'outputFormat',
           } satisfies AnthropicLanguageModelOptions,
         };
       default:
