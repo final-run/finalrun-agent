@@ -3,24 +3,26 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import {
-  type BindingReference,
-  type FailurePhase,
-  Logger,
-  type TestDefinition,
-  type SuiteDefinition,
-  type LogEntry,
-  type LoggerSink,
-  type RunManifestAppRecord,
-  type EnvironmentRecord,
-  type FirstFailure,
-  type RunManifest,
-  type TestResult,
   type AgentAction,
+  type BindingReference,
+  type EnvironmentRecord,
+  type FailurePhase,
+  type FeatureOverrides,
+  type FirstFailure,
+  type LogEntry,
+  Logger,
+  type LoggerSink,
+  type ReasoningLevel,
+  type RunManifest,
+  type RunManifestAppRecord,
   type RunStatus,
-  type TestStatus,
-  type RunTarget,
   type RunSummary,
+  type RunTarget,
   type RuntimeBindings,
+  type SuiteDefinition,
+  type TestDefinition,
+  type TestResult,
+  type TestStatus,
   redactResolvedValue,
 } from '@finalrun/common';
 import type { TestExecutionResult, AgentActionResult } from '@finalrun/goal-executor';
@@ -160,6 +162,8 @@ export class ReportWriter {
     target: RunTarget;
     cli: { command: string; selectors: string[]; debug: boolean; [key: string]: unknown };
     model: { provider: string; modelName: string; label: string };
+    reasoning?: ReasoningLevel;
+    features?: FeatureOverrides;
     app: RunManifestAppRecord;
   }): Promise<void> {
     const inputDir = path.join(this._runDir, 'input');
@@ -179,6 +183,8 @@ export class ReportWriter {
         {
           cli: params.cli,
           model: params.model,
+          ...(params.reasoning !== undefined ? { reasoning: params.reasoning } : {}),
+          ...(params.features !== undefined ? { features: params.features } : {}),
           app: params.app,
           target: params.target,
         },

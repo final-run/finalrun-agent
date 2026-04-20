@@ -631,9 +631,8 @@ test('runTests finalizes top-level artifacts when shared-session execution throw
       envName: 'dev',
       cwd: rootDir,
       selectors: ['login.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, false);
@@ -719,9 +718,8 @@ test('runTests succeeds without env config when the repo is env-free', async () 
     const result = await runTests({
       cwd: rootDir,
       selectors: ['smoke.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, true);
@@ -779,9 +777,8 @@ test('runTests records the suite subcommand in run metadata when invoked via fin
     const result = await runTests({
       cwd: rootDir,
       suitePath: 'smoke.yaml',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
       invokedCommand: 'suite',
     });
 
@@ -846,9 +843,8 @@ test('runTests prepares one shared session for multiple tests and cleans it up o
       envName: 'dev',
       cwd: rootDir,
       selectors: ['login.yaml', 'search.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, true);
@@ -908,9 +904,8 @@ test('runTests uses mov artifact recording output paths for iOS tests', async ()
       cwd: rootDir,
       selectors: ['login.yaml'],
       platform: 'ios',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, true);
@@ -977,9 +972,8 @@ test('runTests stops the batch after a shared-session failure and cleans up once
       envName: 'dev',
       cwd: rootDir,
       selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, false);
@@ -1060,9 +1054,8 @@ test('runTests stops remaining tests after a terminal AI provider failure', asyn
       envName: 'dev',
       cwd: rootDir,
       selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, false);
@@ -1176,9 +1169,8 @@ test('runTests aborts the batch after SIGINT and marks the active run as aborted
       envName: 'dev',
       cwd: rootDir,
       selectors: ['first.yaml', 'second.yaml', 'third.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, false);
@@ -1268,9 +1260,8 @@ test('runTests requests a forced exit after a second SIGINT', async () => {
       envName: 'dev',
       cwd: rootDir,
       selectors: ['first.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(forcedExitCode, 130);
@@ -1310,9 +1301,8 @@ test('runTests requires base app config even when the env file contains an app o
           envName: 'dev',
           cwd: rootDir,
           selectors: ['login.yaml'],
-          apiKey: 'test-key',
-          provider: 'openai',
-          modelName: 'gpt-5.4-mini',
+          apiKeys: { openai: 'test-key' },
+          defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1350,9 +1340,8 @@ test('runTests rejects validation failures before creating run artifacts', async
         runTests({
           envName: 'dev',
           cwd: rootDir,
-          apiKey: 'test-key',
-          provider: 'openai',
-          modelName: 'gpt-5.4-mini',
+          apiKeys: { openai: 'test-key' },
+          defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1409,9 +1398,8 @@ test('runTests surfaces device setup diagnostics before execution without creati
           envName: 'dev',
           cwd: rootDir,
           selectors: ['login.yaml'],
-          apiKey: 'test-key',
-          provider: 'openai',
-          modelName: 'gpt-5.4-mini',
+          apiKeys: { openai: 'test-key' },
+          defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1472,9 +1460,8 @@ test('runTests fails before prepareGoalSession when Android host preflight is bl
           cwd: rootDir,
           selectors: ['login.yaml'],
           platform: 'android',
-          apiKey: 'test-key',
-          provider: 'openai',
-          modelName: 'gpt-5.4-mini',
+          apiKeys: { openai: 'test-key' },
+          defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1535,9 +1522,8 @@ test('runTests fails before prepareGoalSession when iOS host preflight is blocke
           cwd: rootDir,
           selectors: ['login.yaml'],
           platform: 'ios',
-          apiKey: 'test-key',
-          provider: 'openai',
-          modelName: 'gpt-5.4-mini',
+          apiKeys: { openai: 'test-key' },
+          defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
@@ -1609,9 +1595,8 @@ test('runTests continues when one platform is healthy and the other is blocked',
       envName: 'dev',
       cwd: rootDir,
       selectors: ['login.yaml'],
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-5.4-mini',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
     });
 
     assert.equal(result.success, true);
@@ -1674,9 +1659,8 @@ test('runTests requires --platform when both Android and iOS apps are configured
           envName: 'dev',
           cwd: rootDir,
           selectors: ['login.yaml'],
-          apiKey: 'test-key',
-          provider: 'openai',
-          modelName: 'gpt-5.4-mini',
+          apiKeys: { openai: 'test-key' },
+          defaults: { provider: 'openai', modelName: 'gpt-5.4-mini' },
         }),
       (error: unknown) => {
         assert.ok(error instanceof PreExecutionFailureError);
