@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-04-20
+
+### Added
+
+- Per-feature model and reasoning effort selection via workspace YAML
+- Mintlify community docs site with restructured Get Started (Intro, Installation, Quickstart) and a hero landing page
+- `docs.finalrun.app` link surfaced in the README top nav and Documentation section
+
+### Changed
+
+- Slimmer planner hierarchy via Dart-aligned planner/grounder split for lower token cost
+- Hardened per-feature model resolution and run-context capture
+- Documented supported config shapes and per-provider reasoning levels
+- Removed deprecated `toPromptElements` and unused hierarchy helpers
+
+### Fixed
+
+- Route OpenAI through the Responses API so `reasoningEffort` actually takes effect
+- Pin Anthropic to `outputFormat` structured-output mode and enforce it via zod schema
+- Drop the outer `output` wrapper and `.int()` from Anthropic schemas to satisfy the tool-schema validator
+- Resolve per-feature provider/model in the post-merge summary logs
+
 ## [0.1.6] - 2026-04-15
 
 ### Added
