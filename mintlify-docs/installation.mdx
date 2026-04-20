@@ -1,57 +1,34 @@
 ---
-title: "Install FinalRun: CLI setup and platform prerequisites"
+title: "Install FinalRun: prerequisites, CLI setup, and host verification"
 sidebarTitle: "Installation"
-description: "Install the FinalRun CLI on macOS or Linux, set up Android or iOS platform prerequisites, and verify your host is ready to run tests."
+description: "Set up prerequisites, install the FinalRun CLI on macOS or Linux, and verify that your host is ready to run Android or iOS tests."
 ---
 
-FinalRun runs as a Node.js CLI. The install script handles Node.js, the CLI itself, and the platform driver assets needed for Android or iOS test execution. This page covers system requirements, install methods, platform-specific prerequisites, and how to verify your setup.
+FinalRun runs as a Node.js CLI. This page walks you through the prerequisites, the install itself, and how to verify your machine is ready. Once `finalrun doctor` reports a clean bill of health, continue to the [Quickstart](/quickstart) to write and run your first test.
 
-## System requirements
+## Prerequisites
+
+Before installing FinalRun, make sure your machine has the following in place.
+
+### Node.js
 
 - **Node.js** 20.0.0 or later
 
-The one-line install script will set up Node.js for you if it isn't already present.
+The one-line install script sets up Node.js for you if it isn't already present.
 
-## Install FinalRun
+### AI provider API key
 
-**One-line install (recommended):**
+FinalRun is BYOK (bring your own key). Before your first test run, obtain an API key from one of the supported providers:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-```
+| Provider | Environment variable |
+|---|---|
+| Google Gemini | `GOOGLE_API_KEY` |
+| OpenAI GPT | `OPENAI_API_KEY` |
+| Anthropic Claude | `ANTHROPIC_API_KEY` |
 
-This script installs Node.js (if needed), the `finalrun` CLI globally, and all bundled platform driver assets for Android and iOS.
+You'll set the key during the Quickstart. See [AI Providers](/configuration/ai-providers) for details on choosing a model and configuring the key.
 
-**npm (if you already have Node.js 20+):**
-
-```bash
-npm install -g @finalrun/finalrun-agent
-```
-
-## Verify the installation
-
-After installing, confirm the CLI is on your PATH:
-
-```bash
-finalrun --help
-```
-
-Then check host readiness for your target platform:
-
-```bash
-finalrun doctor
-```
-
-`finalrun doctor` reports which required tools are present, missing, or misconfigured. You can also check a single platform:
-
-```bash
-finalrun doctor --platform android
-finalrun doctor --platform ios
-```
-
-Fix any issues reported before running tests.
-
-## Platform prerequisites
+### Platform tools
 
 <Tabs>
   <Tab title="Android">
@@ -79,12 +56,6 @@ Fix any issues reported before running tests.
     sudo apt install scrcpy
     ```
     </CodeGroup>
-
-    After setting up these tools, verify readiness:
-
-    ```bash
-    finalrun doctor --platform android
-    ```
   </Tab>
   <Tab title="iOS">
     <Warning>
@@ -123,15 +94,48 @@ Fix any issues reported before running tests.
     ```bash
     brew install ffmpeg applesimutils
     ```
-
-    After setting up these tools, verify readiness:
-
-    ```bash
-    finalrun doctor --platform ios
-    ```
   </Tab>
 </Tabs>
 
+## Install FinalRun
+
+**One-line install (recommended):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+```
+
+The script installs Node.js (if needed), the `finalrun` CLI globally, the bundled platform driver assets for Android and iOS, and the FinalRun AI agent skills for your coding agent.
+
+**npm (if you already have Node.js 20+):**
+
+```bash
+npm install -g @finalrun/finalrun-agent
+```
+
+## Verify the installation
+
+Confirm the CLI is on your PATH:
+
+```bash
+finalrun --help
+```
+
+Then check host readiness for your target platform:
+
+```bash
+finalrun doctor
+```
+
+`finalrun doctor` reports which required tools are present, missing, or misconfigured. You can also check a single platform:
+
+```bash
+finalrun doctor --platform android
+finalrun doctor --platform ios
+```
+
+Fix any issues reported before running tests.
+
 ## Next steps
 
-Once `finalrun doctor` reports your host as ready, follow the [Quick Start](/quickstart) guide to write and run your first test.
+Once `finalrun doctor` reports your host as ready, follow the [Quickstart](/quickstart) guide to write and run your first test.
