@@ -3,7 +3,10 @@ title: "FinalRun: AI-powered Android and iOS test automation"
 description: "FinalRun lets you write plain-English test specs in YAML and run them on Android and iOS using AI models like Gemini, GPT, or Claude."
 ---
 
-FinalRun is an AI-driven CLI that tests your Android and iOS apps using natural language. You write scenarios in YAML — describing actions the way a person would — and FinalRun launches your app on a real device or emulator, uses an AI model to see the screen, and performs each action: tapping, swiping, typing, and verifying the result. When the run finishes, you get a pass/fail report with video, screenshots, and device logs.
+FinalRun is an AI-powered CLI for testing Android and iOS apps with natural language.
+You write test scenarios in YAML, describing actions the way a person would.
+FinalRun launches your app on a real device or emulator and uses an AI model to see the screen and perform each action — tapping, swiping, typing, and verifying results.
+When the run finishes, you get a pass/fail report complete with video, screenshots, and device logs.
 
 <iframe
   className="w-full aspect-video rounded-xl"
@@ -16,7 +19,10 @@ FinalRun is an AI-driven CLI that tests your Android and iOS apps using natural 
 
 ## How it works
 
-FinalRun connects an AI model to a running device. The AI reads the live screen, interprets your plain-English instructions, decides what action to take, and repeats until the test is complete or a failure is detected. Every test file has three phases:
+FinalRun connects an AI model to a running device.
+The AI reads the live screen and interprets your plain-English instructions.
+It decides what action to take, executes it, and repeats until the test passes or a failure is detected.
+Every test file has three phases:
 
 - **`setup`** — optional actions that prepare clean state before the test starts (e.g., clear app data)
 - **`steps`** — the ordered natural-language instructions the AI executes
