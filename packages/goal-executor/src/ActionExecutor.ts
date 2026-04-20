@@ -40,6 +40,7 @@ import {
   PLANNER_ACTION_SET_LOCATION,
   PLANNER_ACTION_WAIT,
   PLANNER_ACTION_DEEPLINK,
+  type FeatureName,
   type RuntimeBindings,
   redactResolvedValue,
   resolveRuntimePlaceholders,
@@ -131,6 +132,7 @@ export class ActionExecutor {
   // Accumulates LLM call traces during a single executeAction() invocation.
   // Reset at entry; drained into ActionOutput.llmCalls at exit.
   private _currentLlmCalls: LLMCallTrace[] = [];
+  private _logContext?: string;
 
   constructor(params: {
     agent: DeviceAgent;
@@ -138,6 +140,8 @@ export class ActionExecutor {
     platform: string;
     appIdentifier?: string;
     runtimeBindings?: RuntimeBindings;
+    /** Attached to every grounder log line. See TestExecutorConfig.logContext. */
+    logContext?: string;
   }) {
     this._agent = params.agent;
     this._aiAgent = params.aiAgent;
@@ -145,6 +149,7 @@ export class ActionExecutor {
     this._platform = params.platform;
     this._appIdentifier = params.appIdentifier;
     this._runtimeBindings = params.runtimeBindings;
+    this._logContext = params.logContext;
   }
 
   /**
@@ -798,7 +803,7 @@ export class ActionExecutor {
 
   private async _groundToPoint(
     input: ActionInput,
-    feature: string,
+    feature: FeatureName,
     tracePhase: string,
   ): Promise<GroundToPointResult> {
     const grounderResponse = await this._callGrounder(input, {
@@ -856,6 +861,7 @@ export class ActionExecutor {
         screenshot: input.screenshot,
         platform: this._platform,
         traceStep: input.traceStep,
+        logContext: this._logContext,
       });
       if (result.llmCall) {
         this._currentLlmCalls.push(result.llmCall);
@@ -964,7 +970,7 @@ export class ActionExecutor {
   private async _callGrounder(
     input: ActionInput,
     request: {
-      feature: string;
+      feature: FeatureName;
       act: string;
       hierarchy?: Hierarchy;
       screenshot?: string;
@@ -980,6 +986,7 @@ export class ActionExecutor {
         ...request,
         traceStep: input.traceStep,
         tracePhase: request.tracePhase ?? 'action.ground',
+        logContext: this._logContext,
       });
 
       if (response.llmCall) {
@@ -1124,7 +1131,7 @@ export class ActionExecutor {
 
   private _groundTraceDetail(
     trace: LLMTrace | undefined,
-    feature: string,
+    feature: FeatureName,
     reason?: string,
   ): string {
     const detail = `feature=${feature}${reason ? ` reason=${reason}` : ''}`;

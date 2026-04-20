@@ -59,6 +59,12 @@ export interface TestExecutorConfig {
   appKnowledge?: string;
   appIdentifier?: string;
   runtimeBindings?: RuntimeBindings;
+  /**
+   * Free-form label attached to every planner/grounder log line for this run.
+   * Typically a device serial. Helps distinguish concurrent/sequential runs
+   * in the logs.
+   */
+  logContext?: string;
 }
 
 export interface AgentActionResult {
@@ -198,6 +204,7 @@ export class TestExecutor {
       platform: config.platform,
       appIdentifier: config.appIdentifier,
       runtimeBindings: config.runtimeBindings,
+      logContext: config.logContext,
     });
   }
 
@@ -352,6 +359,7 @@ export class TestExecutor {
           preContext: this._config.preContext,
           appKnowledge: this._config.appKnowledge,
           traceStep: iteration,
+          logContext: this._config.logContext,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);

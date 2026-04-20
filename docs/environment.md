@@ -63,6 +63,8 @@ FinalRun resolves API keys by provider prefix:
 
 Keys are read from `process.env` and from workspace-root `.env` / `.env.<name>`. You can also pass `--api-key` to override.
 
+If `.finalrun/config.yaml` uses different providers across features (via the `features:` block in [configuration.md](configuration.md)), set the env var for each provider you reference. `--api-key` is only accepted when a single provider is in play.
+
 ## Git: Keep Secrets Out of the Repo
 
 **Do not commit** `.env` files. Add the following to your app repository's `.gitignore`:

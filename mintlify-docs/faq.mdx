@@ -1,0 +1,103 @@
+---
+title: "FinalRun FAQ: pricing, AI providers, and CI/CD usage"
+sidebarTitle: "FAQ"
+description: "Answers to common FinalRun questions: pricing, supported AI providers, platform compatibility, CI/CD usage, three-phase test model, and artifact storage."
+---
+
+FinalRun is an open-source, CLI-based tool — no account required, no platform lock-in. The questions below cover the most common things people ask about how FinalRun works, what it costs, and how to get the most out of it.
+
+<AccordionGroup>
+  <Accordion title="Do I need to create a FinalRun account?">
+    No. FinalRun is open-source and runs entirely from the command line. Install the CLI, set your AI provider API key, and start running tests. There is no account, signup, or FinalRun subscription required.
+  </Accordion>
+
+  <Accordion title="Which AI providers does FinalRun support?">
+    FinalRun supports three AI providers. You bring your own key (BYOK) — costs are billed directly by your provider at standard API rates.
+
+    | Provider | Supported models | Environment variable |
+    |---|---|---|
+    | Google | Gemini 3+ | `GOOGLE_API_KEY` |
+    | OpenAI | GPT-5+ | `OPENAI_API_KEY` |
+    | Anthropic | Claude Sonnet 4 / Opus 4+ | `ANTHROPIC_API_KEY` |
+
+    Set the key in your shell or in a `.env` file at your workspace root. You can also override it for a single run with the `--api-key` flag.
+  </Accordion>
+
+  <Accordion title="Does FinalRun work with real devices or only emulators?">
+    Currently FinalRun targets Android emulators (AVDs) and iOS simulators for local runs. Support for cloud devices and physical hardware is on the roadmap.
+
+    If you want early access to cloud device support, [join the waitlist](https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor).
+  </Accordion>
+
+  <Accordion title="Which platforms does FinalRun support?">
+    - **Android** — any macOS, Linux, or Windows machine with Android SDK tools (`adb`, `emulator`, `scrcpy`) installed and a running Android Virtual Device.
+    - **iOS** — macOS only. Requires Xcode command line tools with `xcrun simctl`.
+
+    Run `finalrun doctor` to check that all required dependencies are present on your machine before running tests.
+  </Accordion>
+
+  <Accordion title="How much does each test run cost?">
+    FinalRun itself is free and open-source. You pay your AI provider — Google, OpenAI, or Anthropic — for the tokens consumed during test execution. The cost depends on the model you choose and how long the test takes to complete. There are no additional charges from FinalRun.
+  </Accordion>
+
+  <Accordion title="Can I run FinalRun in CI/CD?">
+    Yes. Install the CLI in your CI environment and set the required environment variables — your AI provider API key, `ANDROID_HOME` (for Android), and any secrets your test specs reference. Then call `finalrun test` or `finalrun suite` as a step in your pipeline.
+
+    ```sh
+    finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
+    ```
+
+    Run `finalrun check` before your test step to catch workspace configuration errors early, before you consume any API tokens.
+  </Accordion>
+
+  <Accordion title="What is the three-phase test execution model?">
+    Every FinalRun test has three phases:
+
+    - **`setup`** — optional actions that prepare a clean state before the test starts (for example, clearing app data).
+    - **`steps`** — the ordered, plain-English instructions the AI executes on your device screen.
+    - **`expected_state`** — the UI conditions the AI verifies once all steps have completed.
+
+    A test passes only when all three phases succeed. If any phase fails, FinalRun stops the run and records the failure with the current screenshot, video, and device log.
+  </Accordion>
+
+  <Accordion title="What is finalrun check for?">
+    `finalrun check` validates your entire workspace before you run any tests. It checks:
+
+    - Selector definitions
+    - Suite manifests
+    - Environment bindings (secrets and variables)
+    - App overrides
+
+    Running `finalrun check` before a test run catches configuration errors early, so you are not spending API tokens on a run that will fail at startup.
+
+    ```sh
+    finalrun check --env dev --platform android
+    ```
+  </Accordion>
+
+  <Accordion title="How do I use FinalRun with AI coding agents like Claude Code or Cursor?">
+    FinalRun ships a set of agent skills that let you generate tests, run them, and fix failures — all from your AI coding agent chat. Install the skills with:
+
+    ```sh
+    npx skills add final-run/finalrun-agent
+    ```
+
+    Once installed, three slash commands are available in your AI coding agent:
+
+    | Command | What it does |
+    |---|---|
+    | `/finalrun-generate-test` | Reads your source code, infers app identity, and generates complete YAML test specs |
+    | `/finalrun-use-cli` | Validates and runs your tests using the CLI |
+    | `/finalrun-test-and-fix` | Runs the full generate → run → diagnose → fix loop until the test is green |
+  </Accordion>
+
+  <Accordion title="Where are test artifacts stored?">
+    Artifacts for each run — including video, screenshots, and device logs — are stored at:
+
+    ```
+    ~/.finalrun/workspaces/<workspace-hash>/artifacts/
+    ```
+
+    Use `finalrun runs` to list all recorded runs for your current workspace, and `finalrun start-server` to open the visual report UI where you can browse results interactively.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,84 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "FinalRun",
+  "projectDescription": "An AI-driven CLI that tests Android and iOS apps using natural language YAML specs, executing steps on real devices or emulators with Gemini, GPT, or Claude.",
+  "theme": "luma",
+  "primaryColor": "#3f4fe8",
+  "lightColor": "#d0a7f7",
+  "darkColor": "#6c4cfc",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Writing Tests",
+            "pages": [
+              "tests/yaml-format",
+              "tests/suites",
+              "tests/placeholders"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/workspace",
+              "configuration/environments",
+              "configuration/ai-providers"
+            ]
+          },
+          {
+            "group": "Running Tests",
+            "pages": [
+              "running/cli-reference",
+              "running/ai-agent-skills",
+              "running/reports"
+            ]
+          },
+          {
+            "group": "Help",
+            "pages": [
+              "troubleshooting",
+              "faq"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Natural language YAML test specs for Android and iOS",
+    "AI-powered test execution using Gemini, GPT, or Claude",
+    "Three-phase test model: setup, steps, expected_state",
+    "AI agent skills for generating, running, and fixing tests",
+    "Local report viewer with video, screenshots, and device logs",
+    "BYOK (Bring Your Own Key) — use your own AI provider API key",
+    "Multi-environment support with secrets and variable bindings",
+    "One-command install and host readiness check via finalrun doctor"
+  ],
+  "publicApiSurface": [
+    "finalrun test <selectors...>",
+    "finalrun suite <suitePath>",
+    "finalrun check [selectors...]",
+    "finalrun doctor",
+    "finalrun runs",
+    "finalrun start-server",
+    "finalrun stop-server",
+    "finalrun server-status",
+    "/finalrun-generate-test skill",
+    "/finalrun-use-cli skill",
+    "/finalrun-test-and-fix skill",
+    ".finalrun/config.yaml",
+    ".finalrun/tests/<feature>/<name>.yaml",
+    ".finalrun/suites/<name>.yaml",
+    ".finalrun/env/<name>.yaml"
+  ]
+}

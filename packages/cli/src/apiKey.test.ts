@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { CliEnv } from './env.js';
-import { resolveApiKey } from './apiKey.js';
+import { resolveApiKey, resolveApiKeys } from './apiKey.js';
 
 function createEnv(values: Record<string, string>) {
   return {
@@ -112,5 +112,66 @@ test('resolveApiKey reports the provider-matched env var in its error message', 
         provider: 'google',
       }),
     /Provide via --api-key or GOOGLE_API_KEY/,
+  );
+});
+
+test('resolveApiKeys returns a per-provider map from env vars', () => {
+  const env = createEnv({
+    OPENAI_API_KEY: 'openai-key',
+    GOOGLE_API_KEY: 'google-key',
+    ANTHROPIC_API_KEY: 'anthropic-key',
+  });
+
+  const keys = resolveApiKeys({
+    env,
+    providers: new Set(['openai', 'google']),
+  });
+
+  assert.deepEqual(keys, {
+    openai: 'openai-key',
+    google: 'google-key',
+  });
+});
+
+test('resolveApiKeys routes --api-key to the single active provider', () => {
+  const keys = resolveApiKeys({
+    env: createEnv({}),
+    providers: ['openai'],
+    providedApiKey: 'flag-key',
+  });
+
+  assert.deepEqual(keys, { openai: 'flag-key' });
+});
+
+test('resolveApiKeys treats empty --api-key as unset and falls through to env vars', () => {
+  const keys = resolveApiKeys({
+    env: createEnv({ OPENAI_API_KEY: 'env-key' }),
+    providers: ['openai'],
+    providedApiKey: '',
+  });
+
+  assert.deepEqual(keys, { openai: 'env-key' });
+});
+
+test('resolveApiKeys rejects --api-key when multiple providers are configured', () => {
+  assert.throws(
+    () =>
+      resolveApiKeys({
+        env: createEnv({}),
+        providers: ['openai', 'anthropic'],
+        providedApiKey: 'flag-key',
+      }),
+    /--api-key is only valid when a single provider is active/,
+  );
+});
+
+test('resolveApiKeys aggregates missing provider errors into one message', () => {
+  assert.throws(
+    () =>
+      resolveApiKeys({
+        env: createEnv({ OPENAI_API_KEY: 'openai-key' }),
+        providers: ['openai', 'google', 'anthropic'],
+      }),
+    /google \(GOOGLE_API_KEY\), anthropic \(ANTHROPIC_API_KEY\)/,
   );
 });

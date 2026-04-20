@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import { Logger, LogLevel, type TestResult } from '@finalrun/common';
 import { formatResolvedAppSummary } from '../src/appConfig.js';
 import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
-import { resolveApiKey } from '../src/apiKey.js';
+import { resolveApiKeys } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
 import { runDoctorCommand } from '../src/doctorRunner.js';
 import {
@@ -360,6 +360,17 @@ async function runTestCommand(params: {
     const workspace = await resolveWorkspace();
     const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
     const model = parseModel(params.options.model ?? workspaceConfig.model);
+    const features = workspaceConfig.features;
+    const reasoning = workspaceConfig.reasoning;
+
+    const requiredProviders = new Set<string>([model.provider]);
+    if (features) {
+      for (const override of Object.values(features)) {
+        if (override?.model) {
+          requiredProviders.add(parseModel(override.model).provider);
+        }
+      }
+    }
 
     const debug = params.options.debug === true;
     Logger.init({ level: debug ? LogLevel.DEBUG : LogLevel.INFO, resetSinks: true });
@@ -375,9 +386,9 @@ async function runTestCommand(params: {
         : resolvedEnvironment.envName,
       { cwd: workspace.rootDir },
     );
-    const apiKey = resolveApiKey({
+    const apiKeys = resolveApiKeys({
       env: runtimeEnv,
-      provider: model.provider,
+      providers: requiredProviders,
       providedApiKey: params.options.apiKey,
     });
 
@@ -389,9 +400,13 @@ async function runTestCommand(params: {
       suitePath: normalizedSuitePath,
       platform: params.options.platform,
       appPath: params.options.app,
-      apiKey,
-      provider: model.provider,
-      modelName: model.modelName,
+      apiKeys,
+      defaults: {
+        provider: model.provider,
+        modelName: model.modelName,
+        reasoning,
+      },
+      features,
       maxIterations: parseInt(params.options.maxIterations, 10) || 110,
       debug,
       invokedCommand: params.invokedCommand,

@@ -16,6 +16,8 @@
 <p align="center">
   <a aria-label="FinalRun website" href="https://finalrun.app/"><b>finalrun.app</b></a>
   &ensp;•&ensp;
+  <a aria-label="FinalRun documentation" href="https://docs.finalrun.app/">Docs</a>
+  &ensp;•&ensp;
   <a aria-label="FinalRun blog" href="https://blogs.finalrun.app/">Blog</a>
   &ensp;•&ensp;
   <a aria-label="Cloud device waitlist" href="https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor" target="_blank">Cloud Device Waitlist</a>
@@ -132,6 +134,8 @@ finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-
 
 
 ## Documentation
+
+Full docs: **[docs.finalrun.app](https://docs.finalrun.app/)**
 
 - [Autotrigger FinalRun tests (AI agents)](docs/autotrigger-finalrun.md) — when coding agents should generate, validate, and run tests after UI work
 - [YAML Tests](docs/yaml-tests.md) — test format, fields, suites, and environment placeholders

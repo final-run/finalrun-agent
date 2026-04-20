@@ -2,6 +2,8 @@
 // The Dart file is ~108KB. We port only the subset used by FinalRunAgent and
 // HeadlessActionExecutor for AI prompt building and grounding.
 
+import { PLATFORM_ANDROID, PLATFORM_IOS } from '../constants.js';
+
 /**
  * Represents a single node in the UI hierarchy tree.
  *
@@ -85,26 +87,6 @@ export class HierarchyNode {
     };
   }
 
-  /**
-   * Convert this node to a JSON object suitable for AI prompts.
-   * Includes only non-null, meaningful fields.
-   */
-  toPromptJson(): Record<string, unknown> {
-    const obj: Record<string, unknown> = { index: this.index };
-    if (this.text) obj['text'] = this.text;
-    if (this.accessibilityText) obj['contentDesc'] = this.accessibilityText;
-    if (this.id) obj['id'] = this.id;
-    if (this.clazz) obj['class'] = this.clazz;
-    if (this.bounds) obj['bounds'] = this.bounds;
-    if (this.isScrollable) obj['isScrollable'] = true;
-    if (this.isFocused) obj['isFocused'] = true;
-    if (this.isEditable) obj['isEditable'] = true;
-    if (this.isImage) obj['isImage'] = true;
-    if (this.hintText) obj['hintText'] = this.hintText;
-    if (this.error) obj['error'] = this.error;
-    if (this.isSelected) obj['isSelected'] = true;
-    return obj;
-  }
 }
 
 // ============================================================================
@@ -180,18 +162,84 @@ export class Hierarchy {
   }
 
   /**
-   * Get a subset of the hierarchy for AI consumption.
-   * Filters out irrelevant nodes and returns a minimal JSON array.
+   * Hierarchy subset for the PLANNER — minimal, tappable/image elements only.
    *
-   * Dart: convertHierarchyForAI() logic from FinalRunAgent.dart
+   * Filter: a node is kept only if it has accessibility text AND is either an
+   * image, an iOS button, or an Android button-class node.
+   * Fields: index, contentDesc, class (Android class name shortened), bounds.
+   *
+   * The planner treats the screenshot as the source of truth and uses the
+   * hierarchy only to disambiguate interactive targets, so the slim payload
+   * is sufficient and keeps token cost low.
    */
-  toPromptElements(): Record<string, unknown>[] {
+  toPromptElementsForPlanner(platform?: string): Record<string, unknown>[] {
+    const isAndroid = platform === PLATFORM_ANDROID;
+    const isIOS = platform === PLATFORM_IOS;
     return this.flattenedHierarchy
-      .filter((node) => Hierarchy._isRelevantForAI(node))
-      .map((node) => node.toPromptJson());
+      .filter((node) => {
+        const hasAccText = !!node.accessibilityText;
+        if (!hasAccText) return false;
+        if (node.isImage) return true;
+        if (isIOS && node.isElementTypeButton()) return true;
+        if (isAndroid && node.classContainsButton()) return true;
+        return false;
+      })
+      .map((node) => {
+        const out: Record<string, unknown> = { index: node.index };
+        if (node.accessibilityText) out['contentDesc'] = node.accessibilityText;
+        const simpleClass = Hierarchy._shortenAndroidClass(node.clazz, platform);
+        if (simpleClass) out['class'] = simpleClass;
+        if (node.bounds) out['bounds'] = node.bounds;
+        return out;
+      });
+  }
+
+  /**
+   * Hierarchy subset for the GROUNDER — every flattened node with a rich
+   * field set.
+   *
+   * Filter: none (all flattened nodes are included).
+   * Fields: index, text, contentDesc, id, class (Android class name shortened),
+   * bounds, isScrollable, isFocused, isEditable, hintText, error, isSelected.
+   *
+   * The grounder needs maximum context to map a natural-language target
+   * description to an element index reliably.
+   */
+  toPromptElementsForGrounder(platform?: string): Record<string, unknown>[] {
+    return this.flattenedHierarchy.map((node) => {
+      const out: Record<string, unknown> = { index: node.index };
+      if (node.text) out['text'] = node.text;
+      if (node.accessibilityText) out['contentDesc'] = node.accessibilityText;
+      if (node.id) out['id'] = node.id;
+      const simpleClass = Hierarchy._shortenAndroidClass(node.clazz, platform);
+      if (simpleClass) out['class'] = simpleClass;
+      if (node.bounds) out['bounds'] = node.bounds;
+      if (node.isScrollable) out['isScrollable'] = true;
+      if (node.isFocused) out['isFocused'] = true;
+      if (node.isEditable) out['isEditable'] = true;
+      if (node.hintText) out['hintText'] = node.hintText;
+      if (node.error) out['error'] = node.error;
+      if (node.isSelected) out['isSelected'] = true;
+      return out;
+    });
   }
 
   // ---------- private helpers ----------
+
+  /**
+   * Android classes come through fully qualified (e.g. `android.widget.Button`).
+   * Shorten to the last `.`-separated segment so prompts stay terse.
+   * iOS classes are left alone.
+   */
+  private static _shortenAndroidClass(
+    clazz: string | null,
+    platform: string | undefined,
+  ): string | null {
+    if (!clazz) return null;
+    if (platform !== PLATFORM_ANDROID) return clazz;
+    const parts = clazz.split('.');
+    return parts[parts.length - 1] ?? clazz;
+  }
 
   /**
    * Recursively parse a JSON node into a HierarchyNode.
@@ -345,23 +393,5 @@ export class Hierarchy {
     }
 
     return null;
-  }
-
-  /**
-   * Determine if a node is relevant for AI prompts.
-   * Filters out layout-only / container nodes that add noise.
-   */
-  private static _isRelevantForAI(node: HierarchyNode): boolean {
-    // Keep nodes that have any meaningful content
-    if (node.text) return true;
-    if (node.accessibilityText) return true;
-    if (node.id) return true;
-    if (node.hintText) return true;
-    if (node.isScrollable) return true;
-    if (node.isFocused) return true;
-    if (node.isEditable) return true;
-    if (node.isImage) return true;
-    if (node.isElementTypeButton()) return true;
-    return false;
   }
 }
