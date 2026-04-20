@@ -6,6 +6,15 @@ description: "Set up prerequisites, install the FinalRun CLI on macOS or Linux, 
 
 FinalRun runs as a Node.js CLI. This page walks you through the prerequisites, the install itself, and how to verify your machine is ready. Once `finalrun doctor` reports a clean bill of health, continue to the [Quickstart](/quickstart) to write and run your first test.
 
+<iframe
+  className="w-full aspect-video rounded-xl"
+  src="https://www.youtube.com/embed/ijnnpaIMGk4"
+  title="FinalRun installation walkthrough"
+  frameBorder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowFullScreen
+/>
+
 ## Prerequisites
 
 Before installing FinalRun, make sure your machine has the following in place.
@@ -99,19 +108,11 @@ You'll set the key during the Quickstart. See [AI Providers](/configuration/ai-p
 
 ## Install FinalRun
 
-**One-line install (recommended):**
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
 The script installs Node.js (if needed), the `finalrun` CLI globally, the bundled platform driver assets for Android and iOS, and the FinalRun AI agent skills for your coding agent.
-
-**npm (if you already have Node.js 20+):**
-
-```bash
-npm install -g @finalrun/finalrun-agent
-```
 
 ## Verify the installation
 
