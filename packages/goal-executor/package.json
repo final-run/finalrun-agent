@@ -1,6 +1,6 @@
 {
   "name": "@finalrun/goal-executor",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "AI-driven goal execution engine using Vercel AI SDK",
   "license": "Apache-2.0",
