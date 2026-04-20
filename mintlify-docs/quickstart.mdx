@@ -1,42 +1,13 @@
 ---
-title: "Quick start: install FinalRun and run your first test"
-sidebarTitle: "Quick Start"
-description: "Install the FinalRun CLI, configure your AI provider key, write a YAML test spec, and execute it on an Android emulator or iOS simulator."
+title: "Quickstart: run your first FinalRun test"
+sidebarTitle: "Quickstart"
+description: "Configure your AI provider key, create a minimal workspace, write a YAML test spec, and execute it on an Android emulator or iOS simulator."
 ---
 
-This guide walks you through installing FinalRun, creating a minimal workspace, writing a test, and executing it on a connected Android emulator or iOS simulator. By the end you'll have a working test run and know where to look for results.
+This guide assumes you've already completed [Installation](/installation) and that `finalrun doctor` reports your host as ready. You'll configure your AI provider key, create a minimal workspace, write a test, and execute it on a connected Android emulator or iOS simulator.
 
 <Steps>
-  <Step title="Install FinalRun">
-    Run the one-line install script. It sets up Node.js (if needed), installs the CLI globally, and installs the platform driver assets for Android and iOS.
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-    ```
-
-    Alternatively, if you already have Node.js 20 or later, you can install via npm:
-
-    ```bash
-    npm install -g @finalrun/finalrun-agent
-    ```
-  </Step>
-
-  <Step title="Verify installation">
-    Check that the CLI is available and that your host has the required platform tools:
-
-    ```bash
-    finalrun --help
-    finalrun doctor
-    ```
-
-    `finalrun doctor` checks for `adb`, `emulator`, `scrcpy` (Android), and Xcode command line tools (iOS). Fix any issues it reports before continuing.
-
-    <Tip>
-      Run `finalrun check` from inside your project directory before executing tests. It validates your workspace config, environment bindings, and suite manifests without launching a device.
-    </Tip>
-  </Step>
-
-  <Step title="Set up your AI provider key">
+  <Step title="Set your AI provider key">
     FinalRun uses your own AI provider API key. Create a `.env` file at the root of your project with the key for your chosen provider:
 
     <CodeGroup>
@@ -109,11 +80,13 @@ This guide walks you through installing FinalRun, creating a minimal workspace, 
       - The user's name appears in the header.
     ```
 
-    The `${secrets.email}` and `${secrets.password}` placeholders are resolved from your `.env` file or environment variables at runtime. To use them, add the values to your `.env`:
+    The `${secrets.email}` and `${secrets.password}` placeholders are resolved at runtime. To use them, **append** the values to your existing `.env` (use `>>`, not `>`, so you don't overwrite the API key you set in step 1):
 
     ```bash
+    cat >> .env <<'EOF'
     TEST_USER_EMAIL=test@example.com
     TEST_USER_PASSWORD=password123
+    EOF
     ```
 
     Then declare the bindings in `.finalrun/env/dev.yaml`:
@@ -139,6 +112,10 @@ This guide walks you through installing FinalRun, creating a minimal workspace, 
     </CodeGroup>
 
     FinalRun will boot the emulator or simulator, install the app, and begin executing the test steps. You'll see live output as the AI works through each action.
+
+    <Tip>
+      Run `finalrun check` from inside your project directory before executing tests. It validates your workspace config, environment bindings, and suite manifests without launching a device.
+    </Tip>
   </Step>
 
   <Step title="View results">
