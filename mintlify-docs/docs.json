@@ -8,8 +8,8 @@
     "dark": "#6c4cfc"
   },
   "logo": {
-    "light": "https://media.brand.dev/3ece83f5-5543-48fb-bd61-213417b8ba98.png",
-    "dark": "https://media.brand.dev/3ece83f5-5543-48fb-bd61-213417b8ba98.png"
+    "light": "/logo/finalrun-logo.png",
+    "dark": "/logo/finalrun-logo-dark-theme.png"
   },
   "favicon": "https://media.brand.dev/31164f48-397c-4036-929b-8153e11d15c1.jpg",
   "navbar": {
@@ -26,7 +26,6 @@
           {
             "group": "Get Started",
             "pages": [
-              "introduction",
               "quickstart",
               "installation"
             ]

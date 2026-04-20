@@ -3,59 +3,59 @@ title: "FinalRun: AI-powered Android and iOS test automation"
 description: "FinalRun lets you write plain-English test specs in YAML and run them on Android and iOS using AI models like Gemini, GPT, or Claude."
 ---
 
-FinalRun is an AI-driven testing CLI that runs your Android and iOS apps through real user scenarios — written in plain English, executed by AI on a real device or emulator. You describe what to test in a YAML file; FinalRun taps, swipes, types, and verifies on your behalf, then produces a pass/fail report with video, screenshots, and device logs.
+FinalRun is an AI-driven CLI that tests your Android and iOS apps using natural language. You write scenarios in YAML — describing actions the way a person would — and FinalRun launches your app on a real device or emulator, uses an AI model to see the screen, and performs each action: tapping, swiping, typing, and verifying the result. When the run finishes, you get a pass/fail report with video, screenshots, and device logs.
+
+<iframe
+  className="w-full aspect-video rounded-xl"
+  src="https://www.youtube.com/embed/nWQYs3Uz-1w"
+  title="FinalRun demo"
+  frameBorder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowFullScreen
+/>
+
+## How it works
+
+FinalRun connects an AI model to a running device. The AI reads the live screen, interprets your plain-English instructions, decides what action to take, and repeats until the test is complete or a failure is detected. Every test file has three phases:
+
+- **`setup`** — optional actions that prepare clean state before the test starts (e.g., clear app data)
+- **`steps`** — the ordered natural-language instructions the AI executes
+- **`expected_state`** — the UI state the AI verifies after all steps complete
+
+```yaml
+name: login_smoke
+description: Verify that a user can log in and reach the home screen.
+
+setup:
+  - Clear app data.
+
+steps:
+  - Launch the app.
+  - Enter ${secrets.email} on the login screen.
+  - Enter ${secrets.password} on the password screen.
+  - Tap the login button.
+
+expected_state:
+  - The home screen is visible.
+  - The user's name appears in the header.
+```
+
+## Get started
 
 <CardGroup cols={2}>
   <Card title="Quick Start" icon="rocket" href="/quickstart">
     Install FinalRun and run your first test in minutes.
   </Card>
-  <Card title="Write Tests" icon="file-lines" href="/tests/yaml-format">
-    Learn the YAML test format for natural-language mobile testing.
+  <Card title="YAML test format" icon="file-lines" href="/tests/yaml-format">
+    Learn the full test spec format: fields, placeholders, and suites.
   </Card>
-  <Card title="CLI Reference" icon="terminal" href="/running/cli-reference">
+  <Card title="CLI reference" icon="terminal" href="/running/cli-reference">
     Every command, flag, and option available in the finalrun CLI.
   </Card>
-  <Card title="AI Agent Skills" icon="wand-magic-sparkles" href="/running/ai-agent-skills">
+  <Card title="AI agent skills" icon="wand-magic-sparkles" href="/running/ai-agent-skills">
     Use AI coding agents to generate, run, and fix tests automatically.
   </Card>
 </CardGroup>
-
-## How FinalRun works
-
-FinalRun connects an AI model to a real device or emulator. You write a test spec describing what a user would do; the AI reads the screen, performs each action, and checks the result.
-
-<Steps>
-  <Step title="Install the CLI">
-    Run the one-line install script to get FinalRun, Node.js, and all platform tools set up.
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-    ```
-  </Step>
-  <Step title="Add your AI key">
-    FinalRun uses your own AI provider key (Google, OpenAI, or Anthropic) — no account signup needed.
-    ```bash
-    echo "GOOGLE_API_KEY=your-key-here" > .env
-    ```
-  </Step>
-  <Step title="Write a test">
-    Create a YAML file in `.finalrun/tests/` describing steps in plain English.
-    ```yaml
-    name: login_smoke
-    steps:
-      - Launch the app.
-      - Enter ${secrets.email} on the login screen.
-      - Tap the Login button.
-    expected_state:
-      - The home screen is visible.
-    ```
-  </Step>
-  <Step title="Run it">
-    Execute the test on Android or iOS with a single command.
-    ```bash
-    finalrun test login_smoke.yaml --platform android --model google/gemini-3-flash-preview
-    ```
-  </Step>
-</Steps>
 
 <CardGroup cols={2}>
   <Card title="Configuration" icon="gear" href="/configuration/workspace">
