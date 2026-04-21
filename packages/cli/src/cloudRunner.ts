@@ -6,7 +6,7 @@ import { Logger } from '@finalrun/common';
 import { runCheck } from './checkRunner.js';
 import { inspectApp, formatAppInfo, type AppMetadata } from './appInspector.js';
 
-const FINALRUN_CLOUD_URL = process.env['FINALRUN_CLOUD_URL'] || 'https://cloud.finalrun.io';
+const FINALRUN_CLOUD_URL = process.env['FINALRUN_CLOUD_URL'] || 'https://cloud-dev.finalrun.app';
 const FINALRUN_API_KEY = process.env['FINALRUN_API_KEY'] || '';
 
 function getAuthHeaders(): Record<string, string> {
