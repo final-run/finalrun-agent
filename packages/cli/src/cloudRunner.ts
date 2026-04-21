@@ -27,26 +27,6 @@ export interface CloudRunnerOptions {
   appPath?: string;
 }
 
-interface AppUploadEntry {
-  id: string;
-  filename: string;
-  createdAt: string;
-}
-
-async function fetchLatestAppUpload(): Promise<AppUploadEntry> {
-  const res = await fetch(`${FINALRUN_CLOUD_URL}/api/v1/app_uploads`, {
-    headers: getAuthHeaders(),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch app uploads (HTTP ${res.status})`);
-  }
-  const data = (await res.json()) as { success: boolean; appUploads: AppUploadEntry[] };
-  if (!data.success || !data.appUploads || data.appUploads.length === 0) {
-    throw new Error('No app uploaded yet. Use --app <path> to upload one.');
-  }
-  return data.appUploads[0]!;
-}
-
 export async function runCloud(options: CloudRunnerOptions): Promise<void> {
   Logger.i('Preparing cloud run...');
 
@@ -59,8 +39,9 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
     requireSelection: true,
   });
 
-  // 2. Resolve app — either from --app flag or latest upload
-  let appMode: { type: 'file'; path: string } | { type: 'existing'; upload: AppUploadEntry };
+  // 2. Resolve app — either from --app flag or let the server auto-pick
+  //    the latest app_upload for this org + platform at submit time.
+  let appMode: { type: 'file'; path: string } | { type: 'server-default' };
 
   let inlineMetadata: AppMetadata | undefined;
   if (options.appPath) {
@@ -91,10 +72,8 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
 
     appMode = { type: 'file', path: options.appPath };
   } else {
-    const latest = await fetchLatestAppUpload();
-    const uploadTime = new Date(latest.createdAt).toLocaleString(undefined, { timeZoneName: 'short' });
-    console.log(`\n  Using app: \x1b[36m${latest.filename}\x1b[0m (uploaded ${uploadTime})\n`);
-    appMode = { type: 'existing', upload: latest };
+    console.log(`\n  No --app provided; server will use the latest app uploaded for platform '${options.platform}'.\n`);
+    appMode = { type: 'server-default' };
   }
 
   // 3. Collect resolved file paths
@@ -195,8 +174,13 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
       formData.append('platform', options.platform);
     }
 
-    // Attach app binary or reference existing upload
+    // Attach app binary only when --app was passed. Otherwise the server
+    // resolves the latest app_upload for this org + platform at submit time.
     let spinnerMessage: string;
+    const submissionLabel = options.suitePath
+      ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
+      : `${checked.tests.length} test(s)`;
+
     if (appMode.type === 'file') {
       const appBuffer = fs.readFileSync(appMode.path);
       const appFileName = path.basename(appMode.path);
@@ -211,17 +195,10 @@ export async function runCloud(options: CloudRunnerOptions): Promise<void> {
         formData.append('packageName', inlineMetadata.packageName);
       }
 
-      const submissionLabel = options.suitePath
-        ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
-        : `${checked.tests.length} test(s)`;
       spinnerMessage = `Uploading ${appFileName} (${formatBytes(appSize)}) and submitting ${submissionLabel}...`;
     } else {
-      formData.append('appUploadId', appMode.upload.id);
-
-      const submissionLabel = options.suitePath
-        ? `suite ${path.basename(options.suitePath)} (${checked.tests.length} test(s))`
-        : `${checked.tests.length} test(s)`;
-      spinnerMessage = `Submitting ${submissionLabel} with ${appMode.upload.filename}...`;
+      // server-default: no app fields on the request; server picks latest
+      spinnerMessage = `Submitting ${submissionLabel} (using latest uploaded app)...`;
     }
 
     const uploadStart = Date.now();
