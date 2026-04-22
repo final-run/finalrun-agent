@@ -1,13 +1,29 @@
 {
   "name": "@finalrun/report-web",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "private": true,
-  "description": "Local FinalRun report app",
+  "description": "Local FinalRun report app + importable React UI library",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    "./ui": {
+      "types": "./dist/ui/index.d.mts",
+      "import": "./dist/ui/index.mjs"
+    },
+    "./ui/styles.css": "./dist/ui/styles.css"
+  },
+  "files": [
+    "dist/ui",
+    "src/ui"
+  ],
   "scripts": {
     "dev": "next dev --webpack --hostname 127.0.0.1 --port 4173",
     "build": "next build --webpack",
+    "build:lib": "tsup && node scripts/build-styles.mjs",
     "start": "next start --hostname 127.0.0.1 --port 4173",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts",
+    "prepublishOnly": "npm run build:lib"
   },
   "dependencies": {
     "@finalrun/common": "*",
@@ -18,6 +34,7 @@
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "tsup": "^8.5.1",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0"
   }

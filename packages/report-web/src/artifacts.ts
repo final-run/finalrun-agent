@@ -1,7 +1,6 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
-import { Readable } from 'node:stream';
 import type {
   RunIndexEntry,
   RunIndex,
@@ -180,12 +179,7 @@ export async function loadArtifactResponse(
   if (byteRange) {
     const contentLength = byteRange.end - byteRange.start + 1;
     return {
-      body: Readable.toWeb(
-        fs.createReadStream(filePath, {
-          start: byteRange.start,
-          end: byteRange.end,
-        }),
-      ) as ReadableStream,
+      body: createFileStream(filePath, { start: byteRange.start, end: byteRange.end }),
       contentType,
       status: 206,
       headers: {
@@ -198,7 +192,7 @@ export async function loadArtifactResponse(
   }
 
   return {
-    body: Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream,
+    body: createFileStream(filePath),
     contentType,
     status: 200,
     headers: {
@@ -207,6 +201,41 @@ export async function loadArtifactResponse(
       'content-type': contentType,
     },
   };
+}
+
+// Wraps an fs.createReadStream in a Web ReadableStream with cancellation-safe
+// semantics. HTML5 video scrubbing aborts range requests mid-stream; the
+// default Readable.toWeb() bridge treats the cleanup-time enqueue as an
+// uncaught error. This helper destroys the fs stream on cancel and ignores
+// "controller closed" races.
+function createFileStream(
+  filePath: string,
+  options?: { start: number; end: number },
+): ReadableStream<Uint8Array> {
+  const nodeStream = fs.createReadStream(filePath, options);
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on('data', (chunk) => {
+        try {
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+          controller.enqueue(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+        } catch {
+          // Downstream closed while we were pushing. Stop reading.
+          nodeStream.destroy();
+        }
+      });
+      nodeStream.on('end', () => {
+        try { controller.close(); } catch { /* already closed */ }
+      });
+      nodeStream.on('error', (err) => {
+        try { controller.error(err); } catch { /* already closed */ }
+      });
+    },
+    cancel() {
+      nodeStream.destroy();
+    },
+  });
 }
 
 export function renderHtmlErrorPage(params: {
