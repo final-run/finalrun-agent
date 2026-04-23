@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "composite": false,
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "noEmit": false,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", ".next", "dist", "**/*.test.ts"]
+}

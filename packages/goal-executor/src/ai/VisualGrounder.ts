@@ -74,11 +74,19 @@ export class VisualGrounder {
       // Check for error
       if (output['isError']) {
         Logger.w(`Visual grounding failed: ${output['reason']}`);
-        return { success: false, reason: output['reason'] as string, trace: response.trace };
+        return {
+          success: false,
+          reason: output['reason'] as string,
+          trace: response.trace,
+        };
       }
 
       Logger.w('Visual grounding returned unexpected format');
-      return { success: false, reason: 'Unexpected response format', trace: response.trace };
+      return {
+        success: false,
+        reason: 'Unexpected response format',
+        trace: response.trace,
+      };
     } catch (error) {
       if (FatalProviderError.isInstance(error)) {
         throw error;

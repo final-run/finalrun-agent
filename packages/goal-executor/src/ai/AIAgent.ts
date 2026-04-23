@@ -529,7 +529,7 @@ export class AIAgent {
     });
 
     let output: unknown;
-    let text: string;
+    let text = '';
     let reasoningText: string | undefined;
     try {
       const result = await generateText({
@@ -573,6 +573,7 @@ export class AIAgent {
     );
     return { output, text };
   }
+
 
   /**
    * Resolve the effective provider / model / reasoning for a feature by
