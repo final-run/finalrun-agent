@@ -1,99 +1,93 @@
+// Local report HTTP server. Spawned by reportServerManager as a detached
+// child process via `finalrun internal-report-server`.
+//
+// Routes (in order):
+//   GET  /health                       -> JSON health probe
+//   GET  /api/report/index             -> ReportIndexViewModel JSON
+//   GET  /api/report/runs/:runId       -> ReportRunManifest JSON
+//   GET  /artifacts/<...>              -> streamed artifact file (Range-aware)
+//   HEAD /artifacts/<...>              -> same, headers only (video scrubbing)
+//   GET  /*                            -> Vite SPA static bundle (index.html fallback for deep links)
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
-import { createServer } from 'node:http';
-import type {
-  RunIndexEntry,
-  RunIndex,
-  RunManifest,
-  TestDefinition,
-  TestResult,
-} from '@finalrun/common';
-import { loadRunIndex } from './runIndex.js';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
-  renderRunIndexHtml,
-  type ReportIndexRunRecord,
-  type ReportIndexViewModel,
-} from './reportIndexTemplate.js';
-import {
-  renderHtmlReport,
-  type ReportManifestSelectedTestRecord,
-  type ReportManifestTestRecord,
-  type ReportRunManifest,
-} from './reportTemplate.js';
+  loadReportIndexViewModel,
+  loadReportRunManifestViewModel,
+  type ReportWorkspaceContext,
+} from './reportViewModel.js';
+import { decodeArtifactPath, serveArtifactHttp } from './reportArtifactStream.js';
+import { REPORT_CONTENT_TYPES } from './contentTypes.js';
 
-const CONTENT_TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.log': 'text/plain; charset=utf-8',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.mov': 'video/quicktime',
-  '.mp4': 'video/mp4',
-  '.yaml': 'text/yaml; charset=utf-8',
-  '.yml': 'text/yaml; charset=utf-8',
-};
+// When compiled to CommonJS under Node16, __dirname resolves to dist/src/.
+// The SPA bundle is copied alongside at dist/report-app/ by the CLI build.
+const SPA_DIR = path.resolve(__dirname, '..', 'report-app');
 
 export async function serveReportWorkspace(params: {
   workspaceRoot: string;
   artifactsDir: string;
   port: number;
 }): Promise<{ url: string; close(): Promise<void> }> {
-  const rootDir = path.resolve(params.artifactsDir);
+  const artifactsDir = path.resolve(params.artifactsDir);
   const workspaceRoot = path.resolve(params.workspaceRoot);
+  const context: ReportWorkspaceContext = { workspaceRoot, artifactsDir };
 
   const server = createServer(async (request, response) => {
     try {
+      const method = request.method ?? 'GET';
       const requestPath = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
 
       if (requestPath === '/health') {
-        response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        response.end(JSON.stringify({
+        writeJson(response, 200, {
           status: 'ok',
           workspaceRoot,
-          artifactsDir: rootDir,
+          artifactsDir,
           pid: process.pid,
-        }));
+        });
         return;
       }
 
-      if (requestPath === '/') {
-        const index = await loadRunIndex(rootDir);
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end(renderRunIndexHtml(await buildReportIndexViewModel(index, rootDir)));
+      if (requestPath === '/api/report/index') {
+        writeJson(response, 200, await loadReportIndexViewModel(context));
         return;
       }
 
-      const runMatch = /^\/runs\/([^/]+)$/.exec(requestPath);
-      if (runMatch) {
-        const runId = decodeURIComponent(runMatch[1] ?? '');
-        const manifest = await loadRunManifest(rootDir, runId);
-        if (!manifest) {
-          response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-          response.end(`Run not found: ${runId}`);
-          return;
+      const runApiMatch = /^\/api\/report\/runs\/([^/]+)$/.exec(requestPath);
+      if (runApiMatch) {
+        const runId = decodeURIComponent(runApiMatch[1] ?? '');
+        try {
+          writeJson(response, 200, await loadReportRunManifestViewModel(runId, context));
+        } catch (error) {
+          writeJson(response, 404, {
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
-
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end(renderHtmlReport(await buildReportRunManifestViewModel(manifest, rootDir)));
         return;
       }
 
-      if (requestPath.startsWith('/artifacts/')) {
-        await serveArtifactFile({
-          artifactsDir: rootDir,
+      if (requestPath.startsWith('/artifacts/') && (method === 'GET' || method === 'HEAD')) {
+        await serveArtifactHttp({
+          artifactsDir,
           relativePath: decodeArtifactPath(requestPath.slice('/artifacts/'.length)),
-          rangeHeader: request.headers.range,
+          request,
           response,
         });
         return;
       }
 
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('Not found');
+      if (method === 'GET' || method === 'HEAD') {
+        await serveSpaAsset(requestPath, request, response);
+        return;
+      }
+
+      response.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Method Not Allowed');
     } catch (error) {
-      response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      if (!response.headersSent) {
+        response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      }
       response.end(error instanceof Error ? error.message : String(error));
     }
   });
@@ -127,400 +121,103 @@ export async function serveReportWorkspace(params: {
   };
 }
 
-async function loadRunManifest(
-  artifactsDir: string,
-  runId: string,
-): Promise<RunManifest | undefined> {
-  try {
-    const raw = await fsp.readFile(path.join(artifactsDir, runId, 'run.json'), 'utf-8');
-    const parsed = JSON.parse(raw) as RunManifest;
-    if (parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3) {
-      return undefined;
-    }
-    return parsed;
-  } catch {
-    return undefined;
-  }
-}
+async function serveSpaAsset(
+  requestPath: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const headOnly = request.method === 'HEAD';
+  const assetPath = requestPath === '/' ? '/index.html' : requestPath;
+  const resolved = path.resolve(SPA_DIR, '.' + assetPath);
 
-async function serveArtifactFile(params: {
-  artifactsDir: string;
-  relativePath: string;
-  rangeHeader?: string | string[];
-  response: NodeJS.WritableStream & {
-    writeHead(statusCode: number, headers: Record<string, string>): void;
-    end(chunk?: string): void;
-  };
-}): Promise<void> {
-  const resolvedPath = path.resolve(params.artifactsDir, params.relativePath);
-  if (!resolvedPath.startsWith(params.artifactsDir)) {
-    params.response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-    params.response.end('Forbidden');
+  if (!resolved.startsWith(SPA_DIR + path.sep) && resolved !== SPA_DIR) {
+    response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end(headOnly ? undefined : 'Forbidden');
     return;
   }
 
+  let served = await tryServeFile(resolved, response, headOnly, requestPath);
+  if (served) return;
+
+  // SPA fallback: any unknown path serves index.html so client-side routes
+  // resolve on deep-link reload.
+  served = await tryServeFile(path.join(SPA_DIR, 'index.html'), response, headOnly, '/index.html');
+  if (served) return;
+
+  response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+  response.end(headOnly ? undefined : 'Report UI bundle not found. Rebuild the CLI.');
+}
+
+async function tryServeFile(
+  filePath: string,
+  response: ServerResponse,
+  headOnly: boolean,
+  logicalPath: string,
+): Promise<boolean> {
   let stats;
   try {
-    stats = await fsp.stat(resolvedPath);
+    stats = await fsp.stat(filePath);
   } catch {
-    params.response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    params.response.end('Not found');
-    return;
+    return false;
   }
+  if (!stats.isFile()) return false;
 
-  if (!stats.isFile()) {
-    params.response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    params.response.end('Not found');
-    return;
-  }
-
-  const rangeHeader = Array.isArray(params.rangeHeader)
-    ? params.rangeHeader[0]
-    : params.rangeHeader;
-  const byteRange = parseByteRange(rangeHeader, stats.size);
   const contentType =
-    CONTENT_TYPES[path.extname(resolvedPath).toLowerCase()] ?? 'application/octet-stream';
+    REPORT_CONTENT_TYPES[path.extname(filePath).toLowerCase()] ??
+    guessSpaContentType(filePath) ??
+    'application/octet-stream';
 
-  if (byteRange) {
-    params.response.writeHead(206, {
-      'Accept-Ranges': 'bytes',
-      'Content-Length': String(byteRange.end - byteRange.start + 1),
-      'Content-Range': `bytes ${byteRange.start}-${byteRange.end}/${stats.size}`,
-      'Content-Type': contentType,
-    });
-    fs.createReadStream(resolvedPath, {
-      start: byteRange.start,
-      end: byteRange.end,
-    }).pipe(params.response);
-    return;
-  }
+  const cacheControl = isImmutableAsset(logicalPath)
+    ? 'public, max-age=31536000, immutable'
+    : 'no-store';
 
-  params.response.writeHead(200, {
-    'Accept-Ranges': 'bytes',
-    'Content-Length': String(stats.size),
+  response.writeHead(200, {
     'Content-Type': contentType,
+    'Content-Length': String(stats.size),
+    'Cache-Control': cacheControl,
   });
-  fs.createReadStream(resolvedPath).pipe(params.response);
+  if (headOnly) {
+    response.end();
+    return true;
+  }
+  fs.createReadStream(filePath).pipe(response);
+  return true;
 }
 
-function parseByteRange(
-  rangeHeader: string | undefined,
-  totalSize: number,
-): { start: number; end: number } | undefined {
-  if (!rangeHeader) {
-    return undefined;
-  }
+function isImmutableAsset(logicalPath: string): boolean {
+  return logicalPath.startsWith('/assets/');
+}
 
-  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
-  if (!match) {
-    return undefined;
-  }
-
-  const [, startValue, endValue] = match;
-  if (startValue === '' && endValue === '') {
-    return undefined;
-  }
-
-  if (startValue === '') {
-    const suffixLength = parseInt(endValue, 10);
-    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+function guessSpaContentType(filePath: string): string | undefined {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.js':
+    case '.mjs':
+      return 'application/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.ico':
+      return 'image/x-icon';
+    case '.webmanifest':
+    case '.map':
+      return 'application/json; charset=utf-8';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
+    case '.ttf':
+      return 'font/ttf';
+    default:
       return undefined;
-    }
-    const start = Math.max(0, totalSize - suffixLength);
-    return { start, end: totalSize - 1 };
-  }
-
-  const start = parseInt(startValue, 10);
-  const requestedEnd = endValue === '' ? totalSize - 1 : parseInt(endValue, 10);
-  if (!Number.isFinite(start) || !Number.isFinite(requestedEnd)) {
-    return undefined;
-  }
-  if (start < 0 || start >= totalSize) {
-    return undefined;
-  }
-
-  const end = Math.min(requestedEnd, totalSize - 1);
-  if (end < start) {
-    return undefined;
-  }
-
-  return { start, end };
-}
-
-function decodeArtifactPath(rawRelativePath: string): string {
-  return rawRelativePath
-    .split('/')
-    .filter((segment) => segment.length > 0)
-    .map((segment) => decodeURIComponent(segment))
-    .join('/');
-}
-
-function buildRunRoute(runId: string): string {
-  return `/runs/${encodeURIComponent(runId)}`;
-}
-
-function buildArtifactRoute(relativePath: string): string {
-  return `/artifacts/${relativePath
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '')
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')}`;
-}
-
-export async function buildReportIndexViewModel(
-  index: RunIndex,
-  artifactsDir: string,
-): Promise<ReportIndexViewModel> {
-  const runs = await Promise.all(
-    index.runs.map(async (run) => await enrichRunIndexEntry(run, artifactsDir)),
-  );
-  const passedRuns = runs.filter((run) => run.success).length;
-
-  return {
-    generatedAt: index.generatedAt,
-    summary: {
-      totalRuns: runs.length,
-      totalSuccessRate: runs.length === 0 ? 0 : (passedRuns / runs.length) * 100,
-      totalDurationMs: runs.reduce((total, run) => total + Number(run.durationMs || 0), 0),
-    },
-    runs,
-  };
-}
-
-export async function buildReportRunManifestViewModel(
-  manifest: RunManifest,
-  artifactsDir: string,
-): Promise<ReportRunManifest> {
-  const runId = manifest.run.runId;
-  const snapshotCache = new Map<string, Promise<string | undefined>>();
-  const readSnapshotYamlText = async (snapshotYamlPath: string): Promise<string | undefined> => {
-    let cached = snapshotCache.get(snapshotYamlPath);
-    if (!cached) {
-      cached = readRunArtifactText(artifactsDir, runId, snapshotYamlPath);
-      snapshotCache.set(snapshotYamlPath, cached);
-    }
-    return await cached;
-  };
-  const readDeviceLogTail = async (deviceLogPath: string): Promise<string | undefined> => {
-    const content = await readRunArtifactText(artifactsDir, runId, deviceLogPath);
-    if (!content) {
-      return undefined;
-    }
-    const lines = content.split('\n');
-    const maxLines = 500;
-    if (lines.length > maxLines) {
-      return `[… ${lines.length - maxLines} lines truncated]\n${lines.slice(-maxLines).join('\n')}`;
-    }
-    return content;
-  };
-
-  const { tests: _tests, input: _input, ...rest } = manifest;
-  const { tests: _inputTests, ...inputRest } = manifest.input;
-  return {
-    ...rest,
-    input: {
-      ...inputRest,
-      suite: manifest.input.suite
-        ? {
-            ...manifest.input.suite,
-            snapshotYamlPath: manifest.input.suite.snapshotYamlPath
-              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotYamlPath)
-              : undefined,
-            snapshotJsonPath: manifest.input.suite.snapshotJsonPath
-              ? buildRunScopedArtifactPath(runId, manifest.input.suite.snapshotJsonPath)
-              : undefined,
-          }
-        : undefined,
-      tests: await Promise.all(
-        manifest.input.tests.map(async (test) => await toSelectedTestViewModel(runId, test, readSnapshotYamlText)),
-      ),
-    },
-    tests: await Promise.all(
-      manifest.tests.map(async (test) => await toTestViewModel(runId, test, readSnapshotYamlText, readDeviceLogTail)),
-    ),
-    paths: {
-      ...manifest.paths,
-      runJson: buildRunScopedArtifactPath(runId, manifest.paths.runJson),
-      summaryJson: buildRunScopedArtifactPath(runId, manifest.paths.summaryJson),
-      log: buildRunScopedArtifactPath(runId, manifest.paths.log),
-      runContextJson: manifest.paths.runContextJson
-        ? buildRunScopedArtifactPath(runId, manifest.paths.runContextJson)
-        : undefined,
-    },
-  };
-}
-
-async function toSelectedTestViewModel(
-  runId: string,
-  test: TestDefinition,
-  readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
-): Promise<ReportManifestSelectedTestRecord> {
-  return {
-    ...test,
-    snapshotYamlPath: test.snapshotYamlPath
-      ? buildRunScopedArtifactPath(runId, test.snapshotYamlPath)
-      : undefined,
-    snapshotJsonPath: test.snapshotJsonPath
-      ? buildRunScopedArtifactPath(runId, test.snapshotJsonPath)
-      : undefined,
-    snapshotYamlText: test.snapshotYamlPath
-      ? await readSnapshotYamlText(test.snapshotYamlPath)
-      : undefined,
-  };
-}
-
-async function toTestViewModel(
-  runId: string,
-  test: TestResult,
-  readSnapshotYamlText: (snapshotYamlPath: string) => Promise<string | undefined>,
-  readDeviceLogTail: (deviceLogPath: string) => Promise<string | undefined>,
-): Promise<ReportManifestTestRecord> {
-  return {
-    ...test,
-    snapshotYamlPath: test.snapshotYamlPath
-      ? buildRunScopedArtifactPath(runId, test.snapshotYamlPath)
-      : undefined,
-    snapshotJsonPath: test.snapshotJsonPath
-      ? buildRunScopedArtifactPath(runId, test.snapshotJsonPath)
-      : undefined,
-    snapshotYamlText: test.snapshotYamlPath
-      ? await readSnapshotYamlText(test.snapshotYamlPath)
-      : undefined,
-    deviceLogFile: test.deviceLogFile
-      ? buildRunScopedArtifactPath(runId, test.deviceLogFile)
-      : undefined,
-    deviceLogTailText: test.deviceLogFile
-      ? await readDeviceLogTail(test.deviceLogFile)
-      : undefined,
-    previewScreenshotPath: test.previewScreenshotPath
-      ? buildRunScopedArtifactPath(runId, test.previewScreenshotPath)
-      : undefined,
-    resultJsonPath: test.resultJsonPath
-      ? buildRunScopedArtifactPath(runId, test.resultJsonPath)
-      : undefined,
-    recordingFile: test.recordingFile
-      ? buildRunScopedArtifactPath(runId, test.recordingFile)
-      : undefined,
-    steps: test.steps.map((step) => ({
-      ...step,
-      screenshotFile: step.screenshotFile
-        ? buildRunScopedArtifactPath(runId, step.screenshotFile)
-        : undefined,
-      stepJsonFile: step.stepJsonFile
-        ? buildRunScopedArtifactPath(runId, step.stepJsonFile)
-        : undefined,
-    })),
-    firstFailure: test.firstFailure
-      ? {
-          ...test.firstFailure,
-          screenshotPath: test.firstFailure.screenshotPath
-            ? buildRunScopedArtifactPath(runId, test.firstFailure.screenshotPath)
-            : undefined,
-          stepJsonPath: test.firstFailure.stepJsonPath
-            ? buildRunScopedArtifactPath(runId, test.firstFailure.stepJsonPath)
-            : undefined,
-        }
-      : undefined,
-  };
-}
-
-function buildRunScopedArtifactPath(runId: string, relativePath: string): string {
-  return buildArtifactRoute(`${runId}/${relativePath}`);
-}
-
-async function readRunArtifactText(
-  artifactsDir: string,
-  runId: string,
-  artifactPath: string,
-): Promise<string | undefined> {
-  const normalizedPath = normalizeRunArtifactPath(runId, artifactPath);
-  if (!normalizedPath) {
-    return undefined;
-  }
-
-  try {
-    return await fsp.readFile(path.join(artifactsDir, runId, normalizedPath), 'utf-8');
-  } catch {
-    return undefined;
   }
 }
 
-function normalizeRunArtifactPath(runId: string, artifactPath: string): string | undefined {
-  const normalized = artifactPath.replace(/\\/g, '/').replace(/^\/+/, '');
-  if (normalized.length === 0) {
-    return undefined;
-  }
-
-  if (!normalized.startsWith('artifacts/')) {
-    return normalized;
-  }
-
-  const withoutArtifactsPrefix = normalized.slice('artifacts/'.length);
-  if (withoutArtifactsPrefix.startsWith(`${runId}/`)) {
-    return withoutArtifactsPrefix.slice(runId.length + 1);
-  }
-
-  return undefined;
-}
-
-async function enrichRunIndexEntry(
-  run: RunIndexEntry,
-  artifactsDir: string,
-): Promise<ReportIndexRunRecord> {
-  const manifest = await loadRunManifest(artifactsDir, run.runId);
-  const selectedTests = manifest?.input.tests ?? [];
-
-  return {
-    ...run,
-    displayName: deriveRunDisplayName(run, manifest),
-    displayKind: deriveRunDisplayKind(run, manifest),
-    triggeredFrom: run.target?.type === 'suite' ? 'Suite' : 'Direct',
-    selectedTestCount: selectedTests.length > 0 ? selectedTests.length : run.testCount,
-    paths: {
-      ...run.paths,
-      log: buildArtifactRoute(run.paths.log),
-      runJson: buildArtifactRoute(run.paths.runJson),
-    },
-  };
-}
-
-function deriveRunDisplayName(
-  run: RunIndexEntry,
-  manifest: RunManifest | undefined,
-): string {
-  if (run.target?.type === 'suite' && run.target.suiteName) {
-    return run.target.suiteName;
-  }
-
-  const selectedTests = manifest?.input.tests ?? [];
-  if (selectedTests.length === 1) {
-    return selectedTests[0]?.name || selectedTests[0]?.relativePath || run.runId;
-  }
-  if (selectedTests.length > 1) {
-    const firstLabel =
-      selectedTests[0]?.name || selectedTests[0]?.relativePath || 'Selected tests';
-    return `${firstLabel} +${selectedTests.length - 1} more`;
-  }
-
-  return run.runId;
-}
-
-function deriveRunDisplayKind(
-  run: RunIndexEntry,
-  manifest: RunManifest | undefined,
-): ReportIndexRunRecord['displayKind'] {
-  if (run.target?.type === 'suite') {
-    return 'suite';
-  }
-
-  const selectedCount = manifest?.input.tests?.length ?? run.testCount;
-  if (selectedCount === 1) {
-    return 'single_test';
-  }
-  if (selectedCount > 1) {
-    return 'multi_test';
-  }
-
-  return 'fallback';
+function writeJson(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  response.end(JSON.stringify(body));
 }

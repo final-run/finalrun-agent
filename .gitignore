@@ -23,6 +23,7 @@ packages/*/coverage/
 
 # npm pack artifacts
 /finalrun-agent-*.tgz
+packages/*/*.tgz
 
 # Local environment files
 .env

@@ -1,41 +1,54 @@
 {
   "name": "@finalrun/report-web",
   "version": "0.2.0",
-  "private": true,
-  "description": "Local FinalRun report app + importable React UI library",
+  "description": "Local FinalRun report SPA + importable React UI library",
+  "license": "Apache-2.0",
   "sideEffects": [
     "**/*.css"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     "./ui": {
       "types": "./dist/ui/index.d.mts",
       "import": "./dist/ui/index.mjs"
     },
-    "./ui/styles.css": "./dist/ui/styles.css"
+    "./ui/styles.css": "./dist/ui/styles.css",
+    "./routes": {
+      "types": "./dist/routes/index.d.mts",
+      "import": "./dist/routes/index.mjs"
+    }
   },
   "files": [
-    "dist/ui",
-    "src/ui"
+    "dist",
+    "src/ui",
+    "src/routes",
+    "src/fetchers.ts",
+    "src/artifacts.ts"
   ],
   "scripts": {
-    "dev": "next dev --webpack --hostname 127.0.0.1 --port 4173",
-    "build": "next build --webpack",
+    "dev": "vite",
+    "build:app": "vite build",
     "build:lib": "tsup && node scripts/build-styles.mjs",
-    "start": "next start --hostname 127.0.0.1 --port 4173",
+    "build": "npm run build:lib && npm run build:app",
+    "preview": "vite preview",
     "test": "tsx --test src/**/*.test.ts",
-    "prepublishOnly": "npm run build:lib"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@finalrun/common": "*",
-    "next": "^16.2.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.14.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
     "tsup": "^8.5.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vite": "^7.3.2"
   }
 }
