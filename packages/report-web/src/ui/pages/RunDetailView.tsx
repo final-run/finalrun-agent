@@ -19,6 +19,7 @@ import {
   type ReportTestListItem,
 } from '../viewModel';
 import { initRunDetailController, selectTest, handlePrimaryBack } from '../client/runDetailController';
+import { updateControllerPayload } from '../client/runDetailLiveController';
 
 import '../styles/shared.css';
 import '../styles/run-detail.css';
@@ -52,18 +53,23 @@ export function RunDetailView({
   const suiteLabel = reportTitle;
   const run = manifest.run;
 
+  // Mount-once: bind listeners + initial selection. Excludes manifest from
+  // deps so re-renders don't tear down listeners or reset the selected step.
   useEffect(() => {
     const cleanup = initRunDetailController(reportPayloadForController(manifest));
-    // After the controller is bound, honor ?test=<id> (or the initialTestId
-    // prop) by pre-selecting that panel. Works only for suite runs;
-    // single-test runs already render the detail panel visible by default.
     const requested = initialTestId ?? readTestIdFromUrl();
     if (requested && !isSingleTest) {
       const exists = testItems.some((item) => item.input.testId === requested);
       if (exists) selectTest(requested);
     }
     return cleanup;
-  }, [manifest, initialTestId, isSingleTest, testItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refresh the controller's cached payload on each manifest change.
+  useEffect(() => {
+    updateControllerPayload(reportPayloadForController(manifest));
+  }, [manifest]);
 
   return (
     <div className="fr-report-ui">

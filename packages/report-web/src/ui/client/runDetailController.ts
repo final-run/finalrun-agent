@@ -22,7 +22,7 @@ type ReportPayloadStep = {
   screenshotFile?: string | null;
 };
 
-type ReportPayload = {
+export type ReportPayload = {
   tests: ReportPayloadTest[];
 };
 
@@ -30,20 +30,13 @@ let payload: ReportPayload = { tests: [] };
 let testMap: Record<string, ReportPayloadTest> = {};
 
 export function initRunDetailController(next: ReportPayload): () => void {
-  payload = next;
-  testMap = Object.fromEntries(payload.tests.map((test) => [test.testId, test]));
+  setPayload(next);
 
   document.addEventListener('click', handleLogLineClick);
   document.addEventListener('input', handleInputDelegation);
   document.addEventListener('keydown', handleCmdF);
 
-  const logInlines = document.querySelectorAll('.device-log-inline');
-  for (let li = 0; li < logInlines.length; li++) {
-    const countEl = logInlines[li].querySelector('.device-log-match-count');
-    const total = logInlines[li].querySelectorAll('.device-log-line').length;
-    if (countEl) countEl.textContent = total + ' lines';
-  }
-
+  refreshLogLineCounts();
   updatePrimaryBackButton();
 
   for (const test of payload.tests) {
@@ -57,6 +50,21 @@ export function initRunDetailController(next: ReportPayload): () => void {
     document.removeEventListener('input', handleInputDelegation);
     document.removeEventListener('keydown', handleCmdF);
   };
+}
+
+// Shared with runDetailLiveController.ts. Not part of the public export.
+export function setPayload(next: ReportPayload): void {
+  payload = next;
+  testMap = Object.fromEntries(payload.tests.map((test) => [test.testId, test]));
+}
+
+export function refreshLogLineCounts(): void {
+  const logInlines = document.querySelectorAll('.device-log-inline');
+  for (let li = 0; li < logInlines.length; li++) {
+    const countEl = logInlines[li].querySelector('.device-log-match-count');
+    const total = logInlines[li].querySelectorAll('.device-log-line').length;
+    if (countEl) countEl.textContent = total + ' lines';
+  }
 }
 
 export function switchTab(button: HTMLElement): void {

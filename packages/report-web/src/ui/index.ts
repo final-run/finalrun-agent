@@ -63,6 +63,8 @@ export {
   handleLogFilter,
 } from './client/runDetailController';
 
+export { updateControllerPayload } from './client/runDetailLiveController';
+
 // Data-model types. Re-exported as types only so consumers can type their
 // data adapters. These originate in src/artifacts.ts; the `export type`
 // form means tsup strips the import at build time so the library bundle
