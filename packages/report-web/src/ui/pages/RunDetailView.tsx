@@ -24,15 +24,15 @@ import { updateControllerPayload } from '../client/runDetailLiveController';
 import '../styles/shared.css';
 import '../styles/run-detail.css';
 
-// Optional navigate prop — used by the back button when embedded inside an
-// SPA (cloud). Consumer passes e.g. React Router's navigate; defaults to
-// plain anchor navigation so standalone Next.js usage is unaffected.
+// Optional navigate prop — used by the back button when embedded inside a
+// host SPA. Consumer passes e.g. React Router's navigate; defaults to plain
+// anchor navigation so standalone Next.js usage is unaffected.
 export type NavigateFn = (href: string) => void;
 
 // Optional initialTestId — preselects a specific test panel on mount. Lets
-// cloud consumers deep-link to `/runs/:runId?test=:testId` without forking
-// the component. Falls back to the first step of the first test, matching
-// the OSS behavior.
+// host apps deep-link to `/runs/:runId?test=:testId` without forking the
+// component. Falls back to the first step of the first test, matching the
+// standalone CLI behavior.
 export function RunDetailView({
   manifest: raw,
   navigate,
@@ -106,7 +106,7 @@ export function RunDetailView({
             </p>
           </div>
         </div>
-        <StatusPill status={run.success ? 'success' : 'failure'} />
+        <StatusPill status={run.status} />
       </section>
 
       {isSingleTest ? (

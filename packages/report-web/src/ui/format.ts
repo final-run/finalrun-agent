@@ -42,9 +42,22 @@ export function summaryIconStyle(tone: SummaryTone): string {
   return 'color: var(--text); background: var(--panel-alt);';
 }
 
-export function statusPillLabel(
-  status: 'success' | 'failure' | 'error' | 'aborted' | 'not_executed',
-): string {
+export type StatusPillStatus =
+  | 'queued'
+  | 'booting'
+  | 'setting_up'
+  | 'running'
+  | 'success'
+  | 'failure'
+  | 'error'
+  | 'aborted'
+  | 'not_executed';
+
+export function statusPillLabel(status: StatusPillStatus): string {
+  if (status === 'queued') return 'Queued';
+  if (status === 'booting') return 'Booting';
+  if (status === 'setting_up') return 'Setting up';
+  if (status === 'running') return 'Running';
   if (status === 'success') return 'Passed';
   if (status === 'aborted') return 'Aborted';
   if (status === 'failure') return 'Failed';

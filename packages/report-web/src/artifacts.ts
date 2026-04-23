@@ -11,8 +11,13 @@ import type {
   TestDefinition,
   TestResult,
 } from '@finalrun/common';
+import type { StatusPillStatus } from './ui/format';
 
-export interface ReportIndexRunRecord extends RunIndexEntry {
+// Widen status to include in-progress states that live-update consumers
+// need to display (queued / running / booting / setting_up). The underlying
+// common type only covers terminal outcomes.
+export interface ReportIndexRunRecord extends Omit<RunIndexEntry, 'status'> {
+  status: StatusPillStatus;
   displayName: string;
   displayKind: 'suite' | 'single_test' | 'multi_test' | 'fallback';
   triggeredFrom: 'Suite' | 'Direct';

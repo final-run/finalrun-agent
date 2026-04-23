@@ -127,7 +127,7 @@ function RunIndexRow({ run, navigate }: { run: ReportIndexRunRecord; navigate?: 
       <td>{run.appLabel}</td>
       <td>{run.durationMs > 0 ? formatLongDuration(run.durationMs) : 'NA'}</td>
       <td>
-        <StatusPill status={run.success ? 'success' : 'failure'} />
+        <StatusPill status={run.status} />
       </td>
       <td>{resultLabel}</td>
       <td>

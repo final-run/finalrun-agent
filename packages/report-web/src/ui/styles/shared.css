@@ -1,6 +1,6 @@
 /* All agent UI styles are scoped under `.fr-report-ui` so they don't leak
-   into host applications (e.g. finalrun-cloud). Consumers apply the class
-   to the root wrapper automatically via <RunIndexView> / <RunDetailView>.
+   into host applications. Consumers apply the class to the root wrapper
+   automatically via <RunIndexView> / <RunDetailView>.
 
    Global rules (html/body/anchor resets) removed on purpose — the library
    is embeddable and must not fight the host's baseline.
@@ -96,6 +96,43 @@
 .fr-report-ui .status-pill.not_executed {
   background: rgba(112, 126, 174, 0.14);
   color: var(--muted);
+}
+
+.fr-report-ui .status-pill.queued {
+  background: rgba(112, 126, 174, 0.14);
+  color: var(--muted);
+}
+
+.fr-report-ui .status-pill.running {
+  background: rgba(67, 24, 255, 0.12);
+  color: var(--accent);
+}
+
+.fr-report-ui .status-pill.booting {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+
+.fr-report-ui .status-pill.setting_up {
+  background: rgba(20, 184, 166, 0.14);
+  color: #0f766e;
+}
+
+.fr-report-ui .status-pill.running::before,
+.fr-report-ui .status-pill.booting::before,
+.fr-report-ui .status-pill.setting_up::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: fr-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes fr-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 
 .fr-report-ui .muted {

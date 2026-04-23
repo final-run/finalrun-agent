@@ -1,5 +1,5 @@
-// Public library entry point. Imported from consumers (e.g. finalrun-cloud)
-// via `@finalrun/report-web/ui`.
+// Public library entry point. Imported by downstream consumers via
+// `@finalrun/report-web/ui`.
 //
 // Stable surface:
 //   - RunIndexView / RunDetailView — the two page components

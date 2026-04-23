@@ -433,8 +433,8 @@ function ensureRecordingControls(container: HTMLElement): void {
   };
 
   const togglePlayback = async () => {
-    // When a screenshot is currently shown (cloud path — no per-step video
-    // offsets), hitting play swaps the shell over to video mode.
+    // When a screenshot is currently shown (no per-step video offsets
+    // available), hitting play swaps the shell over to video mode.
     const screenshot = container.querySelector('[data-role="recording-screenshot"]') as HTMLImageElement | null;
     if (screenshot && screenshot.style.display !== 'none') {
       screenshot.style.display = 'none';
@@ -526,10 +526,8 @@ function syncRecording(container: HTMLElement, test: ReportPayloadTest, step: Re
   const controls = container.querySelector('[data-role="recording-controls"]') as HTMLElement | null;
 
   // Decide which medium drives this step:
-  //   a) Video sync when the step has videoOffsetMs AND the test has a recording
-  //      (this is the OSS path — agent CLI writes per-step timestamps).
-  //   b) Static screenshot when a step has screenshotFile but no video offset
-  //      (this is the cloud path — the DB stores screenshots, no timestamps).
+  //   a) Video sync when the step has videoOffsetMs AND the test has a recording.
+  //   b) Static screenshot when a step has screenshotFile but no video offset.
   //   c) Otherwise fall back to whatever medium is available; if neither,
   //      show the empty state.
   const hasVideoSync =

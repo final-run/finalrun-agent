@@ -12,6 +12,8 @@ import { buildArtifactRoute } from './routes';
 import { formatLongDuration } from './format';
 
 export type TestOutcomeStatus =
+  | 'queued'
+  | 'running'
   | 'success'
   | 'failure'
   | 'error'
@@ -191,6 +193,12 @@ export function summarizeTestItems(items: ReportTestListItem[]): OutcomeSummary 
 }
 
 export function classifyTestStatus(test: ReportManifestTestRecord): TestOutcomeStatus {
+  // Honor in-progress states if the caller supplies them via a widened
+  // status field. The local CLI writes terminal statuses only, so these
+  // branches never fire for local reports.
+  const s = test.status as unknown as string;
+  if (s === 'queued') return 'queued';
+  if (s === 'running') return 'running';
   if (test.status === 'aborted') return 'aborted';
   if (test.success) return 'success';
   if (test.steps[0]?.actionType === 'run_failure') return 'error';
@@ -258,6 +266,8 @@ export function formatVideoTimestamp(videoOffsetMs: number | undefined): string 
 }
 
 export function statusLabelLong(status: TestOutcomeStatus): string {
+  if (status === 'queued') return 'Queued';
+  if (status === 'running') return 'Running';
   if (status === 'error') return 'Error';
   if (status === 'aborted') return 'Aborted';
   if (status === 'failure') return 'Failed';
@@ -267,7 +277,7 @@ export function statusLabelLong(status: TestOutcomeStatus): string {
 
 // Reduced payload handed to the interactive controller. Only carries the
 // fields the DOM-level logic needs (recording + per-step seek offsets +
-// screenshot URLs for the cloud fallback path), so the script tag stays
+// screenshot URLs for the no-video fallback path), so the script tag stays
 // small even on huge suite runs.
 export function reportPayloadForController(manifest: ReportRunManifest): {
   tests: Array<{
