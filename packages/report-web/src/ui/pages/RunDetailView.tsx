@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { ReportRunManifest } from '../../artifacts';
 import { formatLongDuration } from '../format';
 import { StatusPill } from '../components/StatusPill';
@@ -43,8 +43,8 @@ export function RunDetailView({
   initialTestId?: string;
   backHref?: string;
 }) {
-  const manifest = toReportViewModel(raw);
-  const testItems = buildTestListItems(manifest);
+  const manifest = useMemo(() => toReportViewModel(raw), [raw]);
+  const testItems = useMemo(() => buildTestListItems(manifest), [manifest]);
   const isSingleTest = testItems.length <= 1;
   const outcomeSummary = summarizeTestItems(testItems);
   const initialTest = testItems[0];

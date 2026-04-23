@@ -89,7 +89,7 @@ export function VideoPanel({
             data-role="recording-seekbar"
             type="range"
             min="0"
-            max="0"
+            max={initialSeekValue}
             step="0.1"
             defaultValue={initialSeekValue}
             aria-label="Seek recording timeline"

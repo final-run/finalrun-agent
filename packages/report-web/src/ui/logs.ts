@@ -39,10 +39,10 @@ export function parseLogLevel(line: string): 'error' | 'warn' | 'info' {
   const iosWarn = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(W|Wf)\s/.exec(line);
   if (iosWarn) return 'warn';
 
-  const androidMatch = /^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([EWDIV])\s/.exec(line);
+  const androidMatch = /^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([FEWDIV])\s/.exec(line);
   if (androidMatch) {
     const level = androidMatch[1];
-    if (level === 'E') return 'error';
+    if (level === 'F' || level === 'E') return 'error';
     if (level === 'W') return 'warn';
   }
 

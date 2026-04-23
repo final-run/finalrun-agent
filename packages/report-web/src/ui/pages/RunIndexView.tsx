@@ -1,5 +1,6 @@
 'use client';
 
+import type React from 'react';
 import type { ReportIndexRunRecord, ReportIndexViewModel } from '../../artifacts';
 import { buildRunRoute } from '../routes';
 import { SummaryCard } from '../components/SummaryCard';
@@ -105,13 +106,20 @@ function RunIndexRow({ run, navigate }: { run: ReportIndexRunRecord; navigate?: 
     else window.location.href = href;
   };
 
+  const onLinkClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!navigate) return;
+    event.preventDefault();
+    event.stopPropagation();
+    navigate(href);
+  };
+
   return (
     <tr className="history-row" onClick={onRowClick}>
       <td>
         <div className="run-name-cell">
           <TintedPngIcon src={iconSrc} />
           <div className="run-name-copy">
-            <a className="run-name-link" href={href}>{run.displayName}</a>
+            <a className="run-name-link" href={href} onClick={onLinkClick}>{run.displayName}</a>
             <div className="run-secondary">{run.runId}</div>
           </div>
         </div>

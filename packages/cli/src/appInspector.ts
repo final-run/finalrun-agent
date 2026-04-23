@@ -18,16 +18,27 @@ export async function inspectApp(filePath: string): Promise<AppMetadata> {
     throw new Error(`App file not found: ${filePath}`);
   }
 
-  const fileSize = fs.statSync(filePath).size;
-  const buffer = fs.readFileSync(filePath);
+  const stats = fs.statSync(filePath);
+  if (!stats.isFile()) {
+    throw new Error(`App path is not a file: ${filePath}`);
+  }
+  const fileSize = stats.size;
+
+  const magic = Buffer.alloc(4);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    fs.readSync(fd, magic, 0, magic.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
 
   // All supported formats (APK, IPA, .app.zip) are zip files
   const isZip =
-    buffer.length >= 4 &&
-    buffer[0] === 0x50 &&
-    buffer[1] === 0x4b &&
-    buffer[2] === 0x03 &&
-    buffer[3] === 0x04;
+    fileSize >= 4 &&
+    magic[0] === 0x50 &&
+    magic[1] === 0x4b &&
+    magic[2] === 0x03 &&
+    magic[3] === 0x04;
 
   if (!isZip) {
     throw new Error(

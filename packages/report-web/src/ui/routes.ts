@@ -7,5 +7,9 @@ export function buildRunRoute(runId: string): string {
 
 export function buildArtifactRoute(relativePath: string): string {
   const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
-  return `/artifacts/${normalized.split('/').map(encodeURIComponent).join('/')}`;
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new Error(`Invalid artifact path: ${relativePath}`);
+  }
+  return `/artifacts/${segments.map(encodeURIComponent).join('/')}`;
 }

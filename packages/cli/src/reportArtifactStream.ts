@@ -59,6 +59,13 @@ export async function serveArtifactHttp(params: {
 
   let stats;
   try {
+    const artifactsRoot = await fsp.realpath(artifactsDir);
+    const realResolvedPath = await fsp.realpath(resolvedPath);
+    const relativeToRoot = path.relative(artifactsRoot, realResolvedPath);
+    if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+      throw new Error('Artifact paths must stay within the workspace artifacts directory.');
+    }
+    resolvedPath = realResolvedPath;
     stats = await fsp.stat(resolvedPath);
   } catch (error) {
     writeErrorHtml(
@@ -112,7 +119,7 @@ export async function serveArtifactHttp(params: {
       response.end();
       return;
     }
-    fs.createReadStream(resolvedPath, { start: byteRange.start, end: byteRange.end }).pipe(response);
+    pipeFile(response, resolvedPath, { start: byteRange.start, end: byteRange.end });
     return;
   }
 
@@ -126,7 +133,19 @@ export async function serveArtifactHttp(params: {
     response.end();
     return;
   }
-  fs.createReadStream(resolvedPath).pipe(response);
+  pipeFile(response, resolvedPath);
+}
+
+function pipeFile(
+  response: ServerResponse,
+  resolvedPath: string,
+  options?: { start: number; end: number },
+): void {
+  const stream = fs.createReadStream(resolvedPath, options);
+  stream.on('error', (error) => {
+    response.destroy(error);
+  });
+  stream.pipe(response);
 }
 
 function parseByteRange(
@@ -140,6 +159,10 @@ function parseByteRange(
 
   const [, startValue, endValue] = match;
   if (startValue === '' && endValue === '') return undefined;
+
+  if (totalSize === 0) {
+    throw new ArtifactRangeNotSatisfiableError(totalSize);
+  }
 
   if (startValue === '') {
     const suffixLength = parseInt(endValue, 10);
