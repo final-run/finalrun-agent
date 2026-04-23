@@ -18,6 +18,7 @@ import {
   stopWorkspaceReportServer,
 } from '../src/reportServerManager.js';
 import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import { runCloud, uploadApp } from '../src/cloudRunner.js';
 import { PreExecutionFailureError, runTests, type TestRunnerResult } from '../src/testRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { serveReportWorkspace } from '../src/reportServer.js';
@@ -169,6 +170,62 @@ program
     });
   });
 
+const cloud = program
+  .command('cloud')
+  .description('Run tests on FinalRun cloud devices');
+
+cloud
+  .command('test [selectors...]')
+  .description('Run repo-local FinalRun YAML tests from .finalrun/tests on cloud devices')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--app <path>', 'Path to the .apk or .app to install (omit to use the latest uploaded app)')
+  .action(async (selectors: string[] | undefined, options: CloudCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      const normalizedSelectors = normalizeTestSelectors(selectors);
+      if (normalizedSelectors.length === 0) {
+        throw new Error(TEST_SELECTION_REQUIRED_ERROR);
+      }
+      await runCloud({
+        selectors: normalizedSelectors,
+        envName: options.env,
+        platform: options.platform,
+        appPath: options.app,
+      });
+    });
+  });
+
+cloud
+  .command('suite <suitePath>')
+  .description('Run a FinalRun suite manifest from .finalrun/suites on cloud devices')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--app <path>', 'Path to the .apk or .app to install (omit to use the latest uploaded app)')
+  .action(async (suitePath: string, options: CloudCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      await runCloud({
+        selectors: [],
+        suitePath: suitePath.trim(),
+        envName: options.env,
+        platform: options.platform,
+        appPath: options.app,
+      });
+    });
+  });
+
+cloud
+  .command('upload')
+  .description('Upload an app binary to FinalRun cloud for use in subsequent test runs')
+  .requiredOption('--app <path>', 'Path to the .apk or .app to upload')
+  .action(async (options: { app: string }) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      await uploadApp(options.app);
+    });
+  });
+
 program
   .command('start-server')
   .description('Start or reuse the local FinalRun report server for a workspace')
@@ -247,6 +304,12 @@ interface CommonCommandOptions {
 
 interface CheckCommandOptions extends CommonCommandOptions {
   suite?: string;
+}
+
+interface CloudCommandOptions {
+  env?: string;
+  platform?: string;
+  app?: string;
 }
 
 interface DoctorCommandOptions {
