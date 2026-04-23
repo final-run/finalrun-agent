@@ -27,6 +27,7 @@ import {
   type SpanTiming,
   type StepTrace,
   type TimingMetadata,
+  type LLMCallTrace,
 } from './trace.js';
 
 // ============================================================================
@@ -83,6 +84,13 @@ export interface AgentActionResult {
   durationMs?: number;
   timing?: TimingMetadata;
   trace?: StepTrace;
+  /**
+   * Raw LLM call traces that happened during this step (planner + any
+   * grounder / visual grounder calls). Consumers can forward these to
+   * observability backends (e.g., Langfuse). Empty for steps with no
+   * LLM activity.
+   */
+  llmCalls?: LLMCallTrace[];
 }
 
 export interface TestRecordingResult {
@@ -603,6 +611,16 @@ export class TestExecutor {
         );
       }
 
+      // Aggregate LLM calls for this step: planner call + any grounder/visual-grounder
+      // calls made by ActionExecutor. Order: planner first, then action calls.
+      const stepLLMCalls: LLMCallTrace[] = [];
+      if (plannerResponse.llmCall) {
+        stepLLMCalls.push(plannerResponse.llmCall);
+      }
+      if (actionResult.llmCalls && actionResult.llmCalls.length > 0) {
+        stepLLMCalls.push(...actionResult.llmCalls);
+      }
+
       const stepResult: AgentActionResult = {
         iteration,
         action,
@@ -618,6 +636,7 @@ export class TestExecutor {
         screenHeight: postActionCapture.screenHeight ?? deviceState.screenHeight,
         timestamp: new Date().toISOString(),
         timing: actionResult.trace,
+        ...(stepLLMCalls.length > 0 ? { llmCalls: stepLLMCalls } : {}),
       };
 
       if (!actionResult.success && actionResult.error) {
