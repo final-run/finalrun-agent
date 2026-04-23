@@ -32,6 +32,15 @@ export function VideoPanel({
   const showScreenshotInitially =
     initialVideoOffsetMs === undefined && Boolean(initialScreenshotFile);
 
+  // When no media at all exists, show the empty state. Otherwise ALWAYS
+  // keep both the <video> (when recordingFile is set) and the <img>
+  // element in the DOM so the controller can toggle visibility + src as
+  // steps are clicked. Previous conditional render dropped <img> from the
+  // tree when the first step had no screenshot yet — later step
+  // screenshots couldn't attach because the element didn't exist.
+  const hasAnyMedia = Boolean(recordingFile) || Boolean(initialScreenshotFile);
+  const imgInitiallyHidden = !showScreenshotInitially || !initialScreenshotFile;
+
   return (
     <div className="video-panel">
       <div className="media-shell recording-shell">
@@ -39,20 +48,19 @@ export function VideoPanel({
           <video
             data-role="recording-video"
             playsInline
-            preload="metadata"
+            preload="auto"
             src={recordingFile}
             style={showScreenshotInitially ? { display: 'none' } : undefined}
           />
         ) : null}
-        {initialScreenshotFile ? (
-          <img
-            data-role="recording-screenshot"
-            src={initialScreenshotFile}
-            alt=""
-            style={showScreenshotInitially ? undefined : { display: 'none' }}
-          />
-        ) : null}
-        {!recordingFile && !initialScreenshotFile ? (
+        <img
+          data-role="recording-screenshot"
+          src={initialScreenshotFile ?? undefined}
+          alt=""
+          style={imgInitiallyHidden ? { display: 'none' } : undefined}
+        />
+        <img data-role="recording-seek-overlay" alt="" style={{ display: 'none' }} />
+        {!hasAnyMedia ? (
           <div className="empty-shot" data-role="empty-recording">
             No session recording was captured for this test.
           </div>

@@ -837,6 +837,15 @@
   background: #020617;
 }
 
+.fr-report-ui .media-shell > video,
+.fr-report-ui .media-shell > img {
+  grid-area: 1 / 1;
+}
+
+.fr-report-ui [data-role="recording-seek-overlay"] {
+  z-index: 2;
+}
+
 .fr-report-ui .empty-shot {
   padding: 18px;
   color: #d9e0ef;

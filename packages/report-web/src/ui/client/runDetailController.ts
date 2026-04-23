@@ -466,6 +466,23 @@ function ensureRecordingControls(container: HTMLElement): void {
   video.addEventListener('ended', syncControls);
   video.addEventListener('emptied', syncControls);
   video.addEventListener('ratechange', syncControls);
+
+  // Cover the native black frame the browser paints while seeking into
+  // unbuffered territory (Range request in flight) with the currently
+  // selected step's screenshot. syncRecording stashes the src on the
+  // overlay's dataset before each seek.
+  const seekOverlay = container.querySelector(
+    '[data-role="recording-seek-overlay"]',
+  ) as HTMLImageElement | null;
+  video.addEventListener('seeking', () => {
+    const src = seekOverlay?.dataset.nextSrc;
+    if (!seekOverlay || !src) return;
+    if (seekOverlay.getAttribute('src') !== src) seekOverlay.src = src;
+    seekOverlay.style.display = 'block';
+  });
+  video.addEventListener('seeked', () => {
+    if (seekOverlay) seekOverlay.style.display = 'none';
+  });
   seekbar.addEventListener('input', applySeek);
   seekbar.addEventListener('change', applySeek);
   playPause.addEventListener('click', togglePlayback);
@@ -574,6 +591,11 @@ function syncRecording(container: HTMLElement, test: ReportPayloadTest, step: Re
 
   const seekSeconds = Math.max(0, step.videoOffsetMs / 1000);
   updateRecordingCaption(container, test, step);
+
+  const seekOverlay = container.querySelector(
+    '[data-role="recording-seek-overlay"]',
+  ) as HTMLImageElement | null;
+  if (seekOverlay && step.screenshotFile) seekOverlay.dataset.nextSrc = step.screenshotFile;
 
   const applySeek = () => {
     const duration = Number.isFinite(video.duration) ? video.duration : undefined;
