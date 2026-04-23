@@ -29,5 +29,4 @@ export type {
   SpanTiming,
   TimingMetadata,
   LLMTrace,
-  LLMCallTrace,
 } from './trace.js';
