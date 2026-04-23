@@ -621,6 +621,7 @@ export class AIAgent {
     return { output, text, llmCall };
   }
 
+
   /**
    * Resolve the effective provider / model / reasoning for a feature by
    * merging the optional per-feature override on top of workspace defaults.
