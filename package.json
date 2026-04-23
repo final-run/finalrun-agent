@@ -7,8 +7,8 @@
     "packages/common",
     "packages/device-node",
     "packages/goal-executor",
-    "packages/cli",
-    "packages/report-web"
+    "packages/report-web",
+    "packages/cli"
   ],
   "scripts": {
     "bootstrap": "npm ci",
