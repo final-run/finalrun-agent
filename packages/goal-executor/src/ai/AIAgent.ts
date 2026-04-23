@@ -58,6 +58,7 @@ import {
   roundDuration,
   startTracePhase,
   type LLMTrace,
+  type LLMCallTrace,
 } from '../trace.js';
 import { classifyFatalProviderError, FatalProviderError } from './providerFailure.js';
 import { schemaForFeature } from './schemas.js';
@@ -105,6 +106,8 @@ export interface PlannerResponse {
     act?: string;
   };
   trace?: LLMTrace;
+  /** Raw LLM call trace captured during planning — forwarded to observability. */
+  llmCall?: LLMCallTrace;
 }
 
 export interface GrounderRequest {
@@ -126,6 +129,8 @@ export interface GrounderResponse {
   output: Record<string, unknown>;
   raw: string; // Raw LLM response for debugging
   trace?: LLMTrace;
+  /** Raw LLM call trace captured during grounding — forwarded to observability. */
+  llmCall?: LLMCallTrace;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -247,6 +252,7 @@ export class AIAgent {
     let parsedResponse: PlannerResponse | undefined;
     let llmMs = 0;
     let parseMs = 0;
+    let lastLLMCall: LLMCallTrace | undefined;
 
     const plannerResolved = this._resolveFeatureConfig(FEATURE_PLANNER);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -263,6 +269,7 @@ export class AIAgent {
         const llmResult = await this._callLLM(systemPrompt, userParts, FEATURE_PLANNER);
         rawOutput = llmResult.output;
         rawText = llmResult.text;
+        lastLLMCall = llmResult.llmCall;
       } catch (error) {
         finishTracePhase(
           llmPhase,
@@ -342,6 +349,7 @@ export class AIAgent {
         llmMs,
         parseMs,
       },
+      ...(lastLLMCall ? { llmCall: lastLLMCall } : {}),
     };
   }
 
@@ -398,6 +406,7 @@ export class AIAgent {
     let parsed: GrounderResponse | undefined;
     let llmMs = 0;
     let parseMs = 0;
+    let lastLLMCall: LLMCallTrace | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const phase = startTracePhase(
@@ -417,6 +426,7 @@ export class AIAgent {
         );
         rawOutput = llmResult.output;
         rawText = llmResult.text;
+        lastLLMCall = llmResult.llmCall;
       } catch (error) {
         finishTracePhase(
           phase,
@@ -500,6 +510,7 @@ export class AIAgent {
         llmMs,
         parseMs,
       },
+      ...(lastLLMCall ? { llmCall: lastLLMCall } : {}),
     };
   }
 
@@ -514,7 +525,7 @@ export class AIAgent {
     systemPrompt: string,
     userParts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }>,
     feature: FeatureName,
-  ): Promise<{ output: unknown; text: string }> {
+  ): Promise<{ output: unknown; text: string; llmCall: LLMCallTrace }> {
     const resolved = this._resolveFeatureConfig(feature);
     const model = this._getModel(resolved);
     const providerOptions = this._getProviderOptions(resolved, feature);
@@ -528,9 +539,22 @@ export class AIAgent {
       return { type: 'text' as const, text: part.text };
     });
 
+    // Persist the exact messages we send so we can forward them verbatim to
+    // observability backends (Langfuse stores these for debugging).
+    const messages = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: userContent },
+    ];
+
+    const startedAt = new Date().toISOString();
+    const startPerfMs = performance.now();
+
     let output: unknown;
     let text = '';
     let reasoningText: string | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let usage: any;
+    let thrownError: unknown;
     try {
       const result = await generateText({
         model,
@@ -553,12 +577,35 @@ export class AIAgent {
       output = result.output;
       text = result.text;
       reasoningText = result.reasoningText;
+      usage = result.usage;
     } catch (error) {
+      thrownError = error;
+    }
+
+    const completedAt = new Date().toISOString();
+    const durationMs = roundDuration(performance.now() - startPerfMs);
+
+    const llmCall: LLMCallTrace = {
+      provider: resolved.provider,
+      model: resolved.modelName,
+      feature: feature ?? phase,
+      prompt: messages,
+      completion: text,
+      usage: normalizeUsage(usage),
+      startedAt,
+      completedAt,
+      durationMs,
+      ...(thrownError
+        ? { statusMessage: thrownError instanceof Error ? thrownError.message : String(thrownError) }
+        : {}),
+    };
+
+    if (thrownError) {
       throw (
-        classifyFatalProviderError(error, {
+        classifyFatalProviderError(thrownError, {
           provider: resolved.provider,
           modelName: resolved.modelName,
-        }) ?? error
+        }) ?? thrownError
       );
     }
 
@@ -571,7 +618,7 @@ export class AIAgent {
     Logger.d(
       `LLM response [${feature}] (${resolved.provider}/${resolved.modelName}):\n${text || '<empty response>'}`,
     );
-    return { output, text };
+    return { output, text, llmCall };
   }
 
 
@@ -1061,4 +1108,39 @@ function normalizeBoolean(value: unknown): boolean | undefined {
 
 function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
   return values.find((value) => typeof value === 'string' && value.trim().length > 0);
+}
+
+/**
+ * Convert the Vercel AI SDK's `LanguageModelUsage` (inputTokens/outputTokens
+ * with nested *TokenDetails) into the Langfuse canonical shape
+ * (input/output/total, optional input_cached_tokens only if > 0).
+ * Fields default to 0 when the provider omits them.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeUsage(usage: any): { input: number; output: number; total: number; input_cached_tokens?: number } {
+  const input =
+    typeof usage?.inputTokens === 'number'
+      ? usage.inputTokens
+      : typeof usage?.promptTokens === 'number'
+        ? usage.promptTokens
+        : 0;
+  const output =
+    typeof usage?.outputTokens === 'number'
+      ? usage.outputTokens
+      : typeof usage?.completionTokens === 'number'
+        ? usage.completionTokens
+        : 0;
+  const total =
+    typeof usage?.totalTokens === 'number'
+      ? usage.totalTokens
+      : input + output;
+
+  const cacheRead =
+    typeof usage?.inputTokenDetails?.cacheReadTokens === 'number'
+      ? usage.inputTokenDetails.cacheReadTokens
+      : undefined;
+
+  return cacheRead !== undefined && cacheRead > 0
+    ? { input, output, total, input_cached_tokens: cacheRead }
+    : { input, output, total };
 }

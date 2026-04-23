@@ -5,7 +5,7 @@
 import { Logger } from '@finalrun/common';
 import type { AIAgent } from './AIAgent.js';
 import { FEATURE_VISUAL_GROUNDER } from '@finalrun/common';
-import type { LLMTrace } from '../trace.js';
+import type { LLMTrace, LLMCallTrace } from '../trace.js';
 import { FatalProviderError } from './providerFailure.js';
 
 export interface VisualGroundingResult {
@@ -14,6 +14,8 @@ export interface VisualGroundingResult {
   y?: number;
   reason?: string;
   trace?: LLMTrace;
+  /** LLM call trace from the visual grounding attempt. */
+  llmCall?: LLMCallTrace;
 }
 
 /**
@@ -68,6 +70,7 @@ export class VisualGrounder {
           y: output['y'] as number,
           reason: output['reason'] as string,
           trace: response.trace,
+          ...(response.llmCall ? { llmCall: response.llmCall } : {}),
         };
       }
 
@@ -78,6 +81,7 @@ export class VisualGrounder {
           success: false,
           reason: output['reason'] as string,
           trace: response.trace,
+          ...(response.llmCall ? { llmCall: response.llmCall } : {}),
         };
       }
 
@@ -86,6 +90,7 @@ export class VisualGrounder {
         success: false,
         reason: 'Unexpected response format',
         trace: response.trace,
+        ...(response.llmCall ? { llmCall: response.llmCall } : {}),
       };
     } catch (error) {
       if (FatalProviderError.isInstance(error)) {
