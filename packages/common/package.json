@@ -1,7 +1,6 @@
 {
   "name": "@finalrun/common",
   "version": "0.1.7",
-  "private": true,
   "description": "Shared interfaces, models, and constants for the FinalRun CLI",
   "license": "Apache-2.0",
   "main": "./dist/index.js",
@@ -9,6 +8,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "npm run clean && tsc",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
