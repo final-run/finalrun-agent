@@ -5,6 +5,7 @@
   "description": "Monorepo for the finalrun-agent CLI",
   "workspaces": [
     "packages/common",
+    "packages/cloud-core",
     "packages/device-node",
     "packages/goal-executor",
     "packages/report-web",

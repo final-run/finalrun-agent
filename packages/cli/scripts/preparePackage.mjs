@@ -16,6 +16,11 @@ const bundledPackages = [
     copyEntries: ['dist', 'package.json'],
   },
   {
+    name: '@finalrun/cloud-core',
+    sourceDir: resolve(repoRoot, 'packages/cloud-core'),
+    copyEntries: ['dist', 'package.json'],
+  },
+  {
     name: '@finalrun/device-node',
     sourceDir: resolve(repoRoot, 'packages/device-node'),
     copyEntries: ['dist', 'package.json'],
