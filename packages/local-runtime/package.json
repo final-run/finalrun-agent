@@ -1,0 +1,31 @@
+{
+  "name": "@finalrun/local-runtime",
+  "version": "0.1.7",
+  "private": true,
+  "description": "Per-platform runtime bundle for local FinalRun test execution. Not published to npm; assembled into a tarball uploaded to GitHub Releases and installed by the curl|sh installer into ~/.finalrun/runtime/<version>/.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build:tarball": "node scripts/buildRuntimeTarball.mjs"
+  },
+  "dependencies": {
+    "@finalrun/cloud-core": "*",
+    "@finalrun/common": "*",
+    "@finalrun/device-node": "*",
+    "@finalrun/goal-executor": "*",
+    "@finalrun/report-web": "*",
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/openai": "^3.0.47",
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.0",
+    "ai": "^6.0.134",
+    "chalk": "^5.4.0",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.0",
+    "ora": "^8.2.0",
+    "protobufjs": "^7.5.4",
+    "uuid": "^11.1.0",
+    "yaml": "^2.8.2",
+    "zod": "^4.1.8"
+  }
+}
