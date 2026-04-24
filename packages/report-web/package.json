@@ -1,31 +1,11 @@
 {
   "name": "@finalrun/report-web",
   "version": "0.2.0",
-  "description": "Local FinalRun report SPA + importable React UI library",
+  "private": true,
+  "description": "Local FinalRun report SPA",
   "license": "Apache-2.0",
   "sideEffects": [
     "**/*.css"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "exports": {
-    "./ui": {
-      "types": "./dist/ui/index.d.mts",
-      "import": "./dist/ui/index.mjs"
-    },
-    "./ui/styles.css": "./dist/ui/styles.css",
-    "./routes": {
-      "types": "./dist/routes/index.d.mts",
-      "import": "./dist/routes/index.mjs"
-    }
-  },
-  "files": [
-    "dist",
-    "src/ui",
-    "src/routes",
-    "src/fetchers.ts",
-    "src/artifacts.ts"
   ],
   "scripts": {
     "dev": "vite",
@@ -33,8 +13,7 @@
     "build:lib": "tsup && node scripts/build-styles.mjs",
     "build": "npm run build:lib && npm run build:app",
     "preview": "vite preview",
-    "test": "tsx --test src/**/*.test.ts",
-    "prepublishOnly": "npm run build"
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@finalrun/common": "^0.1.7",
