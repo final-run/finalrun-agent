@@ -148,7 +148,11 @@ function resolveLocalRuntimeRoot(): string | undefined {
       return candidate;
     }
   }
-  const versioned = path.join(os.homedir(), '.finalrun', 'runtime', resolveCliPackageVersion());
+  // Honor FINALRUN_DIR so the binary finds the runtime when the user
+  // installed via `FINALRUN_DIR=... bash install.sh` to a custom location.
+  const finalrunDir =
+    process.env['FINALRUN_DIR']?.trim() || path.join(os.homedir(), '.finalrun');
+  const versioned = path.join(finalrunDir, 'runtime', resolveCliPackageVersion());
   if (fs.existsSync(path.join(versioned, 'manifest.json'))) {
     return versioned;
   }

@@ -61,11 +61,16 @@ export interface LocalRuntime {
 }
 
 export function resolveLocalRuntimeRoot(): string {
+  // Explicit override wins.
   const override = process.env['FINALRUN_RUNTIME_ROOT'];
   if (override && override.trim()) {
     return path.resolve(override.trim());
   }
-  return path.join(os.homedir(), '.finalrun', 'runtime', resolveCliPackageVersion());
+  // Honor the same FINALRUN_DIR convention the install script uses, so a
+  // user who installed via `FINALRUN_DIR=/opt/finalrun ... bash` can find
+  // their runtime at /opt/finalrun/runtime/<version>/.
+  const finalrunDir = process.env['FINALRUN_DIR']?.trim() || path.join(os.homedir(), '.finalrun');
+  return path.join(finalrunDir, 'runtime', resolveCliPackageVersion());
 }
 
 /**

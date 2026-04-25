@@ -77,8 +77,10 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
 
 function hasInstalledRuntime(): boolean {
   const version = resolveCliPackageVersion();
-  const runtimeRoot =
-    process.env['FINALRUN_RUNTIME_ROOT']?.trim() ||
-    path.join(os.homedir(), '.finalrun', 'runtime', version);
-  return fs.existsSync(path.join(runtimeRoot, 'manifest.json'));
+  const explicit = process.env['FINALRUN_RUNTIME_ROOT']?.trim();
+  if (explicit) {
+    return fs.existsSync(path.join(explicit, 'manifest.json'));
+  }
+  const finalrunDir = process.env['FINALRUN_DIR']?.trim() || path.join(os.homedir(), '.finalrun');
+  return fs.existsSync(path.join(finalrunDir, 'runtime', version, 'manifest.json'));
 }
