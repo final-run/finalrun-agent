@@ -6,6 +6,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-25
+
+### Changed — distribution model
+
+The CLI is no longer published to npm. It now ships as a self-contained Bun-compiled binary plus a per-platform runtime tarball, both uploaded to GitHub Releases. End users install via:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+```
+
+No Node.js required for cloud-only usage; CI environments are auto-detected and stop after the binary install. Local-dev hosts continue with the runtime tarball download, host-tool setup (`scrcpy`, Xcode CLT, `applesimutils`), and AI agent skills install — same UX as before, but starting from a binary instead of `npm i -g`.
+
+### Added
+
+- `@finalrun/cloud-core` workspace package: pure cloud-submission logic (zip + multipart POST, app upload), shared by the CLI binary
+- `@finalrun/local-runtime` workspace package: builder for the per-platform `finalrun-runtime-<version>-<platform>.tar.gz` (driver bundles, gRPC proto, Vite SPA dist) that ships alongside the binary on GitHub Releases
+- `finalrun upgrade` subcommand: re-runs the install script with sensible defaults (auto-detects whether the runtime tarball was previously installed; preserves `FINALRUN_DIR`)
+- `--cloud-only` / `--full-setup` flags on `install.sh` for explicit override of the TTY auto-detection
+- 30-minute fetch timeout on cloud submissions and app uploads (overridable via `FINALRUN_SUBMIT_TIMEOUT_MS` and `FINALRUN_UPLOAD_TIMEOUT_MS`); stalled connections surface as a clear "connection stalled" message instead of hung spinners
+- `FINALRUN_REPORT_APP_DIR` and `FINALRUN_RUNTIME_ROOT` env vars for pointing the CLI at custom asset locations
+- GitHub Actions `Release` workflow (manual `workflow_dispatch` trigger) that builds all 4 binaries + 4 runtime tarballs, tags the build commit, and creates the GitHub Release with all 16 artifacts
+- `RELEASING.md` runbook documenting the manual release flow, pre-release tags, re-running failed jobs, local dry-run, and rollback
+
+### Changed
+
+- `FINALRUN_CLOUD_URL` default switched from `cloud-dev.finalrun.app` to `cloud.finalrun.app`. Override the env var to re-target dev infra.
+- Cloud `cloud test` and `cloud upload` now stream the app file to the multipart body via `fs.openAsBlob` instead of `fs.readFileSync` — large APKs/IPAs no longer materialize into a single Buffer in memory
+- Cloud `cloud test` ships only the env file matching `--env`, not every YAML under `.finalrun/env/` (was leaking other environments' bindings)
+- `install.sh` rewritten: downloads the binary first, TTY-detects, runs interactive setup (platform prompt, brew installs, doctor verification, skills install) only when on a real terminal. Prompts have 30-second read timeouts that fall through to the conservative path. Brew install failures now correctly fail the setup step (previously short-circuited via `&& ok`).
+- The CLI's `bin/finalrun.ts` now lazy-loads the heavy modules (`testRunner`, `doctorRunner`, `reportServer`, `reportServerManager`) so cloud commands don't pull them at startup. Local commands fail fast with `LocalRuntimeMissingError` and a recovery URL when the runtime tarball isn't installed.
+- Test runner is now a portable Node script (`packages/cli/scripts/runTests.mjs`) walking `dist/` instead of `node --test "dist/**/*.test.js"` (which needs Node 21+ for native glob; we declare `>= 20.19`)
+
+### Removed
+
+- `npm install -g @finalrun/finalrun-agent` — no longer published. `packages/cli` is `private: true`. Existing npm-installed copies keep working until users `finalrun upgrade` or re-run the install URL.
+- `packages/cli/scripts/installAssets.mjs`, `preparePackage.mjs`, `cleanupPackage.mjs` — npm-publication scripts no longer needed
+- `packages/cli/package.json` no longer has `postinstall`, `prepack`, `postpack`, `bundleDependencies`, or `publishConfig`
+- Client-side APK/IPA inspection in cloud submissions — server validates platform / packageName / simulator-compatibility authoritatively
+
+### Fixed
+
+- Bun-compiled binary's `__dirname` is the build-machine source path; resolving `package.json` via filesystem walk-up failed on every machine other than the one that built the binary. The CLI version is now read via `require('../package.json')` at module load (compiled to a CJS require by tsc and inlined into the bundle by Bun).
+- Runtime tarball location now honors `$FINALRUN_DIR` (default `~/.finalrun`), matching the install script's convention. Previously the binary's resolver only checked `$HOME/.finalrun` regardless of where the install script extracted the tarball.
+- Cloud submit/upload spinners no longer remain spinning after an unparseable JSON body or a server-side rejection — both paths now `spinner.fail` before rethrowing
+- `install.sh` rejects `--cloud-only` and `--full-setup` together; refuses Windows hosts up front (Cygwin / MinGW / MSYS) instead of 404-ing on a non-existent `finalrun-windows-x64.exe`; validates the GitHub `/releases/latest` redirect target shape before parsing the tag
+- Release workflow gained a `concurrency:` block (two simultaneous "Run workflow" clicks now queue rather than race on tag creation), strict semver regex on the version, origin tag-existence check (not just local), and `--latest` only when releasing from `main` with a stable (non-pre-release) version
+
 ## [0.1.7] - 2026-04-20
 
 ### Added
