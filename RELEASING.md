@@ -167,18 +167,6 @@ For a pre-release (e.g. `0.2.0-rc.1`), swap `--latest` for `--prerelease` so it 
 
 ---
 
-## Pre-release versions (alpha, beta, rc)
-
-If you want to publish a version for testing without making it the new "latest":
-
-```sh
-npm version 0.2.0-rc.1 -w @finalrun/finalrun-agent --no-git-tag-version
-```
-
-The dash in the version (`0.2.0-rc.1`) tells the workflow this is a pre-release. The GitHub Releases page marks it accordingly, and `install.sh` keeps resolving to the previous stable version. People who want the pre-release have to install with `FINALRUN_VERSION=0.2.0-rc.1` set in their environment.
-
----
-
 ## If the workflow fails partway through
 
 The workflow is designed so the tag isn't created until the build has succeeded. So if it fails before that point, just **fix the issue and re-run** — there's no leftover state to clean up.
@@ -208,31 +196,3 @@ git tag -d vX.Y.Z                         # locally too
 Now fix the issue on a new PR, then cut a fresh release (either re-using `vX.Y.Z` or moving to `vX.Y.Z+1` — your call).
 
 Note: anyone who already installed the broken version still has it on their disk. They'll get the new version when they run `finalrun upgrade` or re-run the curl install command. The public install URL goes through "latest", so deleting the broken release immediately stops new users from getting it.
-
----
-
-## Cost: how much does this cost us?
-
-Nothing, for our setup.
-
-- **GitHub Actions for public repos** is free with no minute limit on standard runners. Our workflow uses one standard runner for ~4 minutes per release.
-- **Release file storage** on GitHub Releases is free for public repos. We currently upload about 600 MB per release (mostly the four runtime tarballs).
-- **Workflow artifact storage** (the temporary upload between the build and release jobs) gets 500 MB free, retained 7 days. Our usage is well under that.
-
-You'd only start paying if we switched to bigger runners or added macOS code signing later — neither of which is on the near-term plan.
-
----
-
-## What CI needs
-
-Nothing extra. The workflow uses GitHub's built-in token to push the tag and create the release. No personal tokens, no third-party services, no secrets to set up.
-
----
-
-## Not yet supported
-
-These are intentionally out of scope right now:
-
-- **macOS code signing / Apple notarization.** macOS users currently get past Gatekeeper because the installer strips the quarantine flag with `xattr`. Proper signing needs an Apple Developer account and a separate workflow that runs on a macOS runner. We'll add this when Gatekeeper warnings start coming up.
-- **Windows.** The installer refuses Windows hosts up front today. Adding Windows means cross-compiling a fifth binary and (optionally) Windows code signing.
-- **Auto-release on tag push.** The workflow is manual-trigger only. If you want a tagged commit to auto-release, you'd add an `on: push: tags: ['v*']` block and have it read the version from the tag rather than from `package.json`.
