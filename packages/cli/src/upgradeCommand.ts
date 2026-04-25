@@ -41,10 +41,23 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
   console.log(`Upgrading finalrun to ${targetLabel} (mode: ${effectiveMode})...`);
   console.log('');
 
-  const env = { ...process.env };
-  if (options.version) {
-    env['FINALRUN_VERSION'] = options.version;
+  // Strip FINALRUN_* env vars from the inherited environment before spawning
+  // the installer. The current process may have been started with debugging
+  // overrides (FINALRUN_RUNTIME_ROOT, FINALRUN_ASSET_DIR, FINALRUN_CLOUD_URL,
+  // FINALRUN_CACHE_DIR, etc.) — those are runtime concerns for THIS binary
+  // and shouldn't influence where the installer puts the next version.
+  // FINALRUN_DIR is the one knob users intentionally pin install location
+  // with, so we preserve it. FINALRUN_VERSION we set explicitly when --version
+  // was passed; otherwise we drop it so the installer resolves "latest".
+  const preservedDir = process.env['FINALRUN_DIR'];
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.startsWith('FINALRUN_')) {
+      env[key] = value;
+    }
   }
+  if (preservedDir) env['FINALRUN_DIR'] = preservedDir;
+  if (options.version) env['FINALRUN_VERSION'] = options.version;
 
   const flags: string[] = [];
   if (effectiveMode === 'cloud-only') flags.push('--cloud-only');

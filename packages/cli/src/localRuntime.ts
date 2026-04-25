@@ -2,21 +2,30 @@
 // device drivers, doctor, report server) that local commands need but cloud
 // commands do not.
 //
-// Today these modules live alongside the CLI in packages/cli/src/, so the
-// resolver simply lazy-imports them. In the binary distribution (Bun-compiled
-// finalrun), the heavy npm dependencies they pull in (goal-executor,
-// device-node, AI SDKs, gRPC) live in a separate runtime tarball at
-// ~/.finalrun/runtime/<version>/node_modules/. The resolver checks for that
-// tarball and points the loader at it; if missing, it throws a clear error
-// with the user-facing recovery instructions.
+// In dev / npm installs the heavy modules ship inside packages/cli/, so a
+// dynamic import resolves them from the local node_modules. In the
+// Bun-compiled binary distribution they're bundled into the binary itself,
+// but the binary still needs the on-disk runtime tarball (driver APKs, iOS
+// zips, gRPC proto, Vite SPA dist) at ~/.finalrun/runtime/<version>/. We
+// gate local-command execution on that tarball being present and surface
+// LocalRuntimeMissingError with recovery instructions if it isn't.
 //
-// Cloud commands never call into this file. They import their dependencies
-// directly so they work from a slim install with no runtime tarball.
+// Cloud commands never call into this file.
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { resolveCliPackageVersion } from './runtimePaths.js';
+
+// Set to "true" by `bun build --define` in scripts/build-binary.sh. Undefined
+// in dev and tsc-compiled builds. We use this rather than process.versions.bun
+// because contributors who run `bun run` for dev iteration would otherwise
+// hit the standalone-binary code path even when the runtime tarball isn't
+// installed.
+declare const FINALRUN_IS_STANDALONE_BINARY: string | undefined;
+const isStandaloneBinary: boolean =
+  typeof FINALRUN_IS_STANDALONE_BINARY !== 'undefined' &&
+  FINALRUN_IS_STANDALONE_BINARY === 'true';
 
 const INSTALL_URL =
   'https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh';
@@ -74,47 +83,24 @@ export function resolveLocalRuntimeRoot(): string {
 }
 
 /**
- * Returns true when the CLI is running from a normal `npm install` of the
- * monorepo (dev iteration, current npm distribution). In that mode the
- * heavy modules live in the local node_modules tree and lazy-import works
- * out of the box.
- *
- * Returns false when the CLI is running as a Bun-compiled binary with no
- * local runtime tarball present — that's when LocalRuntimeMissingError
- * should fire.
- *
- * Detection: the CLI was launched from a packages/cli/dist/ tree (or
- * tsx-compiled monorepo source). For now we treat this as the dev/npm path.
- * The Bun binary will be detected via process.versions.bun in phase 4.
- */
-function isRunningFromMonorepoOrNpm(): boolean {
-  // Bun-compiled binary sets process.versions.bun; npm/Node does not.
-  return typeof (process.versions as Record<string, string | undefined>)['bun'] === 'undefined';
-}
-
-/**
  * Lazy-load the local-runtime modules. Cloud commands never call this;
  * local commands await it before running their handler.
  *
- * In phase 2 (current): always succeeds because heavy modules ship with
- * the CLI's node_modules. The resolveLocalRuntimeRoot path is computed
- * but not yet used to switch loaders.
+ * In a Bun-compiled standalone binary the heavy JS is bundled into the
+ * executable but the on-disk assets (driver bundles, gRPC proto, SPA dist)
+ * live in the runtime tarball — we require it to be installed and throw
+ * LocalRuntimeMissingError with recovery instructions otherwise.
  *
- * In phase 4: when running as a Bun binary, the loader will resolve from
- * runtimeRoot/node_modules via createRequire and throw LocalRuntimeMissingError
- * if the tarball is not extracted there.
+ * In dev / tsc / npm installs the resolver always succeeds because the
+ * heavy modules ship in packages/cli's node_modules tree.
  */
 export async function resolveLocalRuntime(): Promise<LocalRuntime> {
   const runtimeRoot = resolveLocalRuntimeRoot();
 
-  if (!isRunningFromMonorepoOrNpm()) {
-    // Bun binary path: require the runtime tarball to be installed.
+  if (isStandaloneBinary) {
     if (!fs.existsSync(path.join(runtimeRoot, 'manifest.json'))) {
       throw new LocalRuntimeMissingError(resolveCliPackageVersion(), runtimeRoot);
     }
-    // Phase 4 will swap in createRequire(runtimeRoot/node_modules/_stub.js)
-    // and load these modules from there. For now this branch is never taken
-    // in dev or npm installs.
   }
 
   const [testRunner, doctorRunner, reportServer, reportServerManager] = await Promise.all([

@@ -38,8 +38,10 @@ OUT_DIR="$ROOT/dist/binaries"
 mkdir -p "$OUT_DIR"
 
 # Ensure the workspace deps are built so cloud-core/common dist files exist.
+# Quiet stdout (npm install/build chatter) but keep stderr so a failure under
+# `set -e` surfaces something useful.
 echo "[build-binary] Building workspace dist files..."
-npm run build --workspace=@finalrun/common --workspace=@finalrun/cloud-core --workspace=@finalrun/finalrun-agent >/dev/null 2>&1
+npm run build --workspace=@finalrun/common --workspace=@finalrun/cloud-core --workspace=@finalrun/finalrun-agent >/dev/null
 
 for target in "${TARGETS[@]}"; do
   os_arch="${target#bun-}"  # darwin-arm64, etc.
@@ -50,9 +52,14 @@ for target in "${TARGETS[@]}"; do
   out="$OUT_DIR/finalrun-${os_arch}${ext}"
 
   echo "[build-binary] Compiling for ${target}..."
+  # Inject FINALRUN_IS_STANDALONE_BINARY=true so the lazy runtime resolver
+  # can distinguish a compiled binary from `bun run` / `tsx` / `node` dev
+  # paths and gate local-command execution on the runtime tarball being
+  # extracted. The variable is undefined in dev/tsc builds.
   bun build \
     --compile \
     --target="${target}" \
+    --define "FINALRUN_IS_STANDALONE_BINARY='true'" \
     --outfile "${out}" \
     packages/cli/bin/finalrun.ts
 

@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { openAsBlob } from 'node:fs';
 import * as path from 'node:path';
 import { formatBytes } from './submit.js';
 
@@ -36,16 +37,19 @@ export async function uploadApp(input: UploadAppInput): Promise<UploadAppResult>
   // — inferred from extension if not provided.
   const platform = input.platform ?? inferPlatformFromFilename(input.appPath);
 
-  const appBuffer = fs.readFileSync(input.appPath);
   const appFileName = path.basename(input.appPath);
-  const appSize = appBuffer.byteLength;
+  const appSize = fs.statSync(input.appPath).size;
 
   const { default: ora } = await import('ora');
   const spinner = ora(`Uploading ${appFileName} (${formatBytes(appSize)})...`).start();
   const uploadStart = Date.now();
 
+  // Stream the file via openAsBlob (Node ≥20.16 / Bun) so a large APK/IPA
+  // doesn't get loaded into a single Buffer just to wrap as a Blob.
+  const appBlob = await openAsBlob(input.appPath);
+
   const formData = new FormData();
-  formData.append('appFile', new Blob([appBuffer]), appFileName);
+  formData.append('appFile', appBlob, appFileName);
   formData.append('platform', platform);
 
   let response: Response;
@@ -68,12 +72,14 @@ export async function uploadApp(input: UploadAppInput): Promise<UploadAppResult>
     throw new Error(`Cloud service returned ${response.status}: ${body}`);
   }
 
-  spinner.succeed(`Uploaded ${appFileName} (${formatBytes(appSize)}) in ${elapsed}s`);
-
+  // Validate response shape before declaring success on the spinner.
   const result = (await response.json()) as { success: boolean; appUpload?: { id: string }; error?: string };
   if (!result.success || !result.appUpload) {
+    spinner.fail(`Upload rejected by server`);
     throw new Error(`Upload failed: ${result.error ?? JSON.stringify(result)}`);
   }
+
+  spinner.succeed(`Uploaded ${appFileName} (${formatBytes(appSize)}) in ${elapsed}s`);
 
   console.log(`\n  \x1b[32m✓ App uploaded\x1b[0m`);
   console.log(`  App ID:    ${result.appUpload.id}`);

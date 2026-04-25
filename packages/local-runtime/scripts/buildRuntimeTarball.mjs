@@ -96,13 +96,23 @@ mkdirSync(installResourcesTarget, { recursive: true });
 const androidAssets = ['android/app-debug.apk', 'android/app-debug-androidTest.apk'];
 const iosAssets = ['ios/finalrun-ios.zip', 'ios/finalrun-ios-test-Runner.zip'];
 const assetsToCopy = [...androidAssets, ...(isDarwin ? iosAssets : [])];
+// Hard-fail on any missing required asset rather than shipping a half-broken
+// tarball — the install-resources files are what local commands actually
+// look for at runtime, so a silent omission yields confusing
+// "X driver bundle is missing" doctor output later.
+const missingAssets = assetsToCopy.filter(
+  (asset) => !existsSync(resolve(installResourcesSource, asset)),
+);
+if (missingAssets.length > 0) {
+  bail(
+    `Missing required runtime assets for ${target}:\n` +
+    missingAssets.map((a) => `  - ${resolve(installResourcesSource, a)}`).join('\n') +
+    `\nBuild driver bundles first: \`npm run build:drivers\` at the repo root.`,
+  );
+}
 for (const asset of assetsToCopy) {
   const source = resolve(installResourcesSource, asset);
   const target = resolve(installResourcesTarget, asset);
-  if (!existsSync(source)) {
-    console.warn(`[build-runtime] WARNING: missing asset ${asset} at ${source}`);
-    continue;
-  }
   mkdirSync(dirname(target), { recursive: true });
   copyFileSync(source, target);
 }

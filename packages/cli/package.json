@@ -30,11 +30,11 @@
     "ai"
   ],
   "scripts": {
-    "build": "npm run clean && tsc && node ./scripts/copyReportApp.mjs",
+    "build": "npm run clean && tsc && node ./scripts/copyReportApp.mjs && node -e \"require('fs').copyFileSync('package.json','dist/package.json')\"",
     "clean": "rm -rf dist proto tsconfig.tsbuildinfo",
     "start": "tsx bin/finalrun.ts",
     "dev": "tsx --tsconfig ../../tsconfig.dev.json bin/finalrun.ts",
-    "test": "node --test \"dist/**/*.test.js\""
+    "test": "node ./scripts/runTests.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.58",

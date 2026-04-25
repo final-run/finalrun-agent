@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { openAsBlob } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import AdmZip from 'adm-zip';
@@ -61,7 +62,8 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
     }
     appMode = { type: 'file', path: input.appPath };
   } else {
-    console.log(`\n  No --app provided; server will use the latest app uploaded for platform '${input.platform}'.\n`);
+    const platformLabel = input.platform?.trim() || 'the run target';
+    console.log(`\n  No --app provided; server will use the latest app uploaded for ${platformLabel}.\n`);
     appMode = { type: 'server-default' };
   }
 
@@ -91,14 +93,23 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
     });
   }
 
-  const envDir = path.join(input.workspaceRoot, '.finalrun', 'env');
-  if (fs.existsSync(envDir)) {
-    const envFiles = fs.readdirSync(envDir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'));
-    for (const envFile of envFiles) {
-      filesToZip.push({
-        absolutePath: path.join(envDir, envFile),
-        relativePath: path.join('env', envFile),
-      });
+  // Only ship the env file the run actually uses. Uploading every env file
+  // (dev/staging/prod/...) wastes bandwidth and unnecessarily exposes other
+  // environments' bindings to the cloud submission. If --env wasn't passed,
+  // we don't ship any env file and the server falls back to whatever it
+  // resolves from config.yaml.
+  if (input.envName) {
+    const envDir = path.join(input.workspaceRoot, '.finalrun', 'env');
+    const candidates = [`${input.envName}.yaml`, `${input.envName}.yml`];
+    for (const candidate of candidates) {
+      const envPath = path.join(envDir, candidate);
+      if (fs.existsSync(envPath)) {
+        filesToZip.push({
+          absolutePath: envPath,
+          relativePath: path.join('env', candidate),
+        });
+        break;
+      }
     }
   }
 
@@ -160,10 +171,12 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
       : `${input.checked.tests.length} test(s)`;
 
     if (appMode.type === 'file') {
-      const appBuffer = fs.readFileSync(appMode.path);
+      // Stream the file into the multipart body so a large APK/IPA isn't
+      // pulled into memory just to wrap as a Blob.
       const appFileName = path.basename(appMode.path);
-      const appSize = appBuffer.byteLength;
-      formData.append('appFile', new Blob([appBuffer]), appFileName);
+      const appSize = fs.statSync(appMode.path).size;
+      const appBlob = await openAsBlob(appMode.path);
+      formData.append('appFile', appBlob, appFileName);
       formData.append('appFilename', appFileName);
 
       spinnerMessage = `Uploading ${appFileName} (${formatBytes(appSize)}) and submitting ${submissionLabel}...`;
@@ -197,18 +210,20 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
       throw new Error(`Cloud service returned ${response.status}: ${body}`);
     }
 
+    // Validate response shape before declaring success on the spinner.
+    const result = (await response.json()) as { success: boolean; runId?: string; error?: string };
+    if (!result.success || !result.runId) {
+      spinner.fail(`Submission rejected by server`);
+      throw new Error(
+        `Cloud submission failed: ${result.error ?? JSON.stringify(result)}`,
+      );
+    }
+
     if (appMode.type === 'file') {
       const appSize = fs.statSync(appMode.path).size;
       spinner.succeed(`Uploaded ${formatBytes(appSize)} in ${elapsed}s`);
     } else {
       spinner.succeed(`Submitted in ${elapsed}s`);
-    }
-
-    const result = (await response.json()) as { success: boolean; runId?: string; error?: string };
-    if (!result.success || !result.runId) {
-      throw new Error(
-        `Cloud submission failed: ${result.error ?? JSON.stringify(result)}`,
-      );
     }
 
     // Fire-and-forget: print the polling URL and return.

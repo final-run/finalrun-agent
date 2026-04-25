@@ -49,6 +49,11 @@ for arg in "$@"; do
   esac
 done
 
+if [ "$CLOUD_ONLY" = true ] && [ "$FULL_SETUP" = true ]; then
+  fail "--cloud-only and --full-setup are mutually exclusive."
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Prereqs (binary install path needs only curl + tar)
 # ---------------------------------------------------------------------------
@@ -95,6 +100,8 @@ resolve_version() {
     return
   fi
   # Resolve "latest" by following the redirect from the latest-release URL.
+  # GitHub rewrites .../releases/latest → .../releases/tag/v<x>; we read the
+  # final URL and strip everything up through "/tag/" to get the tag.
   local redirect
   redirect=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
     "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
@@ -102,7 +109,14 @@ resolve_version() {
     fail "Could not resolve the latest finalrun release. Set FINALRUN_VERSION explicitly."
     exit 1
   fi
-  # URL ends with /tag/v0.1.7 — strip prefix to get the tag.
+  # Validate the redirect actually looks like a release URL before parsing it,
+  # so a redirect to a 404 page or login page doesn't yield a garbage version.
+  if ! [[ "$redirect" =~ /releases/tag/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    fail "Could not parse latest release tag from redirect URL:"
+    fail "  $redirect"
+    fail "Set FINALRUN_VERSION explicitly to bypass auto-resolution."
+    exit 1
+  fi
   echo "${redirect##*/tag/}" | sed 's/^v//'
 }
 

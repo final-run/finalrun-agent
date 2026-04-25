@@ -11,17 +11,22 @@ import {
   type UploadAppResult,
 } from '@finalrun/cloud-core';
 
-const FINALRUN_CLOUD_URL = process.env['FINALRUN_CLOUD_URL'] || 'https://cloud-dev.finalrun.app';
-const FINALRUN_API_KEY = process.env['FINALRUN_API_KEY'] || '';
+const DEFAULT_CLOUD_URL = 'https://cloud.finalrun.app';
+
+function resolveCloudUrl(): string {
+  const override = process.env['FINALRUN_CLOUD_URL'];
+  return override && override.trim() ? override.trim() : DEFAULT_CLOUD_URL;
+}
 
 function requireApiKey(): string {
-  if (!FINALRUN_API_KEY) {
+  const key = process.env['FINALRUN_API_KEY'] ?? '';
+  if (!key) {
     throw new Error(
       'FINALRUN_API_KEY is not set. Get your API key from the FinalRun Cloud dashboard and set it:\n' +
       '  export FINALRUN_API_KEY=fr_your_key_here',
     );
   }
-  return FINALRUN_API_KEY;
+  return key;
 }
 
 export interface CloudRunnerOptions {
@@ -34,6 +39,7 @@ export interface CloudRunnerOptions {
 
 export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunResult> {
   const apiKey = requireApiKey();
+  const cloudUrl = resolveCloudUrl();
 
   // 1. Validate specs locally (fast fail before upload)
   const checked = await runCheck({
@@ -44,9 +50,11 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
     requireSelection: true,
   });
 
-  // 2. Capture the raw CLI invocation, exactly as the user typed it (minus the
-  //    node binary path). process.argv = [node, finalrun(.ts), ...userArgs].
-  const command = `finalrun ${process.argv.slice(2).join(' ')}`;
+  // 2. Capture the CLI invocation for the run record. shell-quote each user
+  //    arg so something like `--name "My Test"` round-trips correctly when an
+  //    operator copy-pastes the recorded command. process.argv =
+  //    [node, finalrun(.ts), ...userArgs].
+  const command = ['finalrun', ...process.argv.slice(2).map(shellQuote)].join(' ');
 
   // 3. Delegate to cloud-core for zip + submit
   return submitRun({
@@ -71,16 +79,25 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
     platform: options.platform,
     appPath: options.appPath,
     command,
-    cloudUrl: FINALRUN_CLOUD_URL,
+    cloudUrl,
     apiKey,
   });
+}
+
+// POSIX shell single-quote escaping. Wraps the value in single quotes and
+// escapes any embedded single quote as `'\''` (close-quote, escaped quote,
+// reopen-quote). Returns the value bare when it's safe (alphanum + a few
+// punctuation chars) so common args stay readable.
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./@%+,:=-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 export async function uploadApp(appPath: string): Promise<UploadAppResult> {
   const apiKey = requireApiKey();
   return uploadAppCore({
     appPath,
-    cloudUrl: FINALRUN_CLOUD_URL,
+    cloudUrl: resolveCloudUrl(),
     apiKey,
   });
 }
