@@ -1,211 +1,198 @@
 # Releasing finalrun-agent
 
-The CLI is distributed as a Bun-compiled binary plus a per-platform runtime tarball, both uploaded to GitHub Releases. There is **no npm publication**. End users install via:
+This is the runbook for cutting a new release. The normal path uses GitHub Actions and takes one click. There's also a manual fallback for when CI is unavailable or you want to release from your laptop.
+
+## What a release contains
+
+Every release ships **8 download files** plus a checksum file for each (16 files total) on the GitHub Releases page:
+
+- A small `finalrun` program for each of: macOS Apple Silicon, macOS Intel, Linux x86_64, Linux ARM64.
+- A "runtime bundle" (`.tar.gz`) for each of those four platforms — this contains the extra files local-test execution needs (driver app builds, gRPC schema, the report-server web UI).
+
+Users install the `finalrun` program by running:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-Releases are cut by triggering [`.github/workflows/release.yml`](.github/workflows/release.yml) manually from the Actions UI. The workflow handles everything: building 4 binaries (Bun cross-compile), 4 runtime tarballs, tagging the build commit, creating the GitHub Release, attaching all 16 artifacts (binaries + tarballs + their `.sha256` sidecars), and marking the release as `latest` (or `prerelease` for non-main / pre-release versions).
+The installer downloads the right binary for their machine, and (in interactive mode) the matching runtime bundle.
+
+There is **no npm publication.** The CLI is a binary, not an npm package.
 
 ---
 
-## Standard release flow
+## How to cut a release (the normal way)
 
-### 1. Bump the version + write the changelog entry on a branch
+You do three things. Steps 1 and 2 are a small PR. Step 3 is one click.
+
+### 1. Open a release PR
+
+Make a branch and bump the version:
 
 ```sh
 git checkout -b release/vX.Y.Z
 npm version X.Y.Z -w @finalrun/finalrun-agent --no-git-tag-version
 ```
 
-Edit [`CHANGELOG.md`](./CHANGELOG.md): add a section under `## [Unreleased]` for the new version, following the Keep-a-Changelog format (Added / Changed / Deprecated / Removed / Fixed / Security):
+Then edit [`CHANGELOG.md`](./CHANGELOG.md) and add a section for your new version under `## [Unreleased]`. Use this format:
 
 ```markdown
 ## [X.Y.Z] - YYYY-MM-DD
 
 ### Added
-- ...
+- (new things)
 
 ### Changed
-- ...
+- (behavior changes)
 
 ### Fixed
-- ...
+- (bug fixes)
 ```
 
-This is the **only** place where version-specific notes are written. The release workflow extracts this exact section and combines it with the static install instructions from [`.github/release-notes-template.md`](.github/release-notes-template.md) to populate the GitHub Release body. **No manual editing of the GitHub Release UI is needed or expected.**
+This is the **only** place you write release notes. The release process pulls this section from `CHANGELOG.md` and puts it on the GitHub Releases page automatically — you never edit the GitHub Releases page directly.
+
+Commit and push:
 
 ```sh
-git add packages/cli/package.json package.json CHANGELOG.md package-lock.json
+git add packages/cli/package.json package.json CHANGELOG.md
 git commit -m "Release vX.Y.Z"
 git push -u origin release/vX.Y.Z
 ```
 
-The workflow validates that:
+Open a PR from this branch to `main`, get review, merge.
 
-- The version in `packages/cli/package.json` is valid semver.
-- The matching tag (`vX.Y.Z`) doesn't already exist locally **or** on origin.
-- `CHANGELOG.md` has a `## [X.Y.Z]` section. **The workflow refuses to publish if this section is missing**, so a release can't accidentally go out with empty notes.
+### 2. Trigger the release
 
-Workflow refuses to release if any check fails.
+After the PR is merged, in your browser:
 
-### 2. Open + merge the release PR
+1. Go to the repo's **Actions** tab on GitHub
+2. Click **Release** in the left sidebar
+3. Click **Run workflow** on the right, pick `main`, click the green **Run workflow** button
 
-Open a PR from `release/vX.Y.Z` → `main`. Get review, address any CodeRabbit findings, merge with squash + delete branch. The `Release vX.Y.Z` commit lands on main.
-
-### 3. Trigger the release workflow
-
-**From the GitHub UI**:
-
-1. Repo → Actions tab → **Release** workflow (left sidebar)
-2. **Run workflow** dropdown (right side) → branch: `main` → **Run workflow**
-
-**Or from `gh`**:
+Or from your terminal:
 
 ```sh
 gh workflow run release.yml -f branch=main
-gh run watch                              # watch progress live
-gh release view vX.Y.Z                    # verify after success
+gh run watch                              # follow progress live
 ```
 
-The workflow takes ~4 min on `ubuntu-24.04`:
+### 3. Verify it shipped
 
-| Step | Duration |
-|---|---|
-| Resolve version, validate semver, refuse duplicate tag | ~5 s |
-| `npm ci` + cache | ~30 s |
-| `npm run build` across all workspaces | ~30 s |
-| `bun build --compile` for 4 targets | ~1 min |
-| Build runtime tarballs for 4 targets | ~1 min |
-| Tag commit, push tag, `gh release create` with all artifacts | ~30 s |
-
-When done, `~/.finalrun/bin/finalrun upgrade` (or a fresh `curl ... | sh`) on user machines will resolve to the new version.
-
----
-
-## Pre-release tags
-
-For testing the install flow without claiming `latest`, use a semver pre-release segment:
+The workflow takes about 4 minutes. When it's done:
 
 ```sh
-npm version 0.2.0-rc.1 -w @finalrun/finalrun-agent --no-git-tag-version
+gh release view vX.Y.Z                    # see the release page contents
 ```
 
-The workflow auto-detects the `-` and creates the GitHub Release with `--prerelease` instead of `--latest`. The `latest` pointer (which `install.sh` resolves) stays on the previous stable release.
+Or open `https://github.com/final-run/finalrun-agent/releases/tag/vX.Y.Z` in a browser.
+
+You should see:
+
+- 16 downloadable files (8 binaries/tarballs + 8 checksum files)
+- A release body that includes install instructions and your CHANGELOG section
+
+That's it — `finalrun upgrade` on user machines, and fresh `curl ... | bash` runs, will now pull your new version.
 
 ---
 
-## Re-running a failed release
+## What the workflow checks before publishing
 
-The workflow is structured so the tag is **not created until the release job runs successfully**. If anything fails before that point, just re-run the workflow with the same branch — no cleanup needed.
+The workflow refuses to release if any of these fail. This is your safety net.
 
-If the release job itself failed mid-way (rare — could happen if `gh release create` flaked after the tag push), you have two options:
+- The version in `packages/cli/package.json` must look like a valid version (e.g. `1.2.3` or `0.2.0-rc.1`).
+- A tag named `vX.Y.Z` must not already exist on origin (so you can't accidentally overwrite a previous release).
+- `CHANGELOG.md` must have a `## [X.Y.Z]` section. **No release notes, no release.**
 
-**Option A — keep the tag, just retry the upload**:
+If any of these fail, the workflow exits early with a message telling you exactly what to fix. Nothing ships.
+
+---
+
+## Manual fallback (no CI needed)
+
+Use this when GitHub Actions is down, you don't have access to it, or you want to release straight from your laptop. The result is identical — same files, same release page.
+
+You'll need:
+
+- `bun` installed: `curl -fsSL https://bun.sh/install | bash` (one time)
+- `gh` CLI logged in: `gh auth login` (one time)
+- About 5 minutes
+
+Steps:
 
 ```sh
-gh release delete vX.Y.Z --yes   # remove the partial release if any
-# Then re-run via UI, OR via gh:
-gh workflow run release.yml -f branch=main
-```
+# 1. Be on the merged release commit on main
+git checkout main && git pull
 
-The workflow's tag-existence check is local-only; deleting the release without deleting the tag will fail the second-attempt's pre-flight. Delete both:
+# 2. Set the version you're releasing
+VERSION=X.Y.Z
 
-**Option B — full reset and retry**:
-
-```sh
-git push origin :refs/tags/vX.Y.Z   # delete remote tag
-git tag -d vX.Y.Z                   # delete local tag (if any)
-gh release delete vX.Y.Z --yes      # delete release if any
-# Then re-trigger the workflow.
-```
-
----
-
-## Concurrency
-
-The workflow has a `concurrency:` block keyed on the chosen branch — two clicks of "Run workflow" for the same branch queue rather than race. `cancel-in-progress: false` so an in-flight release is never aborted by a duplicate trigger.
-
----
-
-## What ships in each release
-
-For every release tag, the workflow uploads 16 files to the GitHub Release:
-
-| Platform | Binary | Runtime tarball |
-|---|---|---|
-| macOS Apple Silicon | `finalrun-darwin-arm64` | `finalrun-runtime-X.Y.Z-darwin-arm64.tar.gz` |
-| macOS Intel | `finalrun-darwin-x64` | `finalrun-runtime-X.Y.Z-darwin-x64.tar.gz` |
-| Linux x86_64 | `finalrun-linux-x64` | `finalrun-runtime-X.Y.Z-linux-x64.tar.gz` |
-| Linux ARM64 | `finalrun-linux-arm64` | `finalrun-runtime-X.Y.Z-linux-arm64.tar.gz` |
-
-Each file ships with a matching `.sha256` sidecar. Total: 16 artifacts.
-
-The release notes are populated from [`.github/release-notes-template.md`](.github/release-notes-template.md).
-
----
-
-## Local dry-run before triggering CI
-
-To validate the full pipeline locally before clicking the button:
-
-```sh
-# Build all artifacts:
+# 3. Build all 8 release files
 ./scripts/build-binary.sh
 for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
   npm run build:tarball --workspace=@finalrun/local-runtime -- --target=$t
 done
 
-# Stage them where install.sh expects them:
-mkdir -p /tmp/fr-test-release/vX.Y.Z
-cp dist/binaries/finalrun-* /tmp/fr-test-release/vX.Y.Z/
-cp packages/local-runtime/dist/finalrun-runtime-*.tar.gz /tmp/fr-test-release/vX.Y.Z/
+# 4. Tag the commit and push the tag
+git tag -a "v$VERSION" -m "Release v$VERSION"
+git push origin "v$VERSION"
 
-# Serve locally and run the installer against it:
-(cd /tmp/fr-test-release && python3 -m http.server 8765 &)
-sed -e 's|https://github.com/${GITHUB_REPO}/releases/download/${TAG}|http://localhost:8765/${TAG}|g' scripts/install.sh \
-  | FINALRUN_DIR=/tmp/fr-test-install FINALRUN_VERSION=X.Y.Z bash -s -- --ci
+# 5. Build the release notes (combines the static install instructions with
+#    your CHANGELOG section — same logic the workflow uses)
+awk -v marker="## [${VERSION}]" '
+  index($0, marker) == 1 { c=1; print; next }
+  c && /^## \[/ { exit }
+  c { print }
+' CHANGELOG.md > /tmp/version-notes.md
 
-/tmp/fr-test-install/bin/finalrun --version
+{
+  cat .github/release-notes-template.md
+  echo ""
+  echo "---"
+  echo ""
+  echo "## What's changed in this release"
+  echo ""
+  tail -n +2 /tmp/version-notes.md
+} > /tmp/release-body.md
+
+# 6. Create the release with all artifacts attached
+gh release create "v$VERSION" \
+  --title "FinalRun $VERSION" \
+  --notes-file /tmp/release-body.md \
+  --latest \
+  dist/binaries/finalrun-* \
+  packages/local-runtime/dist/finalrun-runtime-*.tar.gz*
 ```
 
-This catches build/install regressions without touching real GitHub Releases. Cleanup: `kill %1 && rm -rf /tmp/fr-test-release /tmp/fr-test-install`.
+For a pre-release (e.g. `0.2.0-rc.1`), swap `--latest` for `--prerelease` so it doesn't displace the current "latest" pointer.
 
 ---
 
-## Rolling back a bad release
+## If the workflow fails partway through
 
-If a release goes out broken:
+The workflow is designed so the tag isn't created until the build has succeeded. So if it fails before that point, just **fix the issue and re-run** — there's no leftover state to clean up.
 
-1. **Delete the GitHub Release** (this rolls back the `latest` pointer):
-   ```sh
-   gh release delete vX.Y.Z --yes
-   ```
-2. **Delete the tag** so the next release can re-use the version (or pick a new one):
-   ```sh
-   git push origin :refs/tags/vX.Y.Z
-   git tag -d vX.Y.Z
-   ```
-3. **Fix the issue** on a new PR.
-4. **Cut a new release** following the standard flow above.
+If it fails AFTER the tag is created (rare — only happens if the GitHub Releases upload itself flakes), do this cleanup before retrying:
 
-Users who already curl-installed the bad version keep it on disk until they `finalrun upgrade` or re-run the install URL. The public install URL points at `latest`, so deleting the bad release immediately stops new users from getting it.
+```sh
+git push origin :refs/tags/vX.Y.Z         # delete the tag from GitHub
+git tag -d vX.Y.Z                         # delete it locally too
+gh release delete vX.Y.Z --yes            # delete the partial release if any
+```
+
+Then re-trigger the workflow.
 
 ---
 
-## What CI needs
+## Rolling back a release that shipped broken
 
-Nothing beyond the default repo permissions. The workflow uses `GITHUB_TOKEN` (auto-provided) with `contents: write` to push the tag and create the release. No PATs, no secrets, no third-party integrations.
+If a release goes out and turns out to be broken:
 
-If you ever need to **publish from a fork or restricted runner**, that's a separate setup and not currently supported.
+```sh
+gh release delete vX.Y.Z --yes            # this rolls back the "latest" pointer
+git push origin :refs/tags/vX.Y.Z         # delete the tag
+git tag -d vX.Y.Z                         # locally too
+```
 
----
+Now fix the issue on a new PR, then cut a fresh release (either re-using `vX.Y.Z` or moving to `vX.Y.Z+1` — your call).
 
-## Future work
-
-These are explicitly out of scope for the current release flow:
-
-- **macOS notarization / code signing**: Gatekeeper warnings handled via `xattr -d com.apple.quarantine` in `install.sh`. Proper signing requires an Apple Developer account secret and a re-architected workflow with a macOS runner.
-- **Windows binaries**: `install.sh` refuses Windows hosts up front. Adding Windows support means cross-compiling a fifth target plus optional Authenticode signing.
-- **Auto-bump on tag push**: workflow is manual-only by design. To switch to tag-push triggering, add an `on: push: tags: ['v*']` block and adjust the version-validation step to read from the tag rather than from `packages/cli/package.json`.
+Note: anyone who already installed the broken version still has it on their disk. They'll get the new version when they run `finalrun upgrade` or re-run the curl install command. The public install URL goes through "latest", so deleting the broken release immediately stops new users from getting it.
