@@ -165,7 +165,7 @@ cp packages/local-runtime/dist/finalrun-runtime-*.tar.gz /tmp/fr-test-release/vX
 # Serve locally and run the installer against it:
 (cd /tmp/fr-test-release && python3 -m http.server 8765 &)
 sed -e 's|https://github.com/${GITHUB_REPO}/releases/download/${TAG}|http://localhost:8765/${TAG}|g' scripts/install.sh \
-  | FINALRUN_DIR=/tmp/fr-test-install FINALRUN_VERSION=X.Y.Z bash -s -- --cloud-only
+  | FINALRUN_DIR=/tmp/fr-test-install FINALRUN_VERSION=X.Y.Z bash -s -- --ci
 
 /tmp/fr-test-install/bin/finalrun --version
 ```

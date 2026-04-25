@@ -52,21 +52,15 @@
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-Downloads a self-contained `finalrun` binary into `~/.finalrun/bin/` and adds it to your PATH. No Node.js required.
+Downloads a self-contained `finalrun` binary into `~/.finalrun/bin/`, adds it to your PATH, downloads the per-platform runtime tarball, prompts for Android/iOS, installs host tools (`scrcpy`, Xcode CLT, `applesimutils`), and offers to install the AI agent skills. No Node.js required.
 
-On a real terminal, the installer continues with local-dev setup: it downloads the runtime tarball, prompts for Android/iOS, installs host tools (`scrcpy`, Xcode CLT, `applesimutils`), and offers to install the AI agent skills.
-
-In CI or any non-interactive shell, the script auto-detects the environment and stops after installing the binary — only `finalrun cloud …` commands are needed there. To force CI behavior explicitly:
+For CI / non-interactive environments — install only the binary, skip the runtime tarball and prompts:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --cloud-only
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
 ```
 
-To force the full setup even when TTY detection misfires:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --full-setup
-```
+CI environments (`CI=1` set in env) get this behavior automatically even without the flag.
 
 After install, run `finalrun doctor` to verify host readiness.
 

@@ -13,10 +13,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The CLI is no longer published to npm. It now ships as a self-contained Bun-compiled binary plus a per-platform runtime tarball, both uploaded to GitHub Releases. End users install via:
 
 ```sh
+# Full local-dev setup (binary + runtime tarball + platform tools + skills)
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+
+# CI / non-interactive (binary only)
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
 ```
 
-No Node.js required for cloud-only usage; CI environments are auto-detected and stop after the binary install. Local-dev hosts continue with the runtime tarball download, host-tool setup (`scrcpy`, Xcode CLT, `applesimutils`), and AI agent skills install — same UX as before, but starting from a binary instead of `npm i -g`.
+No Node.js required. CI environments (auto-detected via `CI=1`) skip the interactive setup automatically even without the `--ci` flag.
+
+### Breaking — installer flags
+
+The first cut of v0.1.8 shipped with `--cloud-only` and `--full-setup` flags plus TTY-detection that interacted badly with `curl | bash` (the script could hang mid-install when `exec </dev/tty` ran while bash was still reading the script body from the curl pipe). The flags have been simplified to a single `--ci` toggle and the script is now wrapped in a `main()` function so the redirect can never collide with bash's own script reading.
+
+Migration:
+
+| Old (will hard-error) | New |
+|---|---|
+| `bash -s -- --cloud-only` | `bash -s -- --ci` |
+| `bash -s -- --full-setup` | `bash` (full is the default; drop the flag) |
 
 ### Added
 

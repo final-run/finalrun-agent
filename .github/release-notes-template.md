@@ -6,17 +6,13 @@ One command on macOS or Linux. No Node.js, no npm, nothing else required.
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-For CI / non-interactive environments:
+For CI / non-interactive environments (binary only, no runtime tarball, no prompts):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --cloud-only
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
 ```
 
-To force the full local-dev setup (when TTY detection misfires):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --full-setup
-```
+CI environments (`CI=1`) get this behavior automatically even without the flag.
 
 ## Artifacts
 

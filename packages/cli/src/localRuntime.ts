@@ -51,7 +51,7 @@ function buildMessage(cliVersion: string, runtimeRoot: string): string {
     '  This command needs the local test runtime (driver bundles, AI SDKs,',
     '  device control, report server). Install it by re-running:',
     '',
-    `    curl -fsSL ${INSTALL_URL} | bash -s -- --full-setup`,
+    `    curl -fsSL ${INSTALL_URL} | bash`,
     '',
     '  Or run in cloud instead:',
     '',

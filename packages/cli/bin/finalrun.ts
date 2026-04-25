@@ -269,14 +269,12 @@ program
   .command('upgrade')
   .description('Upgrade the finalrun CLI by re-running the install script')
   .option('--version <version>', 'Pin to a specific version (default: latest GitHub release)')
-  .option('--cloud-only', 'Install only the binary (skip runtime tarball + host tools)')
-  .option('--full-setup', 'Force interactive local-dev setup')
+  .option('--ci', 'Install only the binary (skip runtime tarball + prompts)')
   .action(async (options: UpgradeCommandOptions) => {
     await runCommand(async () => {
       await runUpgrade({
         version: options.version,
-        cloudOnly: options.cloudOnly === true,
-        fullSetup: options.fullSetup === true,
+        ci: options.ci === true,
       });
     });
   });
@@ -367,8 +365,7 @@ interface InternalReportServerOptions {
 
 interface UpgradeCommandOptions {
   version?: string;
-  cloudOnly?: boolean;
-  fullSetup?: boolean;
+  ci?: boolean;
 }
 
 async function runTestCommand(params: {
