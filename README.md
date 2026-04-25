@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a aria-label="npm package version" href="https://www.npmjs.com/package/@finalrun/finalrun-agent" target="_blank">
-    <img alt="npm version" src="https://img.shields.io/npm/v/@finalrun/finalrun-agent.svg?style=flat-square&label=npm&labelColor=000000&color=4630EB" />
+  <a aria-label="Latest GitHub release" href="https://github.com/final-run/finalrun-agent/releases/latest" target="_blank">
+    <img alt="GitHub release" src="https://img.shields.io/github/v/release/final-run/finalrun-agent?style=flat-square&label=release&labelColor=000000&color=4630EB" />
   </a>
   <a aria-label="License: Apache-2.0" href="LICENSE">
     <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square&color=33CC12" />
@@ -55,7 +55,23 @@
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-Sets up Node.js, the CLI, AI coding agent skills, and platform tools. Run `finalrun doctor` to verify host readiness.
+Downloads a self-contained `finalrun` binary into `~/.finalrun/bin/` and adds it to your PATH. No Node.js required.
+
+On a real terminal, the installer continues with local-dev setup: it downloads the runtime tarball, prompts for Android/iOS, installs host tools (`scrcpy`, Xcode CLT, `applesimutils`), and offers to install the AI agent skills.
+
+In CI or any non-interactive shell, the installer auto-detects the environment and stops after installing the binary — only `finalrun cloud …` commands are needed there. Force CI behavior explicitly:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --cloud-only
+```
+
+Force the full local-dev setup (when TTY detection misfires):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --full-setup
+```
+
+After install, run `finalrun doctor` to verify host readiness.
 
 
 ## Write and Run Your First Test Using AI Agents
