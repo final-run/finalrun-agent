@@ -5,10 +5,12 @@
   "description": "Monorepo for the finalrun-agent CLI",
   "workspaces": [
     "packages/common",
+    "packages/cloud-core",
     "packages/device-node",
     "packages/goal-executor",
     "packages/report-web",
-    "packages/cli"
+    "packages/cli",
+    "packages/local-runtime"
   ],
   "scripts": {
     "bootstrap": "npm ci",

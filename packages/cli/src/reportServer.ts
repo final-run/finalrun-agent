@@ -20,9 +20,21 @@ import {
 import { decodeArtifactPath, serveArtifactHttp } from './reportArtifactStream.js';
 import { REPORT_CONTENT_TYPES } from './contentTypes.js';
 
-// When compiled to CommonJS under Node16, __dirname resolves to dist/src/.
-// The SPA bundle is copied alongside at dist/report-app/ by the CLI build.
-const SPA_DIR = path.resolve(__dirname, '..', 'report-app');
+// SPA dir resolution priority:
+//   1. FINALRUN_REPORT_APP_DIR — set by initializeCliRuntimeEnvironment when
+//      the local-runtime tarball is installed (Bun-compiled binary path).
+//   2. ../report-app relative to __dirname — dev / tsc-compiled path, where
+//      the Vite SPA dist is copied next to dist/src/ by copyReportApp.mjs at
+//      build time. (tsc with Node16 emits CJS for this package — there's no
+//      "type": "module" — so __dirname is available.)
+//
+// The value is normalized via path.resolve so the path-traversal guard at
+// the asset-serving call site (startsWith(SPA_DIR + path.sep)) compares
+// against a canonical, segment-collapsed prefix.
+const SPA_DIR = path.resolve(
+  process.env['FINALRUN_REPORT_APP_DIR']?.trim() ||
+    path.resolve(__dirname, '..', 'report-app'),
+);
 
 export async function serveReportWorkspace(params: {
   workspaceRoot: string;

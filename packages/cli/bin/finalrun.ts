@@ -7,20 +7,9 @@ import { formatResolvedAppSummary } from '../src/appConfig.js';
 import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
 import { resolveApiKeys } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
-import { runDoctorCommand } from '../src/doctorRunner.js';
-import {
-  buildRunReportUrl,
-  buildWorkspaceReportUrl,
-  getWorkspaceReportServerStatus,
-  openReportUrl,
-  resolveHealthyWorkspaceReportServer,
-  startOrReuseWorkspaceReportServer,
-  stopWorkspaceReportServer,
-} from '../src/reportServerManager.js';
 import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
-import { PreExecutionFailureError, runTests, type TestRunnerResult } from '../src/testRunner.js';
+import { runCloud, uploadApp } from '../src/cloudRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
-import { serveReportWorkspace } from '../src/reportServer.js';
 import { initializeCliRuntimeEnvironment, resolveCliPackageVersion } from '../src/runtimePaths.js';
 import {
   loadWorkspaceConfig,
@@ -29,6 +18,10 @@ import {
   resolveWorkspaceForCommand,
 } from '../src/workspace.js';
 import { WorkspaceSelectionCancelledError } from '../src/workspacePicker.js';
+import { LocalRuntimeMissingError, resolveLocalRuntime } from '../src/localRuntime.js';
+import { runUpgrade } from '../src/upgradeCommand.js';
+// Type-only imports — erased at runtime, do not pull the heavy module graph.
+import type { TestRunnerResult } from '../src/testRunner.js';
 
 // ============================================================================
 // CLI definition
@@ -82,7 +75,8 @@ program
   .action(async (options: DoctorCommandOptions) => {
     await runCommand(async () => {
       Logger.init({ level: LogLevel.WARN, resetSinks: true });
-      const result = await runDoctorCommand({
+      const { doctorRunner } = await resolveLocalRuntime();
+      const result = await doctorRunner.runDoctorCommand({
         platform: options.platform,
         output: process.stdout,
       });
@@ -110,13 +104,23 @@ program
       }
       console.log(formatRunIndexForConsole(index));
       if (index.runs.length > 0) {
-        const activeServer = await resolveHealthyWorkspaceReportServer(workspace);
-        if (activeServer) {
-          console.log(`\nReport server: ${buildWorkspaceReportUrl(activeServer.url)}`);
-        } else {
-          console.log(
-            `\nRun \`finalrun start-server --workspace ${JSON.stringify(workspace.rootDir)}\` to browse reports in the local web UI.`,
-          );
+        // The report-server URL hint requires the local runtime; if it's not
+        // installed we silently skip it rather than failing the run listing.
+        try {
+          const { reportServerManager } = await resolveLocalRuntime();
+          const activeServer = await reportServerManager.resolveHealthyWorkspaceReportServer(workspace);
+          if (activeServer) {
+            console.log(`\nReport server: ${reportServerManager.buildWorkspaceReportUrl(activeServer.url)}`);
+          } else {
+            console.log(
+              `\nRun \`finalrun start-server --workspace ${JSON.stringify(workspace.rootDir)}\` to browse reports in the local web UI.`,
+            );
+          }
+        } catch (e) {
+          if (!(e instanceof LocalRuntimeMissingError)) {
+            throw e;
+          }
+          // Local runtime missing — listing runs still works; just skip the URL hint.
         }
       }
     });
@@ -169,6 +173,62 @@ program
     });
   });
 
+const cloud = program
+  .command('cloud')
+  .description('Run tests on FinalRun cloud devices');
+
+cloud
+  .command('test [selectors...]')
+  .description('Run repo-local FinalRun YAML tests from .finalrun/tests on cloud devices')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--app <path>', 'Path to the .apk or .app to install (omit to use the latest uploaded app)')
+  .action(async (selectors: string[] | undefined, options: CloudCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      const normalizedSelectors = normalizeTestSelectors(selectors);
+      if (normalizedSelectors.length === 0) {
+        throw new Error(TEST_SELECTION_REQUIRED_ERROR);
+      }
+      await runCloud({
+        selectors: normalizedSelectors,
+        envName: options.env,
+        platform: options.platform,
+        appPath: options.app,
+      });
+    });
+  });
+
+cloud
+  .command('suite <suitePath>')
+  .description('Run a FinalRun suite manifest from .finalrun/suites on cloud devices')
+  .option('--env <name>', 'Environment name (for example dev or staging)')
+  .option('--platform <platform>', 'Target platform (android or ios)')
+  .option('--app <path>', 'Path to the .apk or .app to install (omit to use the latest uploaded app)')
+  .action(async (suitePath: string, options: CloudCommandOptions) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      await runCloud({
+        selectors: [],
+        suitePath: suitePath.trim(),
+        envName: options.env,
+        platform: options.platform,
+        appPath: options.app,
+      });
+    });
+  });
+
+cloud
+  .command('upload')
+  .description('Upload an app binary to FinalRun cloud for use in subsequent test runs')
+  .requiredOption('--app <path>', 'Path to the .apk or .app to upload')
+  .action(async (options: { app: string }) => {
+    await runCommand(async () => {
+      Logger.init({ level: LogLevel.INFO, resetSinks: true });
+      await uploadApp(options.app);
+    });
+  });
+
 program
   .command('start-server')
   .description('Start or reuse the local FinalRun report server for a workspace')
@@ -206,6 +266,22 @@ program
   });
 
 program
+  .command('upgrade')
+  .description('Upgrade the finalrun CLI by re-running the install script')
+  .option('--version <version>', 'Pin to a specific version (default: latest GitHub release)')
+  .option('--cloud-only', 'Install only the binary (skip runtime tarball + host tools)')
+  .option('--full-setup', 'Force interactive local-dev setup')
+  .action(async (options: UpgradeCommandOptions) => {
+    await runCommand(async () => {
+      await runUpgrade({
+        version: options.version,
+        cloudOnly: options.cloudOnly === true,
+        fullSetup: options.fullSetup === true,
+      });
+    });
+  });
+
+program
   .command('internal-report-server', { hidden: true })
   .option('--workspace-root <path>', 'Workspace root', '')
   .option('--artifacts-dir <path>', 'Artifacts directory', '')
@@ -213,7 +289,8 @@ program
   .option('--mode <mode>', 'Internal report server mode', 'production')
   .action(async (options: InternalReportServerOptions) => {
     await runCommand(async () => {
-      const server = await serveReportWorkspace({
+      const { reportServer } = await resolveLocalRuntime();
+      const server = await reportServer.serveReportWorkspace({
         workspaceRoot: options.workspaceRoot,
         artifactsDir: options.artifactsDir,
         port: parsePortOption(options.port, 4173),
@@ -249,6 +326,12 @@ interface CheckCommandOptions extends CommonCommandOptions {
   suite?: string;
 }
 
+interface CloudCommandOptions {
+  env?: string;
+  platform?: string;
+  app?: string;
+}
+
 interface DoctorCommandOptions {
   platform?: string;
 }
@@ -280,6 +363,12 @@ interface InternalReportServerOptions {
   artifactsDir: string;
   port: string;
   mode: string;
+}
+
+interface UpgradeCommandOptions {
+  version?: string;
+  cloudOnly?: boolean;
+  fullSetup?: boolean;
 }
 
 async function runTestCommand(params: {
@@ -329,9 +418,10 @@ async function runTestCommand(params: {
       providedApiKey: params.options.apiKey,
     });
 
-    const reportServer = await tryStartReportServer(workspace);
+    const runtime = await resolveLocalRuntime();
+    const reportServerUrl = await tryStartReportServer(workspace, runtime);
 
-    const result = await runTests({
+    const result = await runtime.testRunner.runTests({
       envName: resolvedEnvironment.usesEmptyBindings ? undefined : resolvedEnvironment.envName,
       selectors: normalizedSelectors,
       suitePath: normalizedSuitePath,
@@ -349,8 +439,8 @@ async function runTestCommand(params: {
       invokedCommand: params.invokedCommand,
     });
 
-    const runUrl = reportServer
-      ? buildRunReportUrl(reportServer, result.runId)
+    const runUrl = reportServerUrl
+      ? runtime.reportServerManager.buildRunReportUrl(reportServerUrl, result.runId)
       : undefined;
 
     if (result.success) {
@@ -360,17 +450,29 @@ async function runTestCommand(params: {
     }
 
     if (runUrl) {
-      await openUrlBestEffort(runUrl);
+      await openUrlBestEffort(runUrl, runtime);
     }
 
     process.exit(result.status === 'aborted' ? 130 : result.success ? 0 : 1);
   } catch (error) {
-    if (error instanceof PreExecutionFailureError) {
+    // Need the runtime modules to format pre-execution errors properly. If the
+    // runtime isn't installed, the resolver throws LocalRuntimeMissingError
+    // first; otherwise we can safely import the error type here.
+    if (error instanceof LocalRuntimeMissingError) {
       await exitWithRawStderr(error.message, error.exitCode);
-    } else {
-      const message = error instanceof Error ? error.message : String(error);
-      await exitWithRawStderr(message, 1);
+      return;
     }
+    try {
+      const { testRunner } = await resolveLocalRuntime();
+      if (error instanceof testRunner.PreExecutionFailureError) {
+        await exitWithRawStderr(error.message, error.exitCode);
+        return;
+      }
+    } catch {
+      // Runtime not available — fall through to generic error formatting.
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    await exitWithRawStderr(message, 1);
   }
 }
 
@@ -379,6 +481,12 @@ async function runCommand(run: () => Promise<void>): Promise<void> {
     await run();
   } catch (error) {
     if (error instanceof WorkspaceSelectionCancelledError) {
+      process.exit(error.exitCode);
+    }
+    if (error instanceof LocalRuntimeMissingError) {
+      // Already-formatted user-facing message; render verbatim without the
+      // "Error:" prefix that the generic branch adds.
+      process.stderr.write(`${error.message}\n`);
       process.exit(error.exitCode);
     }
     const msg = error instanceof Error ? error.message : String(error);
@@ -392,21 +500,23 @@ async function startWorkspaceReportServer(params: {
   preferredPort: number;
   dev: boolean;
 }): Promise<void> {
+  const runtime = await resolveLocalRuntime();
   const workspace = await resolveCommandWorkspace(params.workspacePath);
   await loadRunIndex(workspace.artifactsDir);
-  const server = await startOrReuseWorkspaceReportServer({
+  const server = await runtime.reportServerManager.startOrReuseWorkspaceReportServer({
     workspace,
     requestedPort: params.preferredPort,
     dev: params.dev,
   });
-  const workspaceUrl = buildWorkspaceReportUrl(server.url);
+  const workspaceUrl = runtime.reportServerManager.buildWorkspaceReportUrl(server.url);
   console.log(`${server.reused ? 'Reusing' : 'Started'} FinalRun report server at ${workspaceUrl}`);
-  await openUrlBestEffort(workspaceUrl);
+  await openUrlBestEffort(workspaceUrl, runtime);
 }
 
 async function stopWorkspaceReportServerCommand(workspacePath?: string): Promise<void> {
+  const runtime = await resolveLocalRuntime();
   const workspace = await resolveCommandWorkspace(workspacePath);
-  const result = await stopWorkspaceReportServer(workspace);
+  const result = await runtime.reportServerManager.stopWorkspaceReportServer(workspace);
   if (!result.stopped) {
     console.log(`FinalRun report server is not running for ${workspace.rootDir}`);
     return;
@@ -416,8 +526,9 @@ async function stopWorkspaceReportServerCommand(workspacePath?: string): Promise
 }
 
 async function printWorkspaceReportServerStatus(workspacePath?: string): Promise<void> {
+  const runtime = await resolveLocalRuntime();
   const workspace = await resolveCommandWorkspace(workspacePath);
-  const status = await getWorkspaceReportServerStatus(workspace);
+  const status = await runtime.reportServerManager.getWorkspaceReportServerStatus(workspace);
   if (!status.running || !status.state) {
     console.log(`FinalRun report server is not running for ${workspace.rootDir}`);
     return;
@@ -464,14 +575,15 @@ function parsePortOption(value: string, fallback: number): number {
 
 async function tryStartReportServer(
   workspace: Awaited<ReturnType<typeof resolveCommandWorkspace>>,
+  runtime: Awaited<ReturnType<typeof resolveLocalRuntime>>,
 ): Promise<string | undefined> {
   try {
-    const server = await startOrReuseWorkspaceReportServer({
+    const server = await runtime.reportServerManager.startOrReuseWorkspaceReportServer({
       workspace,
       requestedPort: 4173,
       dev: false,
     });
-    console.log(`Report server: ${buildWorkspaceReportUrl(server.url)}`);
+    console.log(`Report server: ${runtime.reportServerManager.buildWorkspaceReportUrl(server.url)}`);
     return server.url;
   } catch {
     return undefined;
@@ -536,9 +648,13 @@ function printTestArtifactPaths(test: TestResult, runDir: string): void {
   }
 }
 
-async function openUrlBestEffort(url: string): Promise<void> {
+async function openUrlBestEffort(
+  url: string,
+  runtime?: Awaited<ReturnType<typeof resolveLocalRuntime>>,
+): Promise<void> {
   try {
-    await openReportUrl(url);
+    const resolved = runtime ?? await resolveLocalRuntime();
+    await resolved.reportServerManager.openReportUrl(url);
   } catch {
     // Silently ignore — the URL is already printed to the terminal.
   }
