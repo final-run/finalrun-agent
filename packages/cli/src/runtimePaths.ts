@@ -2,6 +2,17 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+// Read the CLI version from the package.json that sits next to this source
+// file. Under tsc-Node16 the file compiles to CJS so `require` is the global
+// loader; under Bun's compile pipeline the JSON is bundled into the
+// executable. Either way the version is available without walking the
+// build-machine __dirname at runtime (which doesn't exist on the deploy
+// machine for Bun-compiled binaries).
+//
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliPackageJson: { version?: string } = require('../package.json');
+const BUNDLED_CLI_VERSION: string = cliPackageJson.version ?? '0.0.0';
+
 interface FinalRunPackageJson {
   name?: string;
   version?: string;
@@ -43,10 +54,12 @@ export function resolveCliPackageRoot(startDir: string = __dirname): string {
   return findCliPackageRoot(startDir);
 }
 
-export function resolveCliPackageVersion(startDir: string = __dirname): string {
-  const packageJsonPath = path.join(resolveCliPackageRoot(startDir), 'package.json');
-  const packageJson = readJsonFile(packageJsonPath);
-  return packageJson?.version ?? '0.0.0';
+export function resolveCliPackageVersion(_startDir: string = __dirname): string {
+  // Always return the version inlined at build time. We previously walked up
+  // from __dirname looking for a package.json, but in a Bun-compiled binary
+  // __dirname is the source path on the build machine and doesn't exist on
+  // the deploy machine, causing a fatal startup error.
+  return BUNDLED_CLI_VERSION;
 }
 
 export function resolveFinalRunRootDir(): string {
