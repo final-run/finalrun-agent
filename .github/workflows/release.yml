@@ -153,6 +153,47 @@ jobs:
           git tag -a "$TAG" "$SHA" -m "Release $TAG"
           git push origin "$TAG"
 
+      - name: Build release notes from template + CHANGELOG section
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Extract the matching `## [VERSION]` section from CHANGELOG.md.
+          # Maintainers must update CHANGELOG.md (manually, or via Claude)
+          # in the release PR — the workflow refuses to publish without it,
+          # so a release can't accidentally go out without notes.
+          CHANGELOG_SECTION=$(awk -v marker="## [${VERSION}]" '
+            index($0, marker) == 1 { capture = 1; print; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$CHANGELOG_SECTION" ]; then
+            echo "::error::CHANGELOG.md has no '## [${VERSION}]' section."
+            echo "::error::Add an entry under that heading describing what changed in this release, then re-run the workflow."
+            exit 1
+          fi
+
+          # Combine the static install instructions (from the template)
+          # with the version-specific changelog section. The template is
+          # the same across releases; the changelog section changes.
+          {
+            cat .github/release-notes-template.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "## What's changed in this release"
+            echo ""
+            # Skip the first line (`## [VERSION] - DATE`) since we just
+            # printed our own heading; keep the rest verbatim.
+            echo "$CHANGELOG_SECTION" | tail -n +2
+          } > /tmp/release-notes.md
+
+          echo "::group::Final release notes"
+          cat /tmp/release-notes.md
+          echo "::endgroup::"
+
       - name: Create GitHub Release with all artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -172,6 +213,6 @@ jobs:
           fi
           gh release create "$TAG" \
             --title "FinalRun $VERSION" \
-            --notes-file .github/release-notes-template.md \
+            --notes-file /tmp/release-notes.md \
             "${extra_flags[@]}" \
             release-artifacts/*

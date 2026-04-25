@@ -12,12 +12,32 @@ Releases are cut by triggering [`.github/workflows/release.yml`](.github/workflo
 
 ## Standard release flow
 
-### 1. Bump the version on a branch
+### 1. Bump the version + write the changelog entry on a branch
 
 ```sh
 git checkout -b release/vX.Y.Z
 npm version X.Y.Z -w @finalrun/finalrun-agent --no-git-tag-version
-git add packages/cli/package.json
+```
+
+Edit [`CHANGELOG.md`](./CHANGELOG.md): add a section under `## [Unreleased]` for the new version, following the Keep-a-Changelog format (Added / Changed / Deprecated / Removed / Fixed / Security):
+
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+- ...
+
+### Changed
+- ...
+
+### Fixed
+- ...
+```
+
+This is the **only** place where version-specific notes are written. The release workflow extracts this exact section and combines it with the static install instructions from [`.github/release-notes-template.md`](.github/release-notes-template.md) to populate the GitHub Release body. **No manual editing of the GitHub Release UI is needed or expected.**
+
+```sh
+git add packages/cli/package.json package.json CHANGELOG.md package-lock.json
 git commit -m "Release vX.Y.Z"
 git push -u origin release/vX.Y.Z
 ```
@@ -26,8 +46,9 @@ The workflow validates that:
 
 - The version in `packages/cli/package.json` is valid semver.
 - The matching tag (`vX.Y.Z`) doesn't already exist locally **or** on origin.
+- `CHANGELOG.md` has a `## [X.Y.Z]` section. **The workflow refuses to publish if this section is missing**, so a release can't accidentally go out with empty notes.
 
-Workflow refuses to release if either check fails.
+Workflow refuses to release if any check fails.
 
 ### 2. Open + merge the release PR
 
