@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 
-const requiredPackages = ['typescript', 'tsx', 'next'];
+const requiredPackages = ['typescript', 'tsx', 'vite'];
 const missingPackages = requiredPackages.filter((packageName) =>
   !fs.existsSync(path.join(repoRoot, 'node_modules', packageName, 'package.json')),
 );

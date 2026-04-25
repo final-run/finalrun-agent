@@ -22,6 +22,44 @@ export interface LLMTrace {
   parseMs: number;
 }
 
+/**
+ * Per-LLM-call observability data — prompt, response, tokens, timing.
+ * Populated in AIAgent._callLLM() and bubbled up to TestExecutor so
+ * consumers (cloud-server) can forward to observability backends
+ * (e.g., Langfuse) without agent itself depending on any SDK.
+ *
+ * Field names mirror Langfuse's canonical ingestion schema to make
+ * forwarding a straight pass-through on the consumer side.
+ */
+export interface LLMCallTrace {
+  /** AI provider: 'openai' | 'google' | 'anthropic'. */
+  provider: string;
+  /** Full model name, e.g. 'gpt-4.1-mini', 'gemini-2.0-flash'. */
+  model: string;
+  /** Logical feature the call served: 'planner', 'grounder', 'visual_grounder', etc. */
+  feature: string;
+  /** Full prompt as the provider saw it — array of role/content messages (includes any base64 images inline). */
+  prompt: unknown;
+  /** Raw model response text. */
+  completion: string;
+  /** Normalized token counts (Langfuse canonical names — input/output/total). */
+  usage: {
+    input: number;
+    output: number;
+    total: number;
+    /** Only present if the provider reported cache-read input tokens > 0. */
+    input_cached_tokens?: number;
+  };
+  /** ISO-8601 timestamp when the call started. */
+  startedAt: string;
+  /** ISO-8601 timestamp when the call returned or errored. */
+  completedAt: string;
+  /** Wall-clock duration of the LLM call in ms. */
+  durationMs: number;
+  /** Provider error message, if the call threw. */
+  statusMessage?: string;
+}
+
 export interface ActiveTracePhase {
   phase: string;
   startedAt: number;

@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 packages/*/node_modules/
+package-lock.json
 
 # TypeScript build output
 packages/*/dist/
@@ -23,6 +24,7 @@ packages/*/coverage/
 
 # npm pack artifacts
 /finalrun-agent-*.tgz
+packages/*/*.tgz
 
 # Local environment files
 .env

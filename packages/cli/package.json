@@ -59,13 +59,13 @@
     "zod"
   ],
   "scripts": {
-    "build": "npm run clean && tsc",
+    "build": "npm run clean && tsc && node ./scripts/copyReportApp.mjs",
     "clean": "rm -rf dist proto install-resources tsconfig.tsbuildinfo",
     "start": "tsx bin/finalrun.ts",
     "dev": "tsx --tsconfig ../../tsconfig.dev.json bin/finalrun.ts",
     "test": "node --test \"dist/**/*.test.js\"",
     "postinstall": "node ./scripts/installAssets.mjs",
-    "prepack": "cd ../.. && npm run build --workspace=@finalrun/common && npm run build --workspace=@finalrun/device-node && npm run build --workspace=@finalrun/goal-executor && npm run build --workspace=@finalrun/finalrun-agent && node packages/cli/scripts/preparePackage.mjs",
+    "prepack": "cd ../.. && npm run build --workspace=@finalrun/common && npm run build --workspace=@finalrun/device-node && npm run build --workspace=@finalrun/goal-executor && npm run build --workspace=@finalrun/report-web && npm run build --workspace=@finalrun/finalrun-agent && node packages/cli/scripts/preparePackage.mjs",
     "postpack": "node ./scripts/cleanupPackage.mjs"
   },
   "publishConfig": {
@@ -94,7 +94,7 @@
     "zod": "^4.1.8"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
