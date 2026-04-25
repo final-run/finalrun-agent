@@ -1,0 +1,138 @@
+name: Release
+
+# Manual-only trigger. Click "Run workflow" in the Actions tab.
+#
+# Flow when triggered from main (or any branch):
+#   1. Reads version from packages/cli/package.json on the chosen branch.
+#   2. Fails fast if the matching tag (v<version>) already exists.
+#   3. Builds all 4 Bun binaries (darwin-arm64/x64, linux-x64/arm64).
+#   4. Builds all 4 runtime tarballs (per-platform).
+#   5. Tags the exact build SHA as v<version> and pushes the tag.
+#   6. Creates a GitHub Release at that tag, attaches all artifacts +
+#      their .sha256 sidecars, marks it as "latest".
+#
+# To cut a release:
+#   1. Bump packages/cli/package.json version on a branch (default main).
+#   2. Commit + push to the branch.
+#   3. Actions tab → Release → Run workflow → choose branch → Run.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to release from'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: write   # create tag + GitHub Release
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0   # need history + tags so we can validate uniqueness
+
+      - name: Resolve & validate version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          TAG="v${VERSION}"
+          SHA=$(git rev-parse HEAD)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read version from packages/cli/package.json."
+            exit 1
+          fi
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists. Bump packages/cli/package.json or delete the existing tag."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA"         >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG from commit $SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+          cache: 'npm'
+      - run: npm ci
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.11'
+
+      - name: Build all workspace dist files
+        run: |
+          npm run build --workspace=@finalrun/common
+          npm run build --workspace=@finalrun/cloud-core
+          npm run build --workspace=@finalrun/device-node
+          npm run build --workspace=@finalrun/goal-executor
+          npm run build --workspace=@finalrun/report-web
+          npm run build --workspace=@finalrun/finalrun-agent
+
+      - name: Build binaries (all 4 targets via Bun cross-compile)
+        run: ./scripts/build-binary.sh
+
+      - name: Build runtime tarballs (all 4 targets)
+        run: |
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            npm run build:tarball --workspace=@finalrun/local-runtime -- --target="$t"
+          done
+
+      - name: Stage release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp dist/binaries/finalrun-* release-artifacts/
+          cp packages/local-runtime/dist/finalrun-runtime-*.tar.gz* release-artifacts/
+          ls -la release-artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+
+      - name: Tag the build commit and push the tag
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$SHA" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release with all artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release create "$TAG" \
+            --title "FinalRun $VERSION" \
+            --notes-file .github/release-notes-template.md \
+            --latest \
+            release-artifacts/*
