@@ -16,29 +16,24 @@ const INSTALL_URL =
 
 export interface UpgradeOptions {
   version?: string;
-  cloudOnly?: boolean;
-  fullSetup?: boolean;
+  /** Pass --ci to the installer (binary only, skip runtime tarball + prompts). */
+  ci?: boolean;
 }
 
 export async function runUpgrade(options: UpgradeOptions): Promise<void> {
-  if (options.cloudOnly && options.fullSetup) {
-    throw new Error('Pass either --cloud-only or --full-setup, not both.');
-  }
-
-  // If the user didn't pick a mode, infer from the current install state:
-  // a runtime tarball at ~/.finalrun/runtime/<currentVersion>/ means the
-  // user previously ran the full setup, so default to that.
-  let effectiveMode: 'cloud-only' | 'full-setup' | 'auto' = 'auto';
-  if (options.cloudOnly) {
-    effectiveMode = 'cloud-only';
-  } else if (options.fullSetup) {
-    effectiveMode = 'full-setup';
-  } else if (hasInstalledRuntime()) {
-    effectiveMode = 'full-setup';
+  // Mode detection: if the user explicitly passed --ci, honor it. Otherwise,
+  // mirror the user's previous install footprint — if they don't have the
+  // runtime tarball installed today, they probably want a binary-only
+  // upgrade too. If they DO have the runtime tarball, we want the installer
+  // to refresh it (default, no --ci flag).
+  let useCiFlag = options.ci === true;
+  if (!useCiFlag && !hasInstalledRuntime()) {
+    useCiFlag = true;
   }
 
   const targetLabel = options.version ? `v${options.version}` : 'latest';
-  console.log(`Upgrading finalrun to ${targetLabel} (mode: ${effectiveMode})...`);
+  const modeLabel = useCiFlag ? 'binary-only (--ci)' : 'full setup';
+  console.log(`Upgrading finalrun to ${targetLabel} (${modeLabel})...`);
   console.log('');
 
   // Strip FINALRUN_* env vars from the inherited environment before spawning
@@ -59,13 +54,9 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
   if (preservedDir) env['FINALRUN_DIR'] = preservedDir;
   if (options.version) env['FINALRUN_VERSION'] = options.version;
 
-  const flags: string[] = [];
-  if (effectiveMode === 'cloud-only') flags.push('--cloud-only');
-  if (effectiveMode === 'full-setup') flags.push('--full-setup');
-
-  // curl -fsSL <url> | bash -s -- <flags>
+  // curl -fsSL <url> | bash [-s -- --ci]
   // Implemented as `bash -c` so the pipe stays correctly inside one shell.
-  const flagPart = flags.length > 0 ? ` -s -- ${flags.join(' ')}` : '';
+  const flagPart = useCiFlag ? ' -s -- --ci' : '';
   const command = `curl -fsSL ${INSTALL_URL} | bash${flagPart}`;
 
   await new Promise<void>((resolve, reject) => {

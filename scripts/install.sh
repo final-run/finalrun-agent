@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # FinalRun installer
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 #
-# Flags (after `bash -s --`):
-#   --cloud-only      Skip local-dev setup. Install only the CLI binary.
-#                     CI environments are auto-detected and treated as
-#                     --cloud-only by default.
-#   --full-setup      Force interactive local-dev setup even when TTY
-#                     detection misfires.
+# Two install paths — pick whichever fits:
+#
+#   Default (full local-dev setup):
+#     curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+#
+#   --ci (binary only; no runtime tarball, no prompts, no host-tool installs):
+#     curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
+#
+# CI environments (CI=1 in env) auto-apply --ci behavior even without the flag.
 #
 # Env overrides:
 #   FINALRUN_DIR              Install root (default: $HOME/.finalrun)
 #   FINALRUN_VERSION          Version to pin (default: latest GitHub release)
-#   FINALRUN_NON_INTERACTIVE  Set to skip all prompts (same as --cloud-only)
+#   FINALRUN_NON_INTERACTIVE  Set to skip all prompts (same as --ci)
 
 set -euo pipefail
 
@@ -35,70 +36,118 @@ fail()  { printf "${RED}  ✗ %s${RESET}\n" "$*"; }
 GITHUB_REPO="final-run/finalrun-agent"
 
 # ---------------------------------------------------------------------------
-# Arg parsing
+# main — wraps the entire install flow.
+#
+# Why a function? When this script runs as `curl … | bash`, bash reads the
+# script from a pipe. If we ran `exec </dev/tty` at the top level mid-script,
+# bash would then try to read the *rest of the script* from the terminal
+# instead of the pipe and the install would hang waiting for keystrokes.
+# Wrapping the body in main() forces bash to parse the entire function body
+# into memory before invoking it, so reassigning stdin only affects what
+# `read` and child processes (`brew`, `xcode-select`, etc.) see.
 # ---------------------------------------------------------------------------
 
-CLOUD_ONLY=false
-FULL_SETUP=false
+main() {
+  CI_MODE=false
 
-for arg in "$@"; do
-  case "$arg" in
-    --cloud-only)  CLOUD_ONLY=true ;;
-    --full-setup)  FULL_SETUP=true ;;
-    *) fail "Unknown argument: $arg"; exit 1 ;;
-  esac
-done
+  for arg in "$@"; do
+    case "$arg" in
+      --ci)
+        CI_MODE=true
+        ;;
+      --cloud-only)
+        fail "--cloud-only was renamed in v0.1.8. Use --ci instead:"
+        echo "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | bash -s -- --ci"
+        exit 1
+        ;;
+      --full-setup)
+        fail "--full-setup was removed in v0.1.8. Full setup is now the default — drop the flag:"
+        echo "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | bash"
+        exit 1
+        ;;
+      *)
+        fail "Unknown argument: $arg"
+        info "Supported flags: --ci"
+        exit 1
+        ;;
+    esac
+  done
 
-if [ "$CLOUD_ONLY" = true ] && [ "$FULL_SETUP" = true ]; then
-  fail "--cloud-only and --full-setup are mutually exclusive."
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# Prereqs (binary install path needs only curl + tar)
-# ---------------------------------------------------------------------------
-
-for cmd in curl tar uname mkdir chmod; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    fail "$cmd not found. Please install $cmd and re-run."
-    exit 1
+  # CI auto-detect: every major CI provider sets CI=1, so plain
+  # `curl ... | bash` from a CI runner falls back to --ci behavior
+  # automatically and never hits a prompt.
+  if [ -n "${CI:-}" ] || [ -n "${FINALRUN_NON_INTERACTIVE:-}" ]; then
+    CI_MODE=true
   fi
-done
+
+  # Prereqs (binary install path needs only curl + tar)
+  for cmd in curl tar uname mkdir chmod; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      fail "$cmd not found. Please install $cmd and re-run."
+      exit 1
+    fi
+  done
+
+  # Detect platform
+  local os_raw arch_raw
+  os_raw="$(uname -s)"
+  arch_raw="$(uname -m)"
+
+  case "$os_raw" in
+    Darwin*) OS=darwin ;;
+    Linux*)  OS=linux ;;
+    CYGWIN*|MINGW*|MSYS*)
+      fail "Windows hosts (Cygwin / MinGW / MSYS / Git Bash) are not supported yet."
+      info "Install on a macOS or Linux host, or run finalrun in WSL2."
+      exit 1
+      ;;
+    *) fail "Unsupported OS: $os_raw"; exit 1 ;;
+  esac
+
+  case "$arch_raw" in
+    x86_64|amd64) ARCH=x64 ;;
+    arm64|aarch64) ARCH=arm64 ;;
+    *) fail "Unsupported architecture: $arch_raw"; exit 1 ;;
+  esac
+
+  PLATFORM="${OS}-${ARCH}"
+  FINALRUN_DIR="${FINALRUN_DIR:-$HOME/.finalrun}"
+  mkdir -p "$FINALRUN_DIR/bin"
+
+  VERSION=$(resolve_version)
+  TAG="v${VERSION}"
+
+  info "FinalRun Installer (${VERSION})"
+  info "─────────────────────────────"
+  echo ""
+
+  install_binary
+  setup_path
+
+  if [ "$CI_MODE" = true ]; then
+    print_ci_summary
+    exit 0
+  fi
+
+  # Safe NOW — bash has parsed the entire main() body before invoking it,
+  # so reassigning stdin no longer makes bash try to read script bytes from
+  # the terminal. All subsequent `read` calls and child processes inherit
+  # /dev/tty as their stdin.
+  exec </dev/tty
+
+  download_runtime
+  prompt_platform
+  setup_host_tools
+  run_doctor
+  prompt_skills
+  print_summary
+
+  exit 0
+}
 
 # ---------------------------------------------------------------------------
-# Detect platform
+# Step helpers
 # ---------------------------------------------------------------------------
-
-OS_RAW="$(uname -s)"
-ARCH_RAW="$(uname -m)"
-
-case "$OS_RAW" in
-  Darwin*) OS=darwin ;;
-  Linux*)  OS=linux ;;
-  CYGWIN*|MINGW*|MSYS*)
-    # Windows binaries aren't built yet. Bail with a clear message instead of
-    # letting the download step 404 on finalrun-windows-x64.exe.
-    fail "Windows hosts (Cygwin / MinGW / MSYS / Git Bash) are not supported yet."
-    info "Install on a macOS or Linux host, or run finalrun in WSL2."
-    exit 1
-    ;;
-  *) fail "Unsupported OS: $OS_RAW"; exit 1 ;;
-esac
-
-case "$ARCH_RAW" in
-  x86_64|amd64) ARCH=x64 ;;
-  arm64|aarch64) ARCH=arm64 ;;
-  *) fail "Unsupported architecture: $ARCH_RAW"; exit 1 ;;
-esac
-
-PLATFORM="${OS}-${ARCH}"
-
-# ---------------------------------------------------------------------------
-# Resolve install dir + version
-# ---------------------------------------------------------------------------
-
-FINALRUN_DIR="${FINALRUN_DIR:-$HOME/.finalrun}"
-mkdir -p "$FINALRUN_DIR/bin"
 
 resolve_version() {
   if [ -n "${FINALRUN_VERSION:-}" ]; then
@@ -115,8 +164,6 @@ resolve_version() {
     fail "Could not resolve the latest finalrun release. Set FINALRUN_VERSION explicitly."
     exit 1
   fi
-  # Validate the redirect actually looks like a release URL before parsing it,
-  # so a redirect to a 404 page or login page doesn't yield a garbage version.
   if ! [[ "$redirect" =~ /releases/tag/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     fail "Could not parse latest release tag from redirect URL:"
     fail "  $redirect"
@@ -126,75 +173,40 @@ resolve_version() {
   echo "${redirect##*/tag/}" | sed 's/^v//'
 }
 
-VERSION=$(resolve_version)
-TAG="v${VERSION}"
+install_binary() {
+  local bin_url="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/finalrun-${PLATFORM}"
+  BIN_DEST="$FINALRUN_DIR/bin/finalrun"
+  local bin_tmp="${BIN_DEST}.tmp"
 
-# ---------------------------------------------------------------------------
-# Step 1: Always — install the CLI binary
-# ---------------------------------------------------------------------------
-
-info "FinalRun Installer (${VERSION})"
-info "─────────────────────────────"
-echo ""
-
-BIN_NAME="finalrun"
-BIN_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/finalrun-${PLATFORM}"
-BIN_DEST="$FINALRUN_DIR/bin/$BIN_NAME"
-BIN_TMP="${BIN_DEST}.tmp"
-
-info "Downloading finalrun binary for ${PLATFORM}..."
-if ! curl --fail --location --progress-bar "$BIN_URL" -o "$BIN_TMP"; then
-  fail "Failed to download $BIN_URL"
-  rm -f "$BIN_TMP"
-  exit 1
-fi
-chmod +x "$BIN_TMP"
-mv "$BIN_TMP" "$BIN_DEST"
-
-# macOS: drop the quarantine flag so Gatekeeper doesn't block the binary.
-if [ "$OS" = "darwin" ]; then
-  xattr -d com.apple.quarantine "$BIN_DEST" 2>/dev/null || true
-fi
-
-ok "Installed $BIN_DEST"
-
-# Append PATH to common shell rcs (idempotent).
-PATH_LINE="export PATH=\$PATH:$FINALRUN_DIR/bin"
-for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "${ZDOTDIR:-$HOME}/.zshrc"; do
-  touch "$rc" 2>/dev/null || true
-  if [ -f "$rc" ] && ! grep -qF "$FINALRUN_DIR/bin" "$rc" 2>/dev/null; then
-    echo "$PATH_LINE" >> "$rc"
+  info "Downloading finalrun binary for ${PLATFORM}..."
+  if ! curl --fail --location --progress-bar "$bin_url" -o "$bin_tmp"; then
+    fail "Failed to download $bin_url"
+    rm -f "$bin_tmp"
+    exit 1
   fi
-done
+  chmod +x "$bin_tmp"
+  mv "$bin_tmp" "$BIN_DEST"
 
-# ---------------------------------------------------------------------------
-# Step 2: Decide — continue with local-dev setup?
-# ---------------------------------------------------------------------------
-
-is_interactive() {
-  [ -z "${CI:-}" ] || return 1
-  [ -z "${FINALRUN_NON_INTERACTIVE:-}" ] || return 1
-  if ! exec 3</dev/tty 2>/dev/null; then
-    return 1
+  # macOS: drop the quarantine flag so Gatekeeper doesn't block the binary.
+  if [ "$OS" = "darwin" ]; then
+    xattr -d com.apple.quarantine "$BIN_DEST" 2>/dev/null || true
   fi
-  exec 3<&-
-  return 0
+
+  ok "Installed $BIN_DEST"
 }
 
-# Reclaim stdin from the controlling terminal so prompts work even when
-# the script was piped from curl. Only succeeds on real terminals.
-exec </dev/tty 2>/dev/null || true
+setup_path() {
+  local path_line="export PATH=\$PATH:$FINALRUN_DIR/bin"
+  local rc
+  for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "${ZDOTDIR:-$HOME}/.zshrc"; do
+    touch "$rc" 2>/dev/null || true
+    if [ -f "$rc" ] && ! grep -qF "$FINALRUN_DIR/bin" "$rc" 2>/dev/null; then
+      echo "$path_line" >> "$rc"
+    fi
+  done
+}
 
-INTERACTIVE=false
-if [ "$CLOUD_ONLY" = true ]; then
-  INTERACTIVE=false
-elif [ "$FULL_SETUP" = true ]; then
-  INTERACTIVE=true
-elif is_interactive; then
-  INTERACTIVE=true
-fi
-
-if [ "$INTERACTIVE" = false ]; then
+print_ci_summary() {
   echo ""
   ok "finalrun installed."
   echo ""
@@ -202,94 +214,82 @@ if [ "$INTERACTIVE" = false ]; then
   echo ""
   echo "    finalrun cloud test --help"
   echo ""
-  info "For local test execution on this machine, re-run with --full-setup:"
+  info "For local test execution on this machine, re-run without --ci:"
   echo ""
-  echo "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | bash -s -- --full-setup"
+  echo "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | bash"
   echo ""
   echo "Open a new terminal or run:  export PATH=\"\$PATH:$FINALRUN_DIR/bin\""
-  exit 0
-fi
+}
 
-# ---------------------------------------------------------------------------
-# Step 3: Download + extract the runtime tarball
-# ---------------------------------------------------------------------------
-
-echo ""
-info "── Downloading runtime tarball ──"
-
-RUNTIME_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/finalrun-runtime-${VERSION}-${PLATFORM}.tar.gz"
-RUNTIME_DIR="$FINALRUN_DIR/runtime/${VERSION}"
-RUNTIME_TMP="$FINALRUN_DIR/runtime/${VERSION}.tmp"
-TAR_PATH="$FINALRUN_DIR/runtime/${VERSION}.tar.gz"
-
-mkdir -p "$FINALRUN_DIR/runtime"
-rm -rf "$RUNTIME_TMP"
-mkdir -p "$RUNTIME_TMP"
-
-info "Downloading $RUNTIME_URL ..."
-if ! curl --fail --location --progress-bar "$RUNTIME_URL" -o "$TAR_PATH"; then
-  fail "Failed to download runtime tarball."
-  rm -rf "$RUNTIME_TMP" "$TAR_PATH"
-  exit 1
-fi
-
-info "Extracting..."
-if ! tar -xzf "$TAR_PATH" -C "$RUNTIME_TMP"; then
-  fail "Failed to extract runtime tarball."
-  rm -rf "$RUNTIME_TMP" "$TAR_PATH"
-  exit 1
-fi
-rm -f "$TAR_PATH"
-
-# Atomic rename: only after successful extract.
-rm -rf "$RUNTIME_DIR"
-mv "$RUNTIME_TMP" "$RUNTIME_DIR"
-ok "Runtime ${VERSION} installed at $RUNTIME_DIR"
-
-# ---------------------------------------------------------------------------
-# Step 4: Platform prompt (with 30s timeout)
-# ---------------------------------------------------------------------------
-
-echo ""
-info "── Platform Setup ──"
-echo ""
-echo "Which platform(s) would you like to set up host tools for?"
-echo ""
-echo "  1) Android"
-echo "  2) iOS"
-echo "  3) Both"
-echo ""
-
-PLATFORM_CHOICE=""
-prompt_attempts=0
-while [ $prompt_attempts -lt 3 ]; do
-  prompt_attempts=$((prompt_attempts + 1))
-  printf "Enter your choice (1/2/3) [30s timeout]: "
-  if read -r -t 30 REPLY; then
-    case "$REPLY" in
-      1) PLATFORM_CHOICE="android"; break ;;
-      2) PLATFORM_CHOICE="ios"; break ;;
-      3) PLATFORM_CHOICE="both"; break ;;
-      *) echo "Please enter 1, 2, or 3." ;;
-    esac
-  else
-    echo ""
-    warn "No response in 30s — skipping platform tool setup."
-    break
-  fi
-done
-
-# If the user exhausted all 3 attempts without a valid choice, surface that
-# explicitly so they don't silently skip past platform setup.
-if [ -z "$PLATFORM_CHOICE" ] && [ $prompt_attempts -ge 3 ]; then
+download_runtime() {
   echo ""
-  warn "No valid platform selected after $prompt_attempts attempts — skipping platform tool setup."
-  warn "Re-run with --full-setup to try again."
-fi
+  info "── Downloading runtime tarball ──"
 
-# ---------------------------------------------------------------------------
-# Step 5: Install host tools (per-platform)
-# ---------------------------------------------------------------------------
+  local runtime_url="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/finalrun-runtime-${VERSION}-${PLATFORM}.tar.gz"
+  RUNTIME_DIR="$FINALRUN_DIR/runtime/${VERSION}"
+  local runtime_tmp="$FINALRUN_DIR/runtime/${VERSION}.tmp"
+  local tar_path="$FINALRUN_DIR/runtime/${VERSION}.tar.gz"
+
+  mkdir -p "$FINALRUN_DIR/runtime"
+  rm -rf "$runtime_tmp"
+  mkdir -p "$runtime_tmp"
+
+  info "Downloading $runtime_url ..."
+  if ! curl --fail --location --progress-bar "$runtime_url" -o "$tar_path"; then
+    fail "Failed to download runtime tarball."
+    rm -rf "$runtime_tmp" "$tar_path"
+    exit 1
+  fi
+
+  info "Extracting..."
+  if ! tar -xzf "$tar_path" -C "$runtime_tmp"; then
+    fail "Failed to extract runtime tarball."
+    rm -rf "$runtime_tmp" "$tar_path"
+    exit 1
+  fi
+  rm -f "$tar_path"
+
+  rm -rf "$RUNTIME_DIR"
+  mv "$runtime_tmp" "$RUNTIME_DIR"
+  ok "Runtime ${VERSION} installed at $RUNTIME_DIR"
+}
+
+prompt_platform() {
+  echo ""
+  info "── Platform Setup ──"
+  echo ""
+  echo "Which platform(s) would you like to set up host tools for?"
+  echo ""
+  echo "  1) Android"
+  echo "  2) iOS"
+  echo "  3) Both"
+  echo ""
+
+  PLATFORM_CHOICE=""
+  local attempts=0
+  while [ $attempts -lt 3 ]; do
+    attempts=$((attempts + 1))
+    printf "Enter your choice (1/2/3) [30s timeout]: "
+    if read -r -t 30 reply; then
+      case "$reply" in
+        1) PLATFORM_CHOICE="android"; break ;;
+        2) PLATFORM_CHOICE="ios"; break ;;
+        3) PLATFORM_CHOICE="both"; break ;;
+        *) echo "Please enter 1, 2, or 3." ;;
+      esac
+    else
+      echo ""
+      warn "No response in 30s — skipping platform tool setup."
+      break
+    fi
+  done
+
+  if [ -z "$PLATFORM_CHOICE" ] && [ $attempts -ge 3 ]; then
+    echo ""
+    warn "No valid platform selected after $attempts attempts — skipping platform tool setup."
+    warn "Re-run the installer to try again, or run 'finalrun doctor' to diagnose host tooling."
+  fi
+}
 
 setup_android() {
   echo ""
@@ -307,7 +307,7 @@ setup_android() {
 
   if [ "$studio_present" = false ]; then
     fail "Android Studio not found."
-    info "  Install from https://developer.android.com/studio, then re-run --full-setup."
+    info "  Install from https://developer.android.com/studio, then re-run the installer."
     return 1
   fi
   ok "Android Studio detected."
@@ -343,7 +343,7 @@ setup_ios() {
 
   if ! xcode-select -p >/dev/null 2>&1; then
     fail "Xcode not found."
-    info "  Install Xcode from the App Store, then re-run --full-setup."
+    info "  Install Xcode from the App Store, then re-run the installer."
     return 1
   fi
   ok "Xcode detected."
@@ -378,83 +378,84 @@ setup_ios() {
   return 0
 }
 
-android_ok=true
-ios_ok=true
+setup_host_tools() {
+  ANDROID_OK=true
+  IOS_OK=true
+  case "$PLATFORM_CHOICE" in
+    android)  setup_android || ANDROID_OK=false ;;
+    ios)      setup_ios     || IOS_OK=false ;;
+    both)     setup_android || ANDROID_OK=false; setup_ios || IOS_OK=false ;;
+    "")       : ;;  # skipped via timeout / exhausted attempts
+  esac
+}
 
-case "$PLATFORM_CHOICE" in
-  android)  setup_android || android_ok=false ;;
-  ios)      setup_ios     || ios_ok=false ;;
-  both)     setup_android || android_ok=false; setup_ios || ios_ok=false ;;
-  "")       : ;;  # skipped via timeout
-esac
-
-# ---------------------------------------------------------------------------
-# Step 6: Run doctor (verification)
-# ---------------------------------------------------------------------------
-
-if [ -n "$PLATFORM_CHOICE" ]; then
+run_doctor() {
+  if [ -z "$PLATFORM_CHOICE" ]; then
+    return
+  fi
   echo ""
   info "── Verifying Setup ──"
   echo ""
-  doctor_platform="$PLATFORM_CHOICE"
-  if [ "$doctor_platform" = "both" ]; then doctor_platform="all"; fi
-  "$BIN_DEST" doctor --platform "$doctor_platform" || true
-fi
-
-# ---------------------------------------------------------------------------
-# Step 7: Skills (optional, last)
-# ---------------------------------------------------------------------------
-
-echo ""
-info "── FinalRun AI Agent Skills ──"
-echo ""
-printf "Install AI agent skills (used by Claude Code/Cursor for /finalrun-* commands)? [Y/n] [30s timeout]: "
-SKILLS_CHOICE=""
-if read -r -t 30 SKILLS_REPLY; then
-  case "$SKILLS_REPLY" in
-    n|N|no|NO)  SKILLS_CHOICE=skip ;;
-    *)          SKILLS_CHOICE=install ;;
-  esac
-else
-  echo ""
-  warn "No response in 30s — skipping skills install."
-  SKILLS_CHOICE=skip
-fi
-
-if [ "$SKILLS_CHOICE" = "install" ]; then
-  if ! command -v npx >/dev/null 2>&1; then
-    warn "npx not found — skills require Node + npm. Install Node 20+ and re-run --full-setup if you want them."
-  else
-    info "Installing FinalRun skills..."
-    npx skills add final-run/finalrun-agent && ok "FinalRun skills installed."
+  local doctor_platform="$PLATFORM_CHOICE"
+  if [ "$doctor_platform" = "both" ]; then
+    doctor_platform="all"
   fi
-fi
+  "$BIN_DEST" doctor --platform "$doctor_platform" || true
+}
+
+prompt_skills() {
+  echo ""
+  info "── FinalRun AI Agent Skills ──"
+  echo ""
+  printf "Install AI agent skills (used by Claude Code/Cursor for /finalrun-* commands)? [Y/n] [30s timeout]: "
+  local reply choice
+  if read -r -t 30 reply; then
+    case "$reply" in
+      n|N|no|NO)  choice=skip ;;
+      *)          choice=install ;;
+    esac
+  else
+    echo ""
+    warn "No response in 30s — skipping skills install."
+    choice=skip
+  fi
+
+  if [ "$choice" = "install" ]; then
+    if ! command -v npx >/dev/null 2>&1; then
+      warn "npx not found — skills require Node + npm. Install Node 20+ and re-run the installer if you want them."
+    else
+      info "Installing FinalRun skills..."
+      npx skills add final-run/finalrun-agent && ok "FinalRun skills installed."
+    fi
+  fi
+}
+
+print_summary() {
+  echo ""
+  info "── Summary ──"
+  echo ""
+  ok "finalrun ${VERSION} installed at $BIN_DEST"
+  ok "Runtime ${VERSION} extracted to $RUNTIME_DIR"
+  case "$PLATFORM_CHOICE" in
+    android) [ "$ANDROID_OK" = true ] && ok "Android: ready." || warn "Android: setup incomplete." ;;
+    ios)     [ "$IOS_OK" = true ]     && ok "iOS: ready."     || warn "iOS: setup incomplete." ;;
+    both)
+      [ "$ANDROID_OK" = true ] && ok "Android: ready." || warn "Android: setup incomplete."
+      [ "$IOS_OK" = true ]     && ok "iOS: ready."     || warn "iOS: setup incomplete."
+      ;;
+  esac
+
+  echo ""
+  info "Open a new terminal, or run:"
+  echo ""
+  echo "    export PATH=\"\$PATH:$FINALRUN_DIR/bin\""
+  echo ""
+  info "Try it:  finalrun --help"
+  echo ""
+}
 
 # ---------------------------------------------------------------------------
-# Summary
+# Entry
 # ---------------------------------------------------------------------------
 
-echo ""
-info "── Summary ──"
-echo ""
-ok "finalrun ${VERSION} installed at $BIN_DEST"
-ok "Runtime ${VERSION} extracted to $RUNTIME_DIR"
-case "$PLATFORM_CHOICE" in
-  android) [ "$android_ok" = true ] && ok "Android: ready." || warn "Android: setup incomplete." ;;
-  ios)     [ "$ios_ok" = true ]     && ok "iOS: ready."     || warn "iOS: setup incomplete." ;;
-  both)
-    [ "$android_ok" = true ] && ok "Android: ready." || warn "Android: setup incomplete."
-    [ "$ios_ok" = true ]     && ok "iOS: ready."     || warn "iOS: setup incomplete."
-    ;;
-esac
-
-echo ""
-info "Open a new terminal, or run:"
-echo ""
-echo "    export PATH=\"\$PATH:$FINALRUN_DIR/bin\""
-echo ""
-info "Try it:  finalrun --help"
-echo ""
-
-exec <&- 2>/dev/null || true
-exit 0
+main "$@"
