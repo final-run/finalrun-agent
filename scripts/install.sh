@@ -287,7 +287,7 @@ prompt_platform() {
   if [ -z "$PLATFORM_CHOICE" ] && [ $attempts -ge 3 ]; then
     echo ""
     warn "No valid platform selected after $attempts attempts — skipping platform tool setup."
-    warn "Re-run without --ci to try again."
+    warn "Re-run the installer to try again, or run 'finalrun doctor' to diagnose host tooling."
   fi
 }
 
