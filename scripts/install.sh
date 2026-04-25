@@ -279,6 +279,14 @@ while [ $prompt_attempts -lt 3 ]; do
   fi
 done
 
+# If the user exhausted all 3 attempts without a valid choice, surface that
+# explicitly so they don't silently skip past platform setup.
+if [ -z "$PLATFORM_CHOICE" ] && [ $prompt_attempts -ge 3 ]; then
+  echo ""
+  warn "No valid platform selected after $prompt_attempts attempts — skipping platform tool setup."
+  warn "Re-run with --full-setup to try again."
+fi
+
 # ---------------------------------------------------------------------------
 # Step 5: Install host tools (per-platform)
 # ---------------------------------------------------------------------------
@@ -308,7 +316,12 @@ setup_android() {
     ok "scrcpy already installed."
   elif command -v brew >/dev/null 2>&1; then
     info "  Installing scrcpy via Homebrew..."
-    brew install scrcpy && ok "scrcpy installed."
+    if brew install scrcpy; then
+      ok "scrcpy installed."
+    else
+      fail "brew install scrcpy failed — check the brew output above."
+      return 1
+    fi
   else
     fail "scrcpy not found and Homebrew is not available."
     info "  Install Homebrew (https://brew.sh), then run: brew install scrcpy"
@@ -350,7 +363,12 @@ setup_ios() {
     info "  Tapping wix/brew for applesimutils..."
     brew tap wix/brew 2>/dev/null || true
     info "  Installing applesimutils via Homebrew..."
-    brew install applesimutils && ok "applesimutils installed."
+    if brew install applesimutils; then
+      ok "applesimutils installed."
+    else
+      fail "brew install applesimutils failed — check the brew output above."
+      return 1
+    fi
   else
     fail "applesimutils not found and Homebrew is not available."
     info "  Install Homebrew (https://brew.sh), then run: brew tap wix/brew && brew install applesimutils"

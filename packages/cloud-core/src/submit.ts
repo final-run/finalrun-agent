@@ -49,7 +49,19 @@ export interface SubmitRunResult {
 // Generous timeout to accommodate large APK/IPA uploads on slow uplinks while
 // still catching genuinely stalled connections. Override with
 // FINALRUN_SUBMIT_TIMEOUT_MS for ultra-large uploads or low-bandwidth tests.
-const SUBMIT_TIMEOUT_MS = Number(process.env['FINALRUN_SUBMIT_TIMEOUT_MS']) || 30 * 60 * 1000;
+const SUBMIT_TIMEOUT_MS = parseSubmitTimeoutMs(30 * 60 * 1000);
+
+function parseSubmitTimeoutMs(defaultMs: number): number {
+  const raw = process.env['FINALRUN_SUBMIT_TIMEOUT_MS'];
+  if (raw === undefined || raw === '') return defaultMs;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(
+      `Invalid FINALRUN_SUBMIT_TIMEOUT_MS=${JSON.stringify(raw)}: must be a positive integer (milliseconds).`,
+    );
+  }
+  return parsed;
+}
 
 export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult> {
   Logger.i('Preparing cloud run...');
@@ -221,8 +233,16 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
       throw new Error(`Cloud service returned ${response.status}: ${body}`);
     }
 
-    // Validate response shape before declaring success on the spinner.
-    const result = (await response.json()) as { success: boolean; runId?: string; error?: string };
+    // Validate response shape before declaring success on the spinner. Wrap
+    // the JSON parse so a malformed/empty body (proxy injecting HTML,
+    // truncated response) fails the spinner instead of leaving it hung.
+    let result: { success: boolean; runId?: string; error?: string };
+    try {
+      result = await response.json() as typeof result;
+    } catch (e) {
+      spinner.fail(`Submission succeeded but server returned an unparseable body`);
+      throw e;
+    }
     if (!result.success || !result.runId) {
       spinner.fail(`Submission rejected by server`);
       throw new Error(
