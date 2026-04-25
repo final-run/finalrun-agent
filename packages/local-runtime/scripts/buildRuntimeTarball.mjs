@@ -9,15 +9,19 @@
 //
 // The tarball layout:
 //   manifest.json                # version, platform, file sha256 sums
-//   node_modules/                # heavy runtime npm deps (resolvable)
 //   install-resources/           # driver APKs (always) + iOS zips (darwin only)
 //   proto/finalrun/driver.proto  # gRPC schema
 //   report-app/                  # Vite SPA dist for the local report server
+//
+// We do NOT ship node_modules: the Bun-compiled CLI binary bundles all
+// JS module code (goal-executor, device-node, ai-sdk, grpc, etc.) into
+// itself. The runtime tarball only carries non-JS assets that need to live
+// on disk for the binary's runtime resolvers (driver APKs, the Vite SPA
+// dist served by the local report server, the gRPC .proto schema).
 
 import {
   copyFileSync,
   cpSync,
-  createReadStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -84,106 +88,7 @@ rmSync(stagingDir, { recursive: true, force: true });
 mkdirSync(stagingDir, { recursive: true });
 rmSync(tarballPath, { force: true });
 
-// 1. Vendor runtime deps into staging/node_modules/.
-//
-// The local-runtime workspace's package.json lists exactly what should ship.
-// Its declared deps are hoisted to repoRoot/node_modules/ by npm; we walk
-// each one and copy it (along with its transitive deps) into staging.
-console.log(`[build-runtime] Vendoring deps for ${target}...`);
-const localRuntimePackageJson = JSON.parse(
-  readFileSync(resolve(packageRoot, 'package.json'), 'utf8'),
-);
-const declaredDeps = Object.keys(localRuntimePackageJson.dependencies ?? {});
-const stagingNodeModules = resolve(stagingDir, 'node_modules');
-mkdirSync(stagingNodeModules, { recursive: true });
-
-const finalrunPackageSources = {
-  '@finalrun/cloud-core': resolve(repoRoot, 'packages/cloud-core'),
-  '@finalrun/common': resolve(repoRoot, 'packages/common'),
-  '@finalrun/device-node': resolve(repoRoot, 'packages/device-node'),
-  '@finalrun/goal-executor': resolve(repoRoot, 'packages/goal-executor'),
-  '@finalrun/report-web': resolve(repoRoot, 'packages/report-web'),
-};
-const finalrunPackageEntries = {
-  '@finalrun/cloud-core': ['dist', 'package.json'],
-  '@finalrun/common': ['dist', 'package.json'],
-  '@finalrun/device-node': ['dist', 'package.json'],
-  '@finalrun/goal-executor': ['dist', 'package.json', 'src/prompts'],
-  '@finalrun/report-web': ['dist', 'package.json'],
-};
-
-for (const dep of declaredDeps) {
-  if (dep.startsWith('@finalrun/')) {
-    vendorWorkspacePackage(dep);
-  } else {
-    vendorExternalPackage(dep, stagingNodeModules);
-  }
-}
-
-function vendorWorkspacePackage(name) {
-  const source = finalrunPackageSources[name];
-  if (!source) bail(`Unknown @finalrun/* package: ${name}`);
-  const entries = finalrunPackageEntries[name];
-  const target = resolve(stagingNodeModules, name);
-  mkdirSync(target, { recursive: true });
-  for (const entry of entries) {
-    const sourcePath = resolve(source, entry);
-    const targetPath = resolve(target, entry);
-    if (!existsSync(sourcePath)) {
-      bail(`Missing entry ${entry} for ${name} (build the workspace first?)`);
-    }
-    if (entry === 'package.json') {
-      const pkg = JSON.parse(readFileSync(sourcePath, 'utf8'));
-      delete pkg.devDependencies;
-      delete pkg.scripts;
-      delete pkg.private;
-      writeFileSync(targetPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
-      continue;
-    }
-    cpSync(sourcePath, targetPath, {
-      recursive: true,
-      filter: (src) => !src.endsWith('.test.js') && !src.endsWith('.test.d.ts'),
-    });
-  }
-}
-
-function vendorExternalPackage(packageName, targetNodeModulesDir, ancestry = new Set()) {
-  if (ancestry.has(packageName)) return;
-  const sourcePath = resolve(repoRoot, 'node_modules', packageName);
-  const targetPath = resolve(targetNodeModulesDir, packageName);
-  if (!existsSync(sourcePath)) {
-    bail(`Missing hoisted dep ${packageName} at ${sourcePath} — run \`npm install\` at the repo root first.`);
-  }
-  rmSync(targetPath, { recursive: true, force: true });
-  mkdirSync(dirname(targetPath), { recursive: true });
-  cpSync(sourcePath, targetPath, { recursive: true });
-
-  const nextAncestry = new Set(ancestry);
-  nextAncestry.add(packageName);
-
-  // Strip nested node_modules from the copy so transitive deps are flat.
-  const childNodeModules = resolve(targetPath, 'node_modules');
-  rmSync(childNodeModules, { recursive: true, force: true });
-
-  const childPackageJsonPath = resolve(targetPath, 'package.json');
-  if (!existsSync(childPackageJsonPath)) return;
-  const childPackageJson = JSON.parse(readFileSync(childPackageJsonPath, 'utf8'));
-  const transitive = new Set([
-    ...Object.keys(childPackageJson.dependencies ?? {}),
-    ...Object.keys(childPackageJson.optionalDependencies ?? {}),
-  ]);
-  for (const peer of Object.keys(childPackageJson.peerDependencies ?? {})) {
-    if (!nextAncestry.has(peer) && existsSync(resolve(repoRoot, 'node_modules', peer))) {
-      transitive.add(peer);
-    }
-  }
-  for (const childDep of transitive) {
-    if (childDep.startsWith('@finalrun/')) continue; // handled separately
-    vendorExternalPackage(childDep, targetNodeModulesDir, nextAncestry);
-  }
-}
-
-// 2. Copy install-resources. iOS bits only ship in darwin tarballs.
+// 1. Copy install-resources. iOS bits only ship in darwin tarballs.
 console.log('[build-runtime] Copying install-resources...');
 const installResourcesSource = resolve(repoRoot, 'resources');
 const installResourcesTarget = resolve(stagingDir, 'install-resources');
@@ -202,14 +107,14 @@ for (const asset of assetsToCopy) {
   copyFileSync(source, target);
 }
 
-// 3. Copy proto.
+// 2. Copy proto.
 const protoSource = resolve(repoRoot, 'proto/finalrun/driver.proto');
 const protoTarget = resolve(stagingDir, 'proto/finalrun/driver.proto');
 if (!existsSync(protoSource)) bail(`Missing proto at ${protoSource}`);
 mkdirSync(dirname(protoTarget), { recursive: true });
 copyFileSync(protoSource, protoTarget);
 
-// 4. Copy report-app SPA.
+// 3. Copy report-app SPA.
 console.log('[build-runtime] Copying report-app SPA...');
 const reportAppSource = resolve(repoRoot, 'packages/report-web/dist/app');
 const reportAppTarget = resolve(stagingDir, 'report-app');
@@ -218,7 +123,7 @@ if (!existsSync(reportAppSource)) {
 }
 cpSync(reportAppSource, reportAppTarget, { recursive: true });
 
-// 5. Compute manifest.
+// 4. Compute manifest.
 console.log('[build-runtime] Computing sha256 manifest...');
 const manifestEntries = [];
 walk(stagingDir, (filePath) => {
@@ -250,7 +155,7 @@ function walk(root, fn) {
   }
 }
 
-// 6. tar -czf.
+// 5. tar -czf.
 console.log(`[build-runtime] Creating tarball at ${tarballPath}...`);
 const tar = spawnSync(
   'tar',
@@ -261,7 +166,7 @@ if (tar.status !== 0) {
   bail(`tar exited with status ${tar.status}`);
 }
 
-// 7. Final sha256 of the tarball itself, for the install script to verify.
+// 6. Final sha256 of the tarball itself, for the install script to verify.
 const tarballSha = createHash('sha256').update(readFileSync(tarballPath)).digest('hex');
 const tarballSize = statSync(tarballPath).size;
 console.log('');

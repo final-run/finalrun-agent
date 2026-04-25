@@ -18,9 +18,7 @@
   },
   "dependencies": {
     "@finalrun/common": "*",
-    "adm-zip": "^0.5.17",
-    "app-info-parser": "^1.1.6",
-    "simple-plist": "^1.3.1"
+    "adm-zip": "^0.5.17"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",

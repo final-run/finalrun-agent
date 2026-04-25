@@ -97,17 +97,60 @@ export function resolveCliLaunchArgs(
 }
 
 export function initializeCliRuntimeEnvironment(startDir: string = __dirname): void {
+  // Look for the local-runtime tarball install location first. When the CLI
+  // is running as a Bun-compiled binary, all on-disk assets (driver APKs,
+  // gRPC proto, Vite SPA dist) live there rather than next to the binary.
+  const runtimeRoot = resolveLocalRuntimeRoot();
+
   if (!process.env['FINALRUN_DRIVER_PROTO_PATH']) {
-    const packageRoot = resolveCliPackageRoot(startDir);
-    const candidates = [
-      path.join(packageRoot, 'proto', 'finalrun', 'driver.proto'),
-      path.resolve(packageRoot, '../../proto/finalrun/driver.proto'),
-      path.resolve(packageRoot, '../proto/finalrun/driver.proto'),
-    ];
+    const candidates: string[] = [];
+    if (runtimeRoot) {
+      candidates.push(path.join(runtimeRoot, 'proto', 'finalrun', 'driver.proto'));
+    }
+    try {
+      const packageRoot = resolveCliPackageRoot(startDir);
+      candidates.push(
+        path.join(packageRoot, 'proto', 'finalrun', 'driver.proto'),
+        path.resolve(packageRoot, '../../proto/finalrun/driver.proto'),
+        path.resolve(packageRoot, '../proto/finalrun/driver.proto'),
+      );
+    } catch {
+      // No CLI package root resolvable — happens inside Bun-compiled binaries.
+      // Fall back to runtime-tarball location only.
+    }
 
     const resolvedProtoPath = candidates.find((candidate) => fs.existsSync(candidate));
     if (resolvedProtoPath) {
       process.env['FINALRUN_DRIVER_PROTO_PATH'] = resolvedProtoPath;
     }
   }
+
+  if (!process.env['FINALRUN_ASSET_DIR'] && runtimeRoot) {
+    const installResources = path.join(runtimeRoot, 'install-resources');
+    if (fs.existsSync(installResources)) {
+      process.env['FINALRUN_ASSET_DIR'] = installResources;
+    }
+  }
+
+  if (!process.env['FINALRUN_REPORT_APP_DIR'] && runtimeRoot) {
+    const reportApp = path.join(runtimeRoot, 'report-app');
+    if (fs.existsSync(reportApp)) {
+      process.env['FINALRUN_REPORT_APP_DIR'] = reportApp;
+    }
+  }
+}
+
+function resolveLocalRuntimeRoot(): string | undefined {
+  const override = process.env['FINALRUN_RUNTIME_ROOT'];
+  if (override && override.trim()) {
+    const candidate = path.resolve(override.trim());
+    if (fs.existsSync(path.join(candidate, 'manifest.json'))) {
+      return candidate;
+    }
+  }
+  const versioned = path.join(os.homedir(), '.finalrun', 'runtime', resolveCliPackageVersion());
+  if (fs.existsSync(path.join(versioned, 'manifest.json'))) {
+    return versioned;
+  }
+  return undefined;
 }

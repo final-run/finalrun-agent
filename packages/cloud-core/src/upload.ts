@@ -1,12 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { inspectApp, formatAppInfo, type AppMetadata } from './appInspector.js';
 import { formatBytes } from './submit.js';
 
 export interface UploadAppInput {
   appPath: string;
   cloudUrl: string;
   apiKey: string;
+  /** Optional explicit platform; if omitted, inferred from filename extension. */
+  platform?: 'android' | 'ios';
 }
 
 export interface UploadAppResult {
@@ -15,32 +16,25 @@ export interface UploadAppResult {
   size: number;
 }
 
+function inferPlatformFromFilename(appPath: string): 'android' | 'ios' {
+  const lower = appPath.toLowerCase();
+  if (lower.endsWith('.apk')) return 'android';
+  if (lower.endsWith('.ipa') || lower.endsWith('.app.zip') || lower.endsWith('.zip')) return 'ios';
+  throw new Error(
+    `Cannot infer platform from filename: ${appPath}. ` +
+    `Expected .apk for Android or .ipa/.zip for iOS, or pass --platform.`,
+  );
+}
+
 export async function uploadApp(input: UploadAppInput): Promise<UploadAppResult> {
   if (!fs.existsSync(input.appPath)) {
     throw new Error(`App file not found: ${input.appPath}`);
   }
 
-  // 1. Inspect and print info before uploading
-  let metadata: AppMetadata;
-  try {
-    metadata = await inspectApp(input.appPath);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`\n\x1b[31mx ${msg}\x1b[0m\n`);
-  }
-
-  if (metadata.platform === 'ios' && metadata.simulatorCompatible === false) {
-    throw new Error(
-      `\n\x1b[31mx This iOS app is a device-only build and cannot run on simulators.\x1b[0m\n` +
-      `   Rebuild with the iphonesimulator SDK:\n` +
-      `     • Flutter:  flutter build ios --simulator --debug\n` +
-      `     • Xcode:    xcodebuild -sdk iphonesimulator ...\n`,
-    );
-  }
-
-  console.log('');
-  console.log(formatAppInfo(metadata));
-  console.log('');
+  // Server validates the binary authoritatively after upload (platform,
+  // simulator-compatibility, packageName). We only send a platform hint
+  // — inferred from extension if not provided.
+  const platform = input.platform ?? inferPlatformFromFilename(input.appPath);
 
   const appBuffer = fs.readFileSync(input.appPath);
   const appFileName = path.basename(input.appPath);
@@ -50,11 +44,9 @@ export async function uploadApp(input: UploadAppInput): Promise<UploadAppResult>
   const spinner = ora(`Uploading ${appFileName} (${formatBytes(appSize)})...`).start();
   const uploadStart = Date.now();
 
-  // 2. Build form data with metadata hints — server will re-validate
   const formData = new FormData();
   formData.append('appFile', new Blob([appBuffer]), appFileName);
-  formData.append('platform', metadata.platform);
-  formData.append('packageName', metadata.packageName);
+  formData.append('platform', platform);
 
   let response: Response;
   try {

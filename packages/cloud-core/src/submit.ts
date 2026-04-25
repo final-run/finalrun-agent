@@ -3,7 +3,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import AdmZip from 'adm-zip';
 import { Logger } from '@finalrun/common';
-import { inspectApp, formatAppInfo, type AppMetadata } from './appInspector.js';
 
 // Minimal projection of the CLI's CheckRunnerResult needed by submission.
 // Cloud-core does not depend on the CLI's check pipeline; the orchestrator
@@ -51,34 +50,15 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
 
   // Resolve app — either from --app flag or let the server auto-pick
   // the latest app_upload for this org + platform at submit time.
+  // Client-side inspection was intentionally removed: the server validates
+  // the binary (platform, simulator-compatibility, packageName) authoritatively
+  // after upload, and dropping the inspection step keeps the slim binary lean.
   let appMode: { type: 'file'; path: string } | { type: 'server-default' };
-  let inlineMetadata: AppMetadata | undefined;
 
   if (input.appPath) {
     if (!fs.existsSync(input.appPath)) {
       throw new Error(`App file not found: ${input.appPath}`);
     }
-
-    try {
-      inlineMetadata = await inspectApp(input.appPath);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(`\n\x1b[31mx ${msg}\x1b[0m\n`);
-    }
-
-    if (inlineMetadata.platform === 'ios' && inlineMetadata.simulatorCompatible === false) {
-      throw new Error(
-        `\n\x1b[31mx This iOS app is a device-only build and cannot run on simulators.\x1b[0m\n` +
-        `   Rebuild with the iphonesimulator SDK:\n` +
-        `     • Flutter:  flutter build ios --simulator --debug\n` +
-        `     • Xcode:    xcodebuild -sdk iphonesimulator ...\n`,
-      );
-    }
-
-    console.log('');
-    console.log(formatAppInfo(inlineMetadata));
-    console.log('');
-
     appMode = { type: 'file', path: input.appPath };
   } else {
     console.log(`\n  No --app provided; server will use the latest app uploaded for platform '${input.platform}'.\n`);
@@ -185,13 +165,6 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
       const appSize = appBuffer.byteLength;
       formData.append('appFile', new Blob([appBuffer]), appFileName);
       formData.append('appFilename', appFileName);
-
-      // Include inspected metadata as a hint — server re-validates authoritatively.
-      // Don't append `platform` here: the --platform flag is already sent above,
-      // and multer would combine duplicates into an array breaking downstream .trim().
-      if (inlineMetadata) {
-        formData.append('packageName', inlineMetadata.packageName);
-      }
 
       spinnerMessage = `Uploading ${appFileName} (${formatBytes(appSize)}) and submitting ${submissionLabel}...`;
     } else {

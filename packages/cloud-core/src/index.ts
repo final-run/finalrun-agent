@@ -1,6 +1,5 @@
 // Barrel export for @finalrun/cloud-core
 
-export { inspectApp, formatAppInfo, type AppMetadata } from './appInspector.js';
 export {
   submitRun,
   formatBytes,
