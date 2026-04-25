@@ -1,8 +1,8 @@
 {
   "name": "@finalrun/finalrun-agent",
   "version": "0.1.7",
-  "private": false,
-  "description": "AI-driven mobile app testing CLI for YAML-defined tests on Android and iOS",
+  "private": true,
+  "description": "AI-driven mobile app testing CLI for YAML-defined tests on Android and iOS. Distributed as a Bun-compiled binary via curl|sh installer; not published to npm.",
   "license": "Apache-2.0",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -29,48 +29,12 @@
     "cli",
     "ai"
   ],
-  "files": [
-    "dist",
-    "proto",
-    "install-resources",
-    "scripts/installAssets.mjs",
-    "!dist/**/*.test.js",
-    "!dist/**/*.test.js.map",
-    "!dist/**/*.test.d.ts",
-    "!dist/**/*.test.d.ts.map"
-  ],
-  "bundleDependencies": [
-    "@ai-sdk/anthropic",
-    "@ai-sdk/google",
-    "@ai-sdk/openai",
-    "@finalrun/cloud-core",
-    "@finalrun/common",
-    "@finalrun/device-node",
-    "@finalrun/goal-executor",
-    "@grpc/proto-loader",
-    "@grpc/grpc-js",
-    "ai",
-    "chalk",
-    "commander",
-    "dotenv",
-    "ora",
-    "protobufjs",
-    "uuid",
-    "yaml",
-    "zod"
-  ],
   "scripts": {
     "build": "npm run clean && tsc && node ./scripts/copyReportApp.mjs",
-    "clean": "rm -rf dist proto install-resources tsconfig.tsbuildinfo",
+    "clean": "rm -rf dist proto tsconfig.tsbuildinfo",
     "start": "tsx bin/finalrun.ts",
     "dev": "tsx --tsconfig ../../tsconfig.dev.json bin/finalrun.ts",
-    "test": "node --test \"dist/**/*.test.js\"",
-    "postinstall": "node ./scripts/installAssets.mjs",
-    "prepack": "cd ../.. && npm run build --workspace=@finalrun/common && npm run build --workspace=@finalrun/cloud-core && npm run build --workspace=@finalrun/device-node && npm run build --workspace=@finalrun/goal-executor && npm run build --workspace=@finalrun/report-web && npm run build --workspace=@finalrun/finalrun-agent && node packages/cli/scripts/preparePackage.mjs",
-    "postpack": "node ./scripts/cleanupPackage.mjs"
-  },
-  "publishConfig": {
-    "access": "public"
+    "test": "node --test \"dist/**/*.test.js\""
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.58",

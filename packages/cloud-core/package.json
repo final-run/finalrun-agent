@@ -1,16 +1,11 @@
 {
   "name": "@finalrun/cloud-core",
   "version": "0.1.7",
-  "description": "Pure cloud-submission logic shared by the FinalRun CLI and the slim cloud binary",
+  "private": true,
+  "description": "Pure cloud-submission logic for the FinalRun CLI. Internal workspace package; bundled into the Bun-compiled CLI binary, not published to npm.",
   "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "npm run clean && tsc",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
