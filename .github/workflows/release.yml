@@ -90,8 +90,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
-      - run: npm ci
+          # No cache: 'npm' — this repo intentionally does not commit
+          # package-lock.json (.gitignore line 4), so setup-node's npm
+          # cache feature has nothing to key on.
+      # Same reason `npm install` instead of `npm ci`: ci requires a lockfile.
+      - run: npm install
 
       - uses: oven-sh/setup-bun@v2
         with:
