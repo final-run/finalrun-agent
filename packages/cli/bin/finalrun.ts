@@ -19,6 +19,7 @@ import {
 } from '../src/workspace.js';
 import { WorkspaceSelectionCancelledError } from '../src/workspacePicker.js';
 import { LocalRuntimeMissingError, resolveLocalRuntime } from '../src/localRuntime.js';
+import { runUpgrade } from '../src/upgradeCommand.js';
 // Type-only imports — erased at runtime, do not pull the heavy module graph.
 import type { TestRunnerResult } from '../src/testRunner.js';
 
@@ -265,6 +266,22 @@ program
   });
 
 program
+  .command('upgrade')
+  .description('Upgrade the finalrun CLI by re-running the install script')
+  .option('--version <version>', 'Pin to a specific version (default: latest GitHub release)')
+  .option('--cloud-only', 'Install only the binary (skip runtime tarball + host tools)')
+  .option('--full-setup', 'Force interactive local-dev setup')
+  .action(async (options: UpgradeCommandOptions) => {
+    await runCommand(async () => {
+      await runUpgrade({
+        version: options.version,
+        cloudOnly: options.cloudOnly === true,
+        fullSetup: options.fullSetup === true,
+      });
+    });
+  });
+
+program
   .command('internal-report-server', { hidden: true })
   .option('--workspace-root <path>', 'Workspace root', '')
   .option('--artifacts-dir <path>', 'Artifacts directory', '')
@@ -346,6 +363,12 @@ interface InternalReportServerOptions {
   artifactsDir: string;
   port: string;
   mode: string;
+}
+
+interface UpgradeCommandOptions {
+  version?: string;
+  cloudOnly?: boolean;
+  fullSetup?: boolean;
 }
 
 async function runTestCommand(params: {
