@@ -46,6 +46,11 @@ export interface SubmitRunResult {
   appFilename?: string;
 }
 
+// Generous timeout to accommodate large APK/IPA uploads on slow uplinks while
+// still catching genuinely stalled connections. Override with
+// FINALRUN_SUBMIT_TIMEOUT_MS for ultra-large uploads or low-bandwidth tests.
+const SUBMIT_TIMEOUT_MS = Number(process.env['FINALRUN_SUBMIT_TIMEOUT_MS']) || 30 * 60 * 1000;
+
 export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult> {
   Logger.i('Preparing cloud run...');
 
@@ -196,10 +201,16 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
         method: 'POST',
         headers: { Authorization: `Bearer ${input.apiKey}` },
         body: formData,
+        signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
       });
     } catch (e) {
       const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(1);
-      spinner.fail(`Upload failed after ${elapsed}s`);
+      const isTimeout = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
+      spinner.fail(
+        isTimeout
+          ? `Upload timed out after ${elapsed}s — connection stalled.`
+          : `Upload failed after ${elapsed}s`,
+      );
       throw e;
     }
 

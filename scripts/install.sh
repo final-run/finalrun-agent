@@ -75,7 +75,13 @@ ARCH_RAW="$(uname -m)"
 case "$OS_RAW" in
   Darwin*) OS=darwin ;;
   Linux*)  OS=linux ;;
-  CYGWIN*|MINGW*|MSYS*) OS=windows ;;
+  CYGWIN*|MINGW*|MSYS*)
+    # Windows binaries aren't built yet. Bail with a clear message instead of
+    # letting the download step 404 on finalrun-windows-x64.exe.
+    fail "Windows hosts (Cygwin / MinGW / MSYS / Git Bash) are not supported yet."
+    info "Install on a macOS or Linux host, or run finalrun in WSL2."
+    exit 1
+    ;;
   *) fail "Unsupported OS: $OS_RAW"; exit 1 ;;
 esac
 
@@ -131,10 +137,8 @@ info "FinalRun Installer (${VERSION})"
 info "─────────────────────────────"
 echo ""
 
-ext=""
-if [ "$OS" = "windows" ]; then ext=".exe"; fi
-BIN_NAME="finalrun${ext}"
-BIN_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/finalrun-${PLATFORM}${ext}"
+BIN_NAME="finalrun"
+BIN_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/finalrun-${PLATFORM}"
 BIN_DEST="$FINALRUN_DIR/bin/$BIN_NAME"
 BIN_TMP="${BIN_DEST}.tmp"
 

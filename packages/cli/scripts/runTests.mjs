@@ -48,4 +48,19 @@ const result = spawnSync(process.execPath, ['--test', ...testFiles], {
   cwd: resolve(here, '..'),
 });
 
+// Surface spawn errors instead of dropping them as a bare exit 1.
+if (result.error) {
+  console.error(`[runTests] Failed to spawn ${process.execPath}: ${result.error.message}`);
+  process.exit(1);
+}
+
+// If node --test was killed by a signal (e.g. SIGINT, SIGKILL, OOM),
+// status is null and signal carries the name. Propagate the conventional
+// 128 + signo exit code so CI logs surface the real cause.
+if (result.signal) {
+  // The constants module exposes named signals; fall back to "1" if missing.
+  const signo = (await import('node:os')).constants.signals[result.signal] ?? 1;
+  process.exit(128 + signo);
+}
+
 process.exit(result.status ?? 1);
