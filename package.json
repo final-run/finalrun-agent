@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "bootstrap": "npm ci",
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspaces --if-present",
     "build:drivers": "./scripts/build-drivers-android.sh && ./scripts/build-drivers-ios.sh",
     "build:drivers:android": "./scripts/build-drivers-android.sh",
     "build:drivers:ios": "./scripts/build-drivers-ios.sh",
