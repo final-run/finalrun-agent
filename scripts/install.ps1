@@ -134,6 +134,31 @@ function Install-Binary {
     # Does NOT bypass SmartScreen — that requires Authenticode signing.
     Unblock-File -Path $tmpPath -ErrorAction SilentlyContinue
 
+    # Windows holds an exclusive image-section lock on a running .exe, so
+    # `Move-Item -Force` over a live finalrun.exe (the case during
+    # `finalrun upgrade`, where finalrun.exe spawns powershell.exe to run
+    # this script) fails with a sharing violation. Renaming the running
+    # .exe is allowed — it only updates the directory entry, not the open
+    # image — so stash the old one out of the way before moving the new
+    # one in. The stash file becomes deletable once the parent finalrun
+    # process exits and is cleaned up on the next upgrade.
+    if (Test-Path $binPath) {
+        $stashName = 'finalrun.exe.old'
+        $stashPath = Join-Path $binDir $stashName
+        if (Test-Path $stashPath) {
+            Remove-Item -Force $stashPath -ErrorAction SilentlyContinue
+        }
+        try {
+            Rename-Item -Path $binPath -NewName $stashName -ErrorAction Stop
+        } catch {
+            Write-Failure "Could not replace existing $binPath."
+            Write-Failure "Is finalrun running in another window?"
+            Write-Failure $_.Exception.Message
+            if (Test-Path $tmpPath) { Remove-Item -Force $tmpPath }
+            exit 1
+        }
+    }
+
     Move-Item -Force -Path $tmpPath -Destination $binPath
     Write-Success "Installed $binPath"
     return $binPath
@@ -147,8 +172,11 @@ function Update-UserPath {
 
     # Idempotent: split and check exact membership, not substring (which
     # would falsely match C:\foo\bin against C:\foo\bin\subdir).
+    # `-icontains` for case-insensitive comparison — Windows paths are
+    # case-insensitive, so a pre-existing entry with different casing
+    # (e.g. C:\Users\foo\.finalrun\Bin) shouldn't get a duplicate appended.
     $segments = ($current -split ';') | Where-Object { $_ }
-    if ($segments -contains $BinDir) {
+    if ($segments -icontains $BinDir) {
         return
     }
 
