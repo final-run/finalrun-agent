@@ -6,10 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
+## [0.1.10] - 2026-04-26
 
-- Windows x86_64 build target. `scripts/build-binary.sh` and `packages/local-runtime/scripts/buildRuntimeTarball.mjs` now cross-compile a `finalrun-windows-x64.exe` and a matching `finalrun-runtime-<version>-windows-x64.tar.gz` from the existing Linux-based release runner via Bun's `bun-windows-x64` target. The Windows runtime is Android-only — iOS local execution is not supported on Windows because it requires `xcodebuild` (macOS-only).
-- `release.yml` smoke-test job (`smoke-windows`) that downloads the cross-compiled `.exe` and runs `finalrun --version` / `--help` on a real `windows-latest` runner before the release job tags or publishes. Catches PE-header / runtime-bundling regressions that wouldn't show up on Linux.
+### Added — Windows x86_64 support
+
+FinalRun now ships a `finalrun-windows-x64.exe` binary and a matching `finalrun-runtime-0.1.10-windows-x64.tar.gz` runtime bundle on every release. End users on Windows can download the `.exe` from the assets below and place it on their PATH; local Android execution also needs the runtime tarball extracted to `%USERPROFILE%\.finalrun\runtime\0.1.10\`. A PowerShell installer (`install.ps1`) is planned for a follow-up release.
+
+The Windows runtime is **Android-only** — iOS local execution requires `xcodebuild` (macOS-only). Cloud commands (`finalrun cloud test`, `finalrun cloud upload`) work the same on Windows as on macOS/Linux for both Android and iOS.
+
+Built via Bun's `bun-windows-x64` cross-compile target on the existing Linux-based release runner; no new CI infrastructure or signing pipeline yet (Windows users will see a SmartScreen warning on first run — click "More info → Run anyway"). A new `smoke-windows` job in the release workflow runs the cross-compiled `.exe` on a real `windows-latest` runner before tagging, blocking the release if the binary fails to execute.
+
+### Notes
+
+- `finalrun upgrade` does not yet work on Windows — it shells out to `bash`, which isn't available natively. Windows users should re-download the `.exe` from the latest GitHub release until `install.ps1` ships.
+- `scripts/install.sh` continues to reject Windows hosts (Cygwin / MinGW / MSYS / Git Bash). Windows is supported via the standalone `.exe`, not via the bash installer.
 
 ## [0.1.9] - 2026-04-26
 
