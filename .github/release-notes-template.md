@@ -1,6 +1,8 @@
 ## Install
 
-One command on macOS or Linux. No Node.js, no npm, nothing else required.
+### macOS / Linux
+
+One command. No Node.js, no npm, nothing else required.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
@@ -14,7 +16,19 @@ curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scrip
 
 CI environments (`CI=1`) get this behavior automatically even without the flag.
 
-For Windows, download `finalrun-windows-x64.exe` from the assets below and place it on your PATH. Local Android execution also needs the matching `finalrun-runtime-<version>-windows-x64.tar.gz` extracted to `%USERPROFILE%\.finalrun\runtime\<version>\`. (A PowerShell installer is in the works.)
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
+```
+
+For CI / non-interactive environments:
+
+```powershell
+$env:FINALRUN_NON_INTERACTIVE=1; irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
+```
+
+Windows hosts support **Android local execution and all cloud commands.** iOS local execution requires macOS (xcodebuild) — use `finalrun cloud` for iOS testing from Windows. First run may show a SmartScreen warning since the binary is not yet code-signed; click "More info → Run anyway".
 
 ## Artifacts
 
