@@ -40,6 +40,7 @@ const SUPPORTED_TARGETS = new Set([
   'darwin-x64',
   'linux-x64',
   'linux-arm64',
+  'windows-x64',
 ]);
 
 function parseArgs() {
