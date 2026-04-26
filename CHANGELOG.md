@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-04-26
+
+### Changed
+
+- `finalrun upgrade` flag space mirrors the v0.1.8 installer: `--cloud-only` and `--full-setup` are removed in favor of `--ci`. When neither is passed, the upgrade mode is inferred from whether the local runtime tarball is currently installed (binary-only if not, full setup if yes).
+
+### Fixed
+
+- Cloud submissions (`cloud test`, `cloud upload`) drop the env file when the active environment comes from `.finalrun/config.yaml`'s `env:` default. The zip now ships `.finalrun/env/<envName>.yaml` whether the env is set via `--env` or resolved from config defaults. Regression introduced in v0.1.8 — the server-side check would 500 with `Environment "<name>" was requested, but .finalrun/env does not exist`.
+- `LocalRuntimeMissingError` recovery hint no longer references the removed `install.sh --full-setup` flag — it now points at plain `curl … | bash` (full setup is the default).
+- `install.sh` platform-prompt-exhausted warning no longer suggests "re-run without --ci" (that path is unreachable from `--ci` mode). It now suggests re-running the installer or running `finalrun doctor` to diagnose host tooling.
+
 ## [0.1.8] - 2026-04-25
 
 ### Changed — distribution model
