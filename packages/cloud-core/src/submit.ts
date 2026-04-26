@@ -110,11 +110,14 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
     });
   }
 
-  // Only ship the env file the run actually uses. Uploading every env file
-  // (dev/staging/prod/...) wastes bandwidth and unnecessarily exposes other
-  // environments' bindings to the cloud submission. If --env wasn't passed,
-  // we don't ship any env file and the server falls back to whatever it
-  // resolves from config.yaml.
+  // Ship the env file matching the *resolved* env name the caller computed
+  // (--env if passed, else config.yaml's `env:` field, else nothing). The
+  // CLI orchestrator passes the resolved value here, not the raw flag, so
+  // a workspace with `env: dev` in config.yaml gets env/dev.yaml shipped
+  // even when the user didn't repeat --env=dev on the command line.
+  // Uploading just the one in-use env file (instead of every YAML under
+  // .finalrun/env/) avoids leaking other environments' bindings to the
+  // cloud submission.
   if (input.envName) {
     const envDir = path.join(input.workspaceRoot, '.finalrun', 'env');
     const candidates = [`${input.envName}.yaml`, `${input.envName}.yml`];
