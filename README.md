@@ -51,21 +51,19 @@
 
 ## Install
 
+**macOS / Linux**
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-Downloads a self-contained `finalrun` binary into `~/.finalrun/bin/`, adds it to your PATH, downloads the per-platform runtime tarball, prompts for Android/iOS, installs host tools (`scrcpy`, Xcode CLT, `applesimutils`), and offers to install the AI agent skills. No Node.js required.
+**Windows (PowerShell)**
 
-For CI / non-interactive environments — install only the binary, skip the runtime tarball and prompts:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
+```powershell
+irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
 ```
 
-CI environments (`CI=1` set in env) get this behavior automatically even without the flag.
-
-After install, run `finalrun doctor` to verify host readiness.
+iOS local testing requires macOS (`xcodebuild`). On Windows, use `finalrun cloud` for iOS — Android works locally. CI flags, env overrides, and the artifact list live in the [latest release notes](https://github.com/final-run/finalrun-agent/releases/latest).
 
 
 ## Write and Run Your First Test Using AI Agents
