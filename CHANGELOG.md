@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Windows x86_64 build target. `scripts/build-binary.sh` and `packages/local-runtime/scripts/buildRuntimeTarball.mjs` now cross-compile a `finalrun-windows-x64.exe` and a matching `finalrun-runtime-<version>-windows-x64.tar.gz` from the existing Linux-based release runner via Bun's `bun-windows-x64` target. The Windows runtime is Android-only — iOS local execution is not supported on Windows because it requires `xcodebuild` (macOS-only).
+- `release.yml` smoke-test job (`smoke-windows`) that downloads the cross-compiled `.exe` and runs `finalrun --version` / `--help` on a real `windows-latest` runner before the release job tags or publishes. Catches PE-header / runtime-bundling regressions that wouldn't show up on Linux.
+- `release.yml` `dry_run` workflow input. When `true`, the build and smoke-test jobs run but the release job is skipped — useful for validating risky changes (Bun upgrade, build script edits, new platforms) against a feature branch without producing a public release.
+
 ## [0.1.9] - 2026-04-26
 
 ### Changed

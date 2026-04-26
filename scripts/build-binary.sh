@@ -26,6 +26,7 @@ ALL_TARGETS=(
   bun-darwin-x64
   bun-linux-x64
   bun-linux-arm64
+  bun-windows-x64
 )
 
 if [ "$#" -eq 0 ]; then

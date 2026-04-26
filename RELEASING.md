@@ -4,10 +4,10 @@ This is the runbook for cutting a new release. The normal path uses GitHub Actio
 
 ## What a release contains
 
-Every release ships **8 download files** plus a checksum file for each (16 files total) on the GitHub Releases page:
+Every release ships **10 download files** plus a checksum file for each (20 files total) on the GitHub Releases page:
 
-- A small `finalrun` program for each of: macOS Apple Silicon, macOS Intel, Linux x86_64, Linux ARM64.
-- A "runtime bundle" (`.tar.gz`) for each of those four platforms — this contains the extra files local-test execution needs (driver app builds, gRPC schema, the report-server web UI).
+- A small `finalrun` program for each of: macOS Apple Silicon, macOS Intel, Linux x86_64, Linux ARM64, Windows x86_64.
+- A "runtime bundle" (`.tar.gz`) for each of those five platforms — this contains the extra files local-test execution needs (driver app builds, gRPC schema, the report-server web UI). The Windows runtime is Android-only; iOS local execution requires macOS.
 
 Users install the `finalrun` program by running:
 
@@ -88,10 +88,22 @@ Or open `https://github.com/final-run/finalrun-agent/releases/tag/vX.Y.Z` in a b
 
 You should see:
 
-- 16 downloadable files (8 binaries/tarballs + 8 checksum files)
+- 20 downloadable files (10 binaries/tarballs + 10 checksum files)
 - A release body that includes install instructions and your CHANGELOG section
 
 That's it — `finalrun upgrade` on user machines, and fresh `curl ... | bash` runs, will now pull your new version.
+
+---
+
+## Testing the build pipeline without releasing
+
+The workflow takes a `dry_run` input. When set, it runs the full build and the Windows smoke-test, but skips tagging and publishing — useful for validating risky changes (Bun upgrade, new platform, build script edit) against a feature branch before bumping the version on main.
+
+```sh
+gh workflow run release.yml -f branch=my-feature-branch -f dry_run=true
+```
+
+The build artifacts land on the workflow run page with 7-day retention; download them with `gh run download <run-id>` to inspect locally. Nothing public ships, no tag is created.
 
 ---
 
@@ -126,9 +138,9 @@ git checkout main && git pull
 # 2. Set the version you're releasing
 VERSION=X.Y.Z
 
-# 3. Build all 8 release files
+# 3. Build all 10 release files
 ./scripts/build-binary.sh
-for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64; do
   npm run build:tarball --workspace=@finalrun/local-runtime -- --target=$t
 done
 

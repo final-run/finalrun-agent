@@ -5,11 +5,17 @@ name: Release
 # Flow when triggered from main (or any branch):
 #   1. Reads version from packages/cli/package.json on the chosen branch.
 #   2. Fails fast if the matching tag (v<version>) already exists.
-#   3. Builds all 4 Bun binaries (darwin-arm64/x64, linux-x64/arm64).
-#   4. Builds all 4 runtime tarballs (per-platform).
-#   5. Tags the exact build SHA as v<version> and pushes the tag.
-#   6. Creates a GitHub Release at that tag, attaches all artifacts +
+#   3. Builds all 5 Bun binaries (darwin-arm64/x64, linux-x64/arm64, windows-x64).
+#   4. Builds all 5 runtime tarballs (per-platform).
+#   5. Smoke-tests the Windows binary on a real windows-latest runner.
+#   6. Tags the exact build SHA as v<version> and pushes the tag.
+#   7. Creates a GitHub Release at that tag, attaches all artifacts +
 #      their .sha256 sidecars, marks it as "latest".
+#
+# Dry-run mode:
+#   Pass dry_run=true to run steps 1–5 (build + smoke-test) without tagging
+#   or publishing. Useful for validating risky changes against a feature
+#   branch before bumping the version on main.
 #
 # To cut a release:
 #   1. Bump packages/cli/package.json version on a branch (default main).
@@ -22,6 +28,10 @@ on:
         description: 'Branch to release from'
         required: false
         default: 'main'
+      dry_run:
+        description: 'Build + smoke-test only (skip tagging & publish)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # create tag + GitHub Release
@@ -109,12 +119,12 @@ jobs:
           npm run build --workspace=@finalrun/report-web
           npm run build --workspace=@finalrun/finalrun-agent
 
-      - name: Build binaries (all 4 targets via Bun cross-compile)
+      - name: Build binaries (all 5 targets via Bun cross-compile)
         run: ./scripts/build-binary.sh
 
-      - name: Build runtime tarballs (all 4 targets)
+      - name: Build runtime tarballs (all 5 targets)
         run: |
-          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64; do
             npm run build:tarball --workspace=@finalrun/local-runtime -- --target="$t"
           done
 
@@ -131,8 +141,47 @@ jobs:
           path: release-artifacts/
           retention-days: 7
 
-  release:
+  # Validate the Windows .exe actually executes on a real Windows host before
+  # we tag and publish. Bun cross-compiles the binary from ubuntu-24.04, so
+  # without this gate a Windows-specific runtime breakage (missing DLL, bad
+  # PE header, embedded-runtime mismatch) would only surface after release.
+  # Cheap insurance: ~30s of windows-latest runtime per release.
+  smoke-windows:
     needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+
+      - name: Smoke-test the Windows binary
+        shell: pwsh
+        run: |
+          $exe = "release-artifacts/finalrun-windows-x64.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Expected $exe in downloaded artifacts but did not find it."
+            exit 1
+          }
+          Write-Host "Running: $exe --version"
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "finalrun.exe --version exited $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "Running: $exe --help"
+          & $exe --help
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "finalrun.exe --help exited $LASTEXITCODE"
+            exit 1
+          }
+
+  release:
+    needs: [build, smoke-windows]
+    # Skip tag + publish when running in dry-run mode. The build and
+    # smoke-windows jobs still run, so a dry run validates everything that
+    # would ship without producing a public release.
+    if: github.event.inputs.dry_run != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
