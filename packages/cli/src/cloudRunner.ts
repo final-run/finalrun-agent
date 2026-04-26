@@ -41,7 +41,10 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
   const apiKey = requireApiKey();
   const cloudUrl = resolveCloudUrl();
 
-  // 1. Validate specs locally (fast fail before upload)
+  // 1. Validate specs locally (fast fail before upload). runCheck resolves
+  //    the effective env from --env if passed, else from .finalrun/config.yaml's
+  //    `env:` field — same logic the server-side runCheck will run when it
+  //    unpacks the zip.
   const checked = await runCheck({
     selectors: options.selectors,
     suitePath: options.suitePath,
@@ -56,7 +59,17 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
   //    [node, finalrun(.ts), ...userArgs].
   const command = ['finalrun', ...process.argv.slice(2).map(shellQuote)].join(' ');
 
-  // 3. Delegate to cloud-core for zip + submit
+  // 3. Pass the *resolved* env name (not the raw --env flag) to submit so the
+  //    zip includes the right env file. If config.yaml declares `env: dev`,
+  //    the resolution above already promoted that to checked.environment.envName
+  //    even when --env wasn't passed; the previous behavior of forwarding the
+  //    raw flag value left config-default users with no env file in the zip
+  //    and a 500 from the server.
+  const effectiveEnvName = checked.environment.envPath
+    ? checked.environment.envName
+    : undefined;
+
+  // 4. Delegate to cloud-core for zip + submit
   return submitRun({
     checked: {
       tests: checked.tests.map((spec) => ({
@@ -75,7 +88,7 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
     workspaceRoot: checked.workspace.rootDir,
     selectors: options.selectors,
     suitePath: options.suitePath,
-    envName: options.envName,
+    envName: effectiveEnvName,
     platform: options.platform,
     appPath: options.appPath,
     command,
