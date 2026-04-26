@@ -95,18 +95,6 @@ That's it — `finalrun upgrade` on user machines, and fresh `curl ... | bash` r
 
 ---
 
-## Testing the build pipeline without releasing
-
-The workflow takes a `dry_run` input. When set, it runs the full build and the Windows smoke-test, but skips tagging and publishing — useful for validating risky changes (Bun upgrade, new platform, build script edit) against a feature branch before bumping the version on main.
-
-```sh
-gh workflow run release.yml -f branch=my-feature-branch -f dry_run=true
-```
-
-The build artifacts land on the workflow run page with 7-day retention; download them with `gh run download <run-id>` to inspect locally. Nothing public ships, no tag is created.
-
----
-
 ## What the workflow checks before publishing
 
 The workflow refuses to release if any of these fail. This is your safety net.

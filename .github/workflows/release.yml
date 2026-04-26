@@ -12,11 +12,6 @@ name: Release
 #   7. Creates a GitHub Release at that tag, attaches all artifacts +
 #      their .sha256 sidecars, marks it as "latest".
 #
-# Dry-run mode:
-#   Pass dry_run=true to run steps 1–5 (build + smoke-test) without tagging
-#   or publishing. Useful for validating risky changes against a feature
-#   branch before bumping the version on main.
-#
 # To cut a release:
 #   1. Bump packages/cli/package.json version on a branch (default main).
 #   2. Commit + push to the branch.
@@ -28,10 +23,6 @@ on:
         description: 'Branch to release from'
         required: false
         default: 'main'
-      dry_run:
-        description: 'Build + smoke-test only (skip tagging & publish)'
-        type: boolean
-        default: false
 
 permissions:
   contents: write   # create tag + GitHub Release
@@ -59,8 +50,6 @@ jobs:
 
       - name: Resolve & validate version
         id: version
-        env:
-          DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./packages/cli/package.json').version")
@@ -77,19 +66,13 @@ jobs:
 
           # Refuse if the tag already exists locally OR on origin (the local
           # check alone misses tags pushed by other contributors / CI runs).
-          # Skipped on dry_run: dry-runs don't tag, and they're meant to be
-          # re-runnable against the current version while iterating on a PR.
-          if [ "${DRY_RUN:-false}" != "true" ]; then
-            if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
-              echo "::error::Tag $TAG already exists locally. Bump packages/cli/package.json or delete the existing tag."
-              exit 1
-            fi
-            if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
-              echo "::error::Tag $TAG already exists on origin. Bump packages/cli/package.json."
-              exit 1
-            fi
-          else
-            echo "::notice::Dry-run mode: skipping tag-uniqueness check for $TAG."
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists locally. Bump packages/cli/package.json or delete the existing tag."
+            exit 1
+          fi
+          if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists on origin. Bump packages/cli/package.json."
+            exit 1
           fi
 
           # Pre-release tags (e.g. 0.2.0-rc.1) should NOT clobber the
@@ -186,10 +169,6 @@ jobs:
 
   release:
     needs: [build, smoke-windows]
-    # Skip tag + publish when running in dry-run mode. The build and
-    # smoke-windows jobs still run, so a dry run validates everything that
-    # would ship without producing a public release.
-    if: github.event.inputs.dry_run != 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
