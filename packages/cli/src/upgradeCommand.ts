@@ -1,9 +1,9 @@
 // `finalrun upgrade` — self-update by re-running the install script.
 //
-// We don't reimplement the install logic here; the script at
-// scripts/install.sh handles binary download, PATH wiring, and
-// (interactively) the runtime tarball + host tools. This subcommand
-// just spawns it.
+// We don't reimplement the install logic here; the install scripts
+// (install.sh on macOS/Linux, install.ps1 on Windows) handle binary
+// download, PATH wiring, and (interactively) the runtime tarball +
+// host tools. This subcommand just spawns the right one.
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -11,8 +11,10 @@ import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { resolveCliPackageVersion } from './runtimePaths.js';
 
-const INSTALL_URL =
+const INSTALL_SH_URL =
   'https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh';
+const INSTALL_PS1_URL =
+  'https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1';
 
 export interface UpgradeOptions {
   version?: string;
@@ -54,13 +56,32 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
   if (preservedDir) env['FINALRUN_DIR'] = preservedDir;
   if (options.version) env['FINALRUN_VERSION'] = options.version;
 
-  // curl -fsSL <url> | bash [-s -- --ci]
-  // Implemented as `bash -c` so the pipe stays correctly inside one shell.
-  const flagPart = useCiFlag ? ' -s -- --ci' : '';
-  const command = `curl -fsSL ${INSTALL_URL} | bash${flagPart}`;
+  let shell: string;
+  let shellArgs: string[];
+
+  if (process.platform === 'win32') {
+    // PowerShell's `irm | iex` reads the script as an in-memory string and
+    // can't forward arguments to it (no equivalent of bash's `-s --`). The
+    // CI flag travels via env var instead — install.ps1 honors FINALRUN_-
+    // NON_INTERACTIVE the same way install.sh does.
+    if (useCiFlag) env['FINALRUN_NON_INTERACTIVE'] = '1';
+    shell = 'powershell.exe';
+    shellArgs = [
+      '-NoProfile',
+      '-NoLogo',
+      '-Command',
+      `irm ${INSTALL_PS1_URL} | iex`,
+    ];
+  } else {
+    // curl -fsSL <url> | bash [-s -- --ci]
+    // Implemented as `bash -c` so the pipe stays correctly inside one shell.
+    const flagPart = useCiFlag ? ' -s -- --ci' : '';
+    shell = 'bash';
+    shellArgs = ['-c', `curl -fsSL ${INSTALL_SH_URL} | bash${flagPart}`];
+  }
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('bash', ['-c', command], {
+    const child = spawn(shell, shellArgs, {
       stdio: 'inherit',
       env,
     });

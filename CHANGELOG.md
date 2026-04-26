@@ -10,16 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added — Windows x86_64 support
 
-FinalRun now ships a `finalrun-windows-x64.exe` binary and a matching `finalrun-runtime-0.1.10-windows-x64.tar.gz` runtime bundle on every release. End users on Windows can download the `.exe` from the assets below and place it on their PATH; local Android execution also needs the runtime tarball extracted to `%USERPROFILE%\.finalrun\runtime\0.1.10\`. A PowerShell installer (`install.ps1`) is planned for a follow-up release.
+FinalRun now ships a `finalrun-windows-x64.exe` binary and a matching `finalrun-runtime-0.1.10-windows-x64.tar.gz` runtime bundle on every release.
 
-The Windows runtime is **Android-only** — iOS local execution requires `xcodebuild` (macOS-only). Cloud commands (`finalrun cloud test`, `finalrun cloud upload`) work the same on Windows as on macOS/Linux for both Android and iOS.
+End users on Windows install via PowerShell:
 
-Built via Bun's `bun-windows-x64` cross-compile target on the existing Linux-based release runner; no new CI infrastructure or signing pipeline yet (Windows users will see a SmartScreen warning on first run — click "More info → Run anyway"). A new `smoke-windows` job in the release workflow runs the cross-compiled `.exe` on a real `windows-latest` runner before tagging, blocking the release if the binary fails to execute.
+```powershell
+irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
+```
+
+The Windows installer (`scripts/install.ps1`) mirrors the bash installer's structure: downloads the binary, extracts the runtime tarball, wires up the per-user PATH, and walks the user through Android tooling setup (Android Studio detection + `scrcpy` install via `winget` with a `choco` fallback). The iOS prompt is intentionally absent — iOS local execution requires `xcodebuild` (macOS-only). Cloud commands work the same on Windows for both Android and iOS.
+
+`finalrun upgrade` now branches on platform: Windows hosts re-run `install.ps1` via `powershell.exe -Command "irm <url> | iex"`; macOS/Linux hosts continue to re-run `install.sh` via `bash -c "curl <url> | bash"`. Both honor the `--ci` flag.
+
+Built via Bun's `bun-windows-x64` cross-compile target on the existing Linux-based release runner; no new CI infrastructure or code signing pipeline yet (Windows users will see a SmartScreen warning on first run — click "More info → Run anyway"). A new `smoke-windows` job in the release workflow runs the cross-compiled `.exe` on a real `windows-latest` runner before tagging, blocking the release if the binary fails to execute.
 
 ### Notes
 
-- `finalrun upgrade` does not yet work on Windows — it shells out to `bash`, which isn't available natively. Windows users should re-download the `.exe` from the latest GitHub release until `install.ps1` ships.
-- `scripts/install.sh` continues to reject Windows hosts (Cygwin / MinGW / MSYS / Git Bash). Windows is supported via the standalone `.exe`, not via the bash installer.
+- Windows ARM64 is not supported — Bun does not currently provide a `bun-windows-arm64` cross-compile target.
+- `scripts/install.sh` continues to reject Windows hosts (Cygwin / MinGW / MSYS / Git Bash). Windows installs go through `install.ps1`, not the bash installer.
+- The Windows runtime tarball is byte-equivalent to the Linux x64 tarball (Android-only payload); the existing `isDarwin` gate in `buildRuntimeTarball.mjs` correctly excludes iOS bundles for non-darwin targets.
 
 ## [0.1.9] - 2026-04-26
 
