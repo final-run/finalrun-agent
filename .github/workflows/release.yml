@@ -59,6 +59,8 @@ jobs:
 
       - name: Resolve & validate version
         id: version
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./packages/cli/package.json').version")
@@ -75,13 +77,19 @@ jobs:
 
           # Refuse if the tag already exists locally OR on origin (the local
           # check alone misses tags pushed by other contributors / CI runs).
-          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
-            echo "::error::Tag $TAG already exists locally. Bump packages/cli/package.json or delete the existing tag."
-            exit 1
-          fi
-          if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $TAG already exists on origin. Bump packages/cli/package.json."
-            exit 1
+          # Skipped on dry_run: dry-runs don't tag, and they're meant to be
+          # re-runnable against the current version while iterating on a PR.
+          if [ "${DRY_RUN:-false}" != "true" ]; then
+            if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+              echo "::error::Tag $TAG already exists locally. Bump packages/cli/package.json or delete the existing tag."
+              exit 1
+            fi
+            if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::Tag $TAG already exists on origin. Bump packages/cli/package.json."
+              exit 1
+            fi
+          else
+            echo "::notice::Dry-run mode: skipping tag-uniqueness check for $TAG."
           fi
 
           # Pre-release tags (e.g. 0.2.0-rc.1) should NOT clobber the
