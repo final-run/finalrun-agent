@@ -1,18 +1,20 @@
 {
   "name": "finalrun-agent-monorepo",
-  "version": "0.1.7",
+  "version": "0.1.10",
   "private": true,
   "description": "Monorepo for the finalrun-agent CLI",
   "workspaces": [
     "packages/common",
+    "packages/cloud-core",
     "packages/device-node",
     "packages/goal-executor",
     "packages/report-web",
-    "packages/cli"
+    "packages/cli",
+    "packages/local-runtime"
   ],
   "scripts": {
     "bootstrap": "npm ci",
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspaces --if-present",
     "build:drivers": "./scripts/build-drivers-android.sh && ./scripts/build-drivers-ios.sh",
     "build:drivers:android": "./scripts/build-drivers-android.sh",
     "build:drivers:ios": "./scripts/build-drivers-ios.sh",

@@ -2,6 +2,17 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+// Read the CLI version from the package.json that sits next to this source
+// file. Under tsc-Node16 the file compiles to CJS so `require` is the global
+// loader; under Bun's compile pipeline the JSON is bundled into the
+// executable. Either way the version is available without walking the
+// build-machine __dirname at runtime (which doesn't exist on the deploy
+// machine for Bun-compiled binaries).
+//
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliPackageJson: { version?: string } = require('../package.json');
+const BUNDLED_CLI_VERSION: string = cliPackageJson.version ?? '0.0.0';
+
 interface FinalRunPackageJson {
   name?: string;
   version?: string;
@@ -43,10 +54,12 @@ export function resolveCliPackageRoot(startDir: string = __dirname): string {
   return findCliPackageRoot(startDir);
 }
 
-export function resolveCliPackageVersion(startDir: string = __dirname): string {
-  const packageJsonPath = path.join(resolveCliPackageRoot(startDir), 'package.json');
-  const packageJson = readJsonFile(packageJsonPath);
-  return packageJson?.version ?? '0.0.0';
+export function resolveCliPackageVersion(_startDir: string = __dirname): string {
+  // Always return the version inlined at build time. We previously walked up
+  // from __dirname looking for a package.json, but in a Bun-compiled binary
+  // __dirname is the source path on the build machine and doesn't exist on
+  // the deploy machine, causing a fatal startup error.
+  return BUNDLED_CLI_VERSION;
 }
 
 export function resolveFinalRunRootDir(): string {
@@ -97,17 +110,64 @@ export function resolveCliLaunchArgs(
 }
 
 export function initializeCliRuntimeEnvironment(startDir: string = __dirname): void {
+  // Look for the local-runtime tarball install location first. When the CLI
+  // is running as a Bun-compiled binary, all on-disk assets (driver APKs,
+  // gRPC proto, Vite SPA dist) live there rather than next to the binary.
+  const runtimeRoot = resolveLocalRuntimeRoot();
+
   if (!process.env['FINALRUN_DRIVER_PROTO_PATH']) {
-    const packageRoot = resolveCliPackageRoot(startDir);
-    const candidates = [
-      path.join(packageRoot, 'proto', 'finalrun', 'driver.proto'),
-      path.resolve(packageRoot, '../../proto/finalrun/driver.proto'),
-      path.resolve(packageRoot, '../proto/finalrun/driver.proto'),
-    ];
+    const candidates: string[] = [];
+    if (runtimeRoot) {
+      candidates.push(path.join(runtimeRoot, 'proto', 'finalrun', 'driver.proto'));
+    }
+    try {
+      const packageRoot = resolveCliPackageRoot(startDir);
+      candidates.push(
+        path.join(packageRoot, 'proto', 'finalrun', 'driver.proto'),
+        path.resolve(packageRoot, '../../proto/finalrun/driver.proto'),
+        path.resolve(packageRoot, '../proto/finalrun/driver.proto'),
+      );
+    } catch {
+      // No CLI package root resolvable — happens inside Bun-compiled binaries.
+      // Fall back to runtime-tarball location only.
+    }
 
     const resolvedProtoPath = candidates.find((candidate) => fs.existsSync(candidate));
     if (resolvedProtoPath) {
       process.env['FINALRUN_DRIVER_PROTO_PATH'] = resolvedProtoPath;
     }
   }
+
+  if (!process.env['FINALRUN_ASSET_DIR'] && runtimeRoot) {
+    const installResources = path.join(runtimeRoot, 'install-resources');
+    if (fs.existsSync(installResources)) {
+      process.env['FINALRUN_ASSET_DIR'] = installResources;
+    }
+  }
+
+  if (!process.env['FINALRUN_REPORT_APP_DIR'] && runtimeRoot) {
+    const reportApp = path.join(runtimeRoot, 'report-app');
+    if (fs.existsSync(reportApp)) {
+      process.env['FINALRUN_REPORT_APP_DIR'] = reportApp;
+    }
+  }
+}
+
+function resolveLocalRuntimeRoot(): string | undefined {
+  const override = process.env['FINALRUN_RUNTIME_ROOT'];
+  if (override && override.trim()) {
+    const candidate = path.resolve(override.trim());
+    if (fs.existsSync(path.join(candidate, 'manifest.json'))) {
+      return candidate;
+    }
+  }
+  // Honor FINALRUN_DIR so the binary finds the runtime when the user
+  // installed via `FINALRUN_DIR=... bash install.sh` to a custom location.
+  const finalrunDir =
+    process.env['FINALRUN_DIR']?.trim() || path.join(os.homedir(), '.finalrun');
+  const versioned = path.join(finalrunDir, 'runtime', resolveCliPackageVersion());
+  if (fs.existsSync(path.join(versioned, 'manifest.json'))) {
+    return versioned;
+  }
+  return undefined;
 }
