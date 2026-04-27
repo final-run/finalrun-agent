@@ -142,7 +142,7 @@ main() {
     setup_host_tools
   fi
   run_doctor
-  prompt_skills
+  sync_skills
   check_api_keys
   print_summary
 
@@ -469,30 +469,53 @@ run_doctor() {
   "$BIN_DEST" doctor --platform "$doctor_platform" || true
 }
 
-prompt_skills() {
+sync_skills() {
   echo ""
   info "── FinalRun AI Agent Skills ──"
   echo ""
-  printf "Install AI agent skills (used by Claude Code/Cursor for /finalrun-* commands)? [Y/n] [30s timeout]: "
-  local reply choice
-  if read -r -t 30 reply; then
-    case "$reply" in
-      n|N|no|NO)  choice=skip ;;
-      *)          choice=install ;;
-    esac
-  else
-    echo ""
-    warn "No response in 30s — skipping skills install."
-    choice=skip
+
+  if ! command -v npx >/dev/null 2>&1; then
+    warn "npx not found — skills require Node + npm. Install Node 20+ and re-run the installer if you want them."
+    return
   fi
 
-  if [ "$choice" = "install" ]; then
-    if ! command -v npx >/dev/null 2>&1; then
-      warn "npx not found — skills require Node + npm. Install Node 20+ and re-run the installer if you want them."
+  # Detect already-installed finalrun-* skills via the skills CLI's JSON
+  # output. `skills update` is internally diff-aware (it compares against the
+  # source repo and only downloads stale skills), so running it on an
+  # up-to-date system is essentially a no-op + a network round-trip.
+  local installed
+  installed=$(npx --yes skills ls -g --json 2>/dev/null \
+    | grep -oE '"finalrun-[a-z0-9-]+"' \
+    | tr -d '"' \
+    | sort -u \
+    | tr '\n' ' ')
+
+  if [ -z "$installed" ]; then
+    info "Installing FinalRun skills..."
+    if npx --yes skills add final-run/finalrun-agent -y -g; then
+      ok "FinalRun skills installed."
     else
-      info "Installing FinalRun skills..."
-      npx skills add final-run/finalrun-agent && ok "FinalRun skills installed."
+      warn "FinalRun skills install failed — see output above. Re-run 'npx skills add final-run/finalrun-agent -g' to retry."
     fi
+    return
+  fi
+
+  info "Checking FinalRun skills for updates..."
+  # Capture so we can branch the success line on whether anything changed.
+  # `skills update` prints "All global skills are up to date" when nothing is
+  # stale, and "Updated N skill(s)" / "Found N update(s)" when work happened.
+  local out
+  # shellcheck disable=SC2086 — $installed is a deliberately split list.
+  if out=$(npx --yes skills update -g -y $installed 2>&1); then
+    printf '%s\n' "$out"
+    if printf '%s' "$out" | grep -qi 'up to date'; then
+      ok "FinalRun skills already up to date."
+    else
+      ok "FinalRun skills updated."
+    fi
+  else
+    printf '%s\n' "$out"
+    warn "FinalRun skills update failed — see output above."
   fi
 }
 

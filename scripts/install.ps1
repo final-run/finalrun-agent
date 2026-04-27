@@ -332,13 +332,10 @@ function Invoke-Doctor {
     # might be missing a piece they'll fix later. Bash version does the same.
 }
 
-function Read-SkillsPrompt {
+function Sync-Skills {
     Write-Heading ""
     Write-Heading "── FinalRun AI Agent Skills ──"
     Write-Heading ""
-
-    $reply = Read-Host "Install AI agent skills (used by Claude Code/Cursor for /finalrun-* commands)? [Y/n]"
-    if ($reply -match '^[Nn]') { return }
 
     if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
         Write-Notice "npx not found — skills require Node + npm. Install Node 20+ from"
@@ -346,10 +343,46 @@ function Read-SkillsPrompt {
         return
     }
 
-    Write-Heading "Installing FinalRun skills..."
-    & npx skills add final-run/finalrun-agent
+    # Detect already-installed finalrun-* skills via the skills CLI's JSON
+    # output. `skills update` is internally diff-aware — it only downloads
+    # what's stale, so an up-to-date system pays only a network round-trip.
+    $installed = @()
+    try {
+        $listJson = & npx --yes skills ls -g --json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $listJson) {
+            $entries = $listJson | ConvertFrom-Json
+            $installed = @($entries |
+                Where-Object { $_.name -like 'finalrun-*' } |
+                ForEach-Object { $_.name })
+        }
+    } catch {
+        # Fall through — treat as not-installed.
+    }
+
+    if ($installed.Count -eq 0) {
+        Write-Heading "Installing FinalRun skills..."
+        & npx --yes skills add final-run/finalrun-agent -y -g
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "FinalRun skills installed."
+        } else {
+            Write-Notice "FinalRun skills install failed — see output above. Re-run 'npx skills add final-run/finalrun-agent -g' to retry."
+        }
+        return
+    }
+
+    Write-Heading "Checking FinalRun skills for updates..."
+    # `skills update` prints "All global skills are up to date" when nothing is
+    # stale, and "Updated N skill(s)" otherwise.
+    $out = & npx --yes skills update -g -y @installed 2>&1 | Out-String
+    Write-Host $out
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "FinalRun skills installed."
+        if ($out -match '(?i)up to date') {
+            Write-Success "FinalRun skills already up to date."
+        } else {
+            Write-Success "FinalRun skills updated."
+        }
+    } else {
+        Write-Notice "FinalRun skills update failed — see output above."
     }
 }
 
@@ -503,7 +536,7 @@ function Invoke-Main {
         }
     }
 
-    Read-SkillsPrompt
+    Sync-Skills
     Test-ApiKeys
     Show-Summary -BinPath $binPath -RuntimeDir $runtimeDir -AndroidOk $androidOk -FinalRunDir $finalRunDir
 }
