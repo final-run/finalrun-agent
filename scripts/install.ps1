@@ -189,8 +189,14 @@ function Update-UserPath {
     $trimmed = $current.TrimEnd(';')
     $newPath = if ($trimmed) { "$trimmed;$BinDir" } else { $BinDir }
     [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-    # Note: this does NOT update $env:Path for the current shell. The summary
-    # message instructs the user to open a new terminal.
+
+    # Also update $env:Path for the *current* PowerShell session so finalrun
+    # works immediately in the same window. The script is run via `irm | iex`,
+    # so this assignment lives in the user's shell process — no restart needed
+    # for the running window. New windows pick up PATH from the registry.
+    if (-not (($env:Path -split ';') -icontains $BinDir)) {
+        $env:Path = "$env:Path;$BinDir"
+    }
 }
 
 function Install-Runtime {
@@ -422,9 +428,18 @@ function Test-ApiKeys {
     Write-Heading "  Docs: $(Format-Underline 'https://docs.finalrun.app/configuration/ai-providers')"
 }
 
+function Test-FinalrunOnPath {
+    Write-Heading ""
+    if (Get-Command finalrun -ErrorAction SilentlyContinue) {
+        Write-Success "finalrun is on your PATH."
+        return
+    }
+    Write-Notice "finalrun isn't on PATH for this shell yet."
+    Write-Heading "  Open a new PowerShell window — your User PATH was updated."
+}
+
 function Show-CISummary {
     param([string]$FinalRunDir)
-    $binDir = Join-Path $FinalRunDir 'bin'
     Write-Heading ""
     Write-Success "finalrun installed."
     Write-Heading ""
@@ -435,9 +450,7 @@ function Show-CISummary {
     Write-Heading "For local Android execution on this machine, re-run without -CI:"
     Write-Heading ""
     Write-Heading "    irm https://raw.githubusercontent.com/$script:GitHubRepo/main/scripts/install.ps1 | iex"
-    Write-Heading ""
-    Write-Heading "Open a new PowerShell window or run:"
-    Write-Heading "    `$env:Path = `"$binDir;`$env:Path`""
+    Test-FinalrunOnPath
 }
 
 function Show-Summary {
@@ -447,7 +460,6 @@ function Show-Summary {
         [bool]$AndroidOk,
         [string]$FinalRunDir
     )
-    $binDir = Join-Path $FinalRunDir 'bin'
     Write-Heading ""
     Write-Heading "── Summary ──"
     Write-Heading ""
@@ -461,9 +473,7 @@ function Show-Summary {
         Write-Notice "Android: setup incomplete — run 'finalrun doctor --platform android' for details."
     }
 
-    Write-Heading ""
-    Write-Heading "Open a new PowerShell window, or run:"
-    Write-Heading "    `$env:Path = `"$binDir;`$env:Path`""
+    Test-FinalrunOnPath
     Write-Heading ""
     Write-Heading "Try it:  finalrun --help"
     Write-Heading ""
