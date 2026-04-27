@@ -33,6 +33,11 @@ ok()    { printf "${GREEN}  ✓ %s${RESET}\n" "$*"; }
 warn()  { printf "${YELLOW}  ⚠ %s${RESET}\n" "$*"; }
 fail()  { printf "${RED}  ✗ %s${RESET}\n" "$*"; }
 
+# OSC 8 hyperlink — single-click in modern terminals (iTerm2, Terminal.app,
+# Windows Terminal, kitty, alacritty, WezTerm, gnome-terminal). Older
+# terminals strip the escapes and show the bare URL, so it degrades cleanly.
+link()  { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$1"; }
+
 GITHUB_REPO="final-run/finalrun-agent"
 
 # ---------------------------------------------------------------------------
@@ -455,7 +460,8 @@ check_api_keys() {
   echo ""
   echo "  Fastest way to get started — FinalRun Cloud (free \$5 credits):"
   echo ""
-  echo "      Sign up at https://cloud.finalrun.app"
+  echo "      Sign up:  $(link 'https://cloud.finalrun.app')"
+  echo "      Docs:     $(link 'https://docs.finalrun.app/configuration/cloud-api-key')"
   echo ""
   echo "  Prefer your own AI provider account? Bring your own key:"
   echo ""
@@ -464,7 +470,7 @@ check_api_keys() {
   echo "      GOOGLE_API_KEY       →  google/gemini-* models"
   echo ""
   echo "  Set via .env (workspace root), shell export, or --api-key."
-  echo "  Docs: https://docs.finalrun.app/configuration/ai-providers"
+  echo "  Docs: $(link 'https://docs.finalrun.app/configuration/ai-providers')"
 }
 
 print_summary() {
