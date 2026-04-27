@@ -64,6 +64,12 @@ function Write-Success { param([string]$Msg) Write-Host "  ✓ $Msg" -Foreground
 function Write-Notice  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
 function Write-Failure { param([string]$Msg) Write-Host "  ✗ $Msg" -ForegroundColor Red }
 
+function Format-Underline {
+    param([string]$Text)
+    $esc = [char]27
+    "$esc[4m$Text$esc[24m"
+}
+
 # ---------------------------------------------------------------------------
 # Step helpers
 # ---------------------------------------------------------------------------
@@ -335,6 +341,42 @@ function Read-SkillsPrompt {
     }
 }
 
+function Test-ApiKeys {
+    Write-Heading ""
+    Write-Heading "── AI Provider Key ──"
+    Write-Heading ""
+
+    $detected = @()
+    foreach ($var in @('FINALRUN_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_API_KEY')) {
+        if ([Environment]::GetEnvironmentVariable($var)) {
+            $detected += $var
+        }
+    }
+
+    if ($detected.Count -gt 0) {
+        foreach ($v in $detected) {
+            Write-Success "$v detected"
+        }
+        return
+    }
+
+    Write-Notice "No API key detected."
+    Write-Heading ""
+    Write-Heading '  Fastest way to get started — FinalRun Cloud (free $5 credits):'
+    Write-Heading ""
+    Write-Heading "      Sign up:  $(Format-Underline 'https://cloud.finalrun.app')"
+    Write-Heading "      Docs:     $(Format-Underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
+    Write-Heading ""
+    Write-Heading "  Prefer your own AI provider account? Bring your own key:"
+    Write-Heading ""
+    Write-Heading "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
+    Write-Heading "      OPENAI_API_KEY       →  openai/gpt-* models"
+    Write-Heading "      GOOGLE_API_KEY       →  google/gemini-* models"
+    Write-Heading ""
+    Write-Heading "  Set via .env (workspace root), shell export, or --api-key."
+    Write-Heading "  Docs: $(Format-Underline 'https://docs.finalrun.app/configuration/ai-providers')"
+}
+
 function Show-CISummary {
     param([string]$FinalRunDir)
     $binDir = Join-Path $FinalRunDir 'bin'
@@ -443,6 +485,7 @@ function Invoke-Main {
     }
 
     Read-SkillsPrompt
+    Test-ApiKeys
     Show-Summary -BinPath $binPath -RuntimeDir $runtimeDir -AndroidOk $androidOk -FinalRunDir $finalRunDir
 }
 
