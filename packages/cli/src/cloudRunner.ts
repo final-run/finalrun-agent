@@ -69,6 +69,15 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
     ? checked.environment.envName
     : undefined;
 
+  // Forward non-secret variables from the env YAML so cloud records what
+  // was in effect for the run. Secrets are never sent. Values stringified
+  // because cloud stores this as Record<string, string>.
+  const variables = effectiveEnvName
+    ? Object.fromEntries(
+        Object.entries(checked.environment.bindings.variables).map(([k, v]) => [k, String(v)]),
+      )
+    : undefined;
+
   // 4. Delegate to cloud-core for zip + submit
   return submitRun({
     checked: {
@@ -89,6 +98,7 @@ export async function runCloud(options: CloudRunnerOptions): Promise<SubmitRunRe
     selectors: options.selectors,
     suitePath: options.suitePath,
     envName: effectiveEnvName,
+    variables,
     platform: options.platform,
     appPath: options.appPath,
     command,
