@@ -240,6 +240,18 @@ function Install-Runtime {
     return $runtimeDir
 }
 
+function Test-AndroidReady {
+    $androidHome = $env:ANDROID_HOME
+    if (-not $androidHome) { $androidHome = $env:ANDROID_SDK_ROOT }
+    $defaultSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+
+    $sdkPresent = $false
+    if ($androidHome -and (Test-Path $androidHome)) { $sdkPresent = $true }
+    if (Test-Path $defaultSdk) { $sdkPresent = $true }
+
+    return ($sdkPresent -and [bool](Get-Command scrcpy -ErrorAction SilentlyContinue))
+}
+
 function Read-AndroidPrompt {
     Write-Heading ""
     Write-Heading "── Platform Setup ──"
@@ -477,7 +489,14 @@ function Invoke-Main {
     $runtimeDir = Install-Runtime -Version $version -Platform $platform -FinalRunDir $finalRunDir
 
     $androidOk = $false
-    if (Read-AndroidPrompt) {
+    if (Test-AndroidReady) {
+        Write-Heading ""
+        Write-Heading "── Platform Setup ──"
+        Write-Heading ""
+        Write-Success "Android tools detected — skipping setup."
+        $androidOk = $true
+        Invoke-Doctor -BinPath $binPath
+    } elseif (Read-AndroidPrompt) {
         $androidOk = Install-Android
         if ($androidOk) {
             Invoke-Doctor -BinPath $binPath

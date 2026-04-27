@@ -137,8 +137,10 @@ main() {
   exec </dev/tty
 
   download_runtime
-  prompt_platform
-  setup_host_tools
+  if ! maybe_skip_platform_setup; then
+    prompt_platform
+    setup_host_tools
+  fi
   run_doctor
   prompt_skills
   check_api_keys
@@ -256,6 +258,62 @@ download_runtime() {
   ok "Runtime ${VERSION} installed at $RUNTIME_DIR"
 }
 
+android_ready() {
+  local android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  local sdk_present=false
+  if [ -n "$android_home" ] && [ -d "$android_home" ]; then
+    sdk_present=true
+  fi
+  if [ "$OS" = "darwin" ] && [ -d "/Applications/Android Studio.app" ]; then
+    sdk_present=true
+  fi
+  [ "$sdk_present" = true ] && command -v scrcpy >/dev/null 2>&1
+}
+
+# iOS readiness requires the full Xcode app (not just Command Line Tools).
+# `xcrun -f simctl` is the canonical signal: simctl ships with Xcode and is
+# absent from CLT-only installs. `xcrun -f` is a path lookup, so it does not
+# trigger a license check.
+ios_ready() {
+  [ "$OS" = "darwin" ] || return 1
+  xcrun -f simctl >/dev/null 2>&1 && command -v applesimutils >/dev/null 2>&1
+}
+
+# If every relevant platform is already set up, skip the prompt entirely:
+# print confirmations, set PLATFORM_CHOICE so run_doctor still verifies, and
+# return 0 so main() bypasses prompt_platform + setup_host_tools.
+maybe_skip_platform_setup() {
+  local android=false ios=false
+  android_ready && android=true
+  ios_ready && ios=true
+
+  if [ "$OS" = "darwin" ]; then
+    if [ "$android" = true ] && [ "$ios" = true ]; then
+      echo ""
+      info "── Platform Setup ──"
+      echo ""
+      ok "Android tools detected — skipping setup."
+      ok "iOS tools detected — skipping setup."
+      PLATFORM_CHOICE=both
+      ANDROID_OK=true
+      IOS_OK=true
+      return 0
+    fi
+  else
+    # Linux: only Android applies — iOS isn't reachable on this host.
+    if [ "$android" = true ]; then
+      echo ""
+      info "── Platform Setup ──"
+      echo ""
+      ok "Android tools detected — skipping setup."
+      PLATFORM_CHOICE=android
+      ANDROID_OK=true
+      return 0
+    fi
+  fi
+  return 1
+}
+
 prompt_platform() {
   echo ""
   info "── Platform Setup ──"
@@ -343,21 +401,27 @@ setup_ios() {
     return 1
   fi
 
-  if ! xcode-select -p >/dev/null 2>&1; then
-    fail "Xcode not found."
-    info "  Install Xcode from the App Store, then re-run the installer."
+  # `xcode-select -p` succeeds for both full Xcode AND Command Line Tools,
+  # which is why the previous check produced false-positive "Xcode detected"
+  # messages on CLT-only machines. `xcrun -f simctl` only succeeds when the
+  # full Xcode app is the active developer dir — simctl ships with Xcode,
+  # not CLT.
+  if ! xcrun -f simctl >/dev/null 2>&1; then
+    local devdir
+    devdir=$(xcode-select -p 2>/dev/null || true)
+    if [ -z "$devdir" ]; then
+      fail "Xcode not found."
+      info "  Install Xcode from the App Store, launch it once to accept the"
+      info "  license, then re-run the installer."
+    else
+      fail "Xcode app not active (xcode-select -p points to: $devdir)."
+      info "  iOS simulators need the full Xcode app, not just Command Line Tools."
+      info "  Install Xcode from the App Store, then run:"
+      info "    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    fi
     return 1
   fi
   ok "Xcode detected."
-
-  if xcrun --version >/dev/null 2>&1; then
-    ok "Xcode Command Line Tools already installed."
-  else
-    info "  Installing Xcode Command Line Tools..."
-    info "  A system dialog may appear — please accept it."
-    xcode-select --install 2>/dev/null || true
-    ok "Xcode Command Line Tools installation initiated (re-run after it finishes)."
-  fi
 
   if command -v applesimutils >/dev/null 2>&1; then
     ok "applesimutils already installed."
