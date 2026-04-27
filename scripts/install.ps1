@@ -64,6 +64,12 @@ function Write-Success { param([string]$Msg) Write-Host "  ✓ $Msg" -Foreground
 function Write-Notice  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
 function Write-Failure { param([string]$Msg) Write-Host "  ✗ $Msg" -ForegroundColor Red }
 
+function Format-Underline {
+    param([string]$Text)
+    $esc = [char]27
+    "$esc[4m$Text$esc[24m"
+}
+
 # ---------------------------------------------------------------------------
 # Step helpers
 # ---------------------------------------------------------------------------
@@ -358,8 +364,8 @@ function Test-ApiKeys {
     Write-Heading ""
     Write-Heading '  Fastest way to get started — FinalRun Cloud (free $5 credits):'
     Write-Heading ""
-    Write-Heading "      Sign up:  https://cloud.finalrun.app"
-    Write-Heading "      Docs:     https://docs.finalrun.app/configuration/cloud-api-key"
+    Write-Heading "      Sign up:  $(Format-Underline 'https://cloud.finalrun.app')"
+    Write-Heading "      Docs:     $(Format-Underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
     Write-Heading ""
     Write-Heading "  Prefer your own AI provider account? Bring your own key:"
     Write-Heading ""
@@ -368,7 +374,7 @@ function Test-ApiKeys {
     Write-Heading "      GOOGLE_API_KEY       →  google/gemini-* models"
     Write-Heading ""
     Write-Heading "  Set via .env (workspace root), shell export, or --api-key."
-    Write-Heading "  Docs: https://docs.finalrun.app/configuration/ai-providers"
+    Write-Heading "  Docs: $(Format-Underline 'https://docs.finalrun.app/configuration/ai-providers')"
 }
 
 function Show-CISummary {
