@@ -335,6 +335,41 @@ function Read-SkillsPrompt {
     }
 }
 
+function Test-ApiKeys {
+    Write-Heading ""
+    Write-Heading "── AI Provider Key ──"
+    Write-Heading ""
+
+    $detected = @()
+    foreach ($var in @('FINALRUN_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_API_KEY')) {
+        if ([Environment]::GetEnvironmentVariable($var)) {
+            $detected += $var
+        }
+    }
+
+    if ($detected.Count -gt 0) {
+        foreach ($v in $detected) {
+            Write-Success "$v detected"
+        }
+        return
+    }
+
+    Write-Notice "No API key detected."
+    Write-Heading ""
+    Write-Heading '  Fastest way to get started — FinalRun Cloud (free $5 credits):'
+    Write-Heading ""
+    Write-Heading "      Sign up at https://cloud.finalrun.app"
+    Write-Heading ""
+    Write-Heading "  Prefer your own AI provider account? Bring your own key:"
+    Write-Heading ""
+    Write-Heading "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
+    Write-Heading "      OPENAI_API_KEY       →  openai/gpt-* models"
+    Write-Heading "      GOOGLE_API_KEY       →  google/gemini-* models"
+    Write-Heading ""
+    Write-Heading "  Set via .env (workspace root), shell export, or --api-key."
+    Write-Heading "  Docs: https://docs.finalrun.app/configuration/ai-providers"
+}
+
 function Show-CISummary {
     param([string]$FinalRunDir)
     $binDir = Join-Path $FinalRunDir 'bin'
@@ -443,6 +478,7 @@ function Invoke-Main {
     }
 
     Read-SkillsPrompt
+    Test-ApiKeys
     Show-Summary -BinPath $binPath -RuntimeDir $runtimeDir -AndroidOk $androidOk -FinalRunDir $finalRunDir
 }
 

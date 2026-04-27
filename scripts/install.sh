@@ -140,6 +140,7 @@ main() {
   setup_host_tools
   run_doctor
   prompt_skills
+  check_api_keys
   print_summary
 
   exit 0
@@ -428,6 +429,42 @@ prompt_skills() {
       npx skills add final-run/finalrun-agent && ok "FinalRun skills installed."
     fi
   fi
+}
+
+check_api_keys() {
+  echo ""
+  info "── AI Provider Key ──"
+  echo ""
+
+  local detected=()
+  local var
+  for var in FINALRUN_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY; do
+    if [ -n "${!var:-}" ]; then
+      detected+=("$var")
+    fi
+  done
+
+  if [ ${#detected[@]} -gt 0 ]; then
+    for var in "${detected[@]}"; do
+      ok "$var detected"
+    done
+    return
+  fi
+
+  warn "No API key detected."
+  echo ""
+  echo "  Fastest way to get started — FinalRun Cloud (free \$5 credits):"
+  echo ""
+  echo "      Sign up at https://cloud.finalrun.app"
+  echo ""
+  echo "  Prefer your own AI provider account? Bring your own key:"
+  echo ""
+  echo "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
+  echo "      OPENAI_API_KEY       →  openai/gpt-* models"
+  echo "      GOOGLE_API_KEY       →  google/gemini-* models"
+  echo ""
+  echo "  Set via .env (workspace root), shell export, or --api-key."
+  echo "  Docs: https://docs.finalrun.app/configuration/ai-providers"
 }
 
 print_summary() {

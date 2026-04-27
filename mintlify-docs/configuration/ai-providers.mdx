@@ -6,6 +6,10 @@ description: "Bring your own API key to FinalRun and configure Google Gemini, Op
 
 FinalRun uses a bring-your-own-key (BYOK) model — it does not proxy AI requests through its own infrastructure. When you run a test, the CLI calls your chosen AI provider directly using the API key you supply. This gives you full visibility into token usage and billing, and lets you use whichever model tier your team has access to.
 
+<Note>
+  Prefer managed AI without provisioning a provider account? See [Cloud API Key](/configuration/cloud-api-key) for the FinalRun Cloud option.
+</Note>
+
 ## Supported providers
 
 | Provider prefix | Environment variable | Recommended model family |
