@@ -269,12 +269,10 @@ program
   .command('upgrade')
   .description('Upgrade the finalrun CLI by re-running the install script')
   .option('--version <version>', 'Pin to a specific version (default: latest GitHub release)')
-  .option('--ci', 'Install only the binary (skip runtime tarball + prompts)')
   .action(async (options: UpgradeCommandOptions) => {
     await runCommand(async () => {
       await runUpgrade({
         version: options.version,
-        ci: options.ci === true,
       });
     });
   });
@@ -365,7 +363,6 @@ interface InternalReportServerOptions {
 
 interface UpgradeCommandOptions {
   version?: string;
-  ci?: boolean;
 }
 
 async function runTestCommand(params: {

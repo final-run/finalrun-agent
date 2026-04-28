@@ -2,14 +2,14 @@
 //
 // We don't reimplement the install logic here; the install scripts
 // (install.sh on macOS/Linux, install.ps1 on Windows) handle binary
-// download, PATH wiring, and (interactively) the runtime tarball +
-// host tools. This subcommand just spawns the right one.
+// download, PATH wiring, runtime tarball, and host tools. This subcommand
+// just spawns the right one with the same defaults a fresh user would get.
+//
+// Users who want a binary-only refresh (no runtime tarball, no prompts)
+// should run the install script directly with --ci, or set CI=1 /
+// FINALRUN_NON_INTERACTIVE=1 — install.sh honors those env vars itself.
 
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { spawn } from 'node:child_process';
-import { resolveCliPackageVersion } from './runtimePaths.js';
 
 const INSTALL_SH_URL =
   'https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh';
@@ -18,24 +18,11 @@ const INSTALL_PS1_URL =
 
 export interface UpgradeOptions {
   version?: string;
-  /** Pass --ci to the installer (binary only, skip runtime tarball + prompts). */
-  ci?: boolean;
 }
 
 export async function runUpgrade(options: UpgradeOptions): Promise<void> {
-  // Mode detection: if the user explicitly passed --ci, honor it. Otherwise,
-  // mirror the user's previous install footprint — if they don't have the
-  // runtime tarball installed today, they probably want a binary-only
-  // upgrade too. If they DO have the runtime tarball, we want the installer
-  // to refresh it (default, no --ci flag).
-  let useCiFlag = options.ci === true;
-  if (!useCiFlag && !hasInstalledRuntime()) {
-    useCiFlag = true;
-  }
-
   const targetLabel = options.version ? `v${options.version}` : 'latest';
-  const modeLabel = useCiFlag ? 'binary-only (--ci)' : 'full setup';
-  console.log(`Upgrading finalrun to ${targetLabel} (${modeLabel})...`);
+  console.log(`Upgrading finalrun to ${targetLabel}...`);
   console.log('');
 
   // Strip FINALRUN_* env vars from the inherited environment before spawning
@@ -60,11 +47,6 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
   let shellArgs: string[];
 
   if (process.platform === 'win32') {
-    // PowerShell's `irm | iex` reads the script as an in-memory string and
-    // can't forward arguments to it (no equivalent of bash's `-s --`). The
-    // CI flag travels via env var instead — install.ps1 honors FINALRUN_-
-    // NON_INTERACTIVE the same way install.sh does.
-    if (useCiFlag) env['FINALRUN_NON_INTERACTIVE'] = '1';
     shell = 'powershell.exe';
     shellArgs = [
       '-NoProfile',
@@ -73,11 +55,9 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
       `irm ${INSTALL_PS1_URL} | iex`,
     ];
   } else {
-    // curl -fsSL <url> | bash [-s -- --ci]
     // Implemented as `bash -c` so the pipe stays correctly inside one shell.
-    const flagPart = useCiFlag ? ' -s -- --ci' : '';
     shell = 'bash';
-    shellArgs = ['-c', `curl -fsSL ${INSTALL_SH_URL} | bash${flagPart}`];
+    shellArgs = ['-c', `curl -fsSL ${INSTALL_SH_URL} | bash`];
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -98,14 +78,4 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
       reject(new Error(`Installer exited with code ${code}`));
     });
   });
-}
-
-function hasInstalledRuntime(): boolean {
-  const version = resolveCliPackageVersion();
-  const explicit = process.env['FINALRUN_RUNTIME_ROOT']?.trim();
-  if (explicit) {
-    return fs.existsSync(path.join(explicit, 'manifest.json'));
-  }
-  const finalrunDir = process.env['FINALRUN_DIR']?.trim() || path.join(os.homedir(), '.finalrun');
-  return fs.existsSync(path.join(finalrunDir, 'runtime', version, 'manifest.json'));
 }
