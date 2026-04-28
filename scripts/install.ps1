@@ -411,14 +411,14 @@ function Test-ApiKeys {
         return
     }
 
-    Write-Notice "No API key detected."
+    Write-Failure "No API key detected — finalrun cannot run tests without one."
     Write-Heading ""
     Write-Heading '  Fastest way to get started — FinalRun Cloud (free $5 credits):'
     Write-Heading ""
     Write-Heading "      Sign up:  $(Format-Underline 'https://cloud.finalrun.app')"
     Write-Heading "      Docs:     $(Format-Underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
     Write-Heading ""
-    Write-Heading "  Prefer your own AI provider account? Bring your own key:"
+    Write-Heading "  Or bring your own provider key:"
     Write-Heading ""
     Write-Heading "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
     Write-Heading "      OPENAI_API_KEY       →  openai/gpt-* models"

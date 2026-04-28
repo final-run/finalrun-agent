@@ -591,14 +591,14 @@ check_api_keys() {
     return
   fi
 
-  warn "No API key detected."
+  fail "No API key detected — finalrun cannot run tests without one."
   echo ""
   echo "  Fastest way to get started — FinalRun Cloud (free \$5 credits):"
   echo ""
   echo "      Sign up:  $(underline 'https://cloud.finalrun.app')"
   echo "      Docs:     $(underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
   echo ""
-  echo "  Prefer your own AI provider account? Bring your own key:"
+  echo "  Or bring your own provider key:"
   echo ""
   echo "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
   echo "      OPENAI_API_KEY       →  openai/gpt-* models"
