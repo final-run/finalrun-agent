@@ -579,10 +579,12 @@ test('finalrun test explains local model setup before resolving the workspace en
     assert.equal(result.status, 1);
     assert.match(result.stderr, /One more step — choose how to run this test/);
     assert.match(result.stderr, /This command runs tests locally, so finalrun needs a provider\/model\./);
-    assert.match(result.stderr, /export FINALRUN_API_KEY=fr_\.\.\./);
+    assert.match(result.stderr, /macOS\/Linux: export FINALRUN_API_KEY=fr_\.\.\./);
+    assert.match(result.stderr, /PowerShell: {2}\$env:FINALRUN_API_KEY = 'fr_\.\.\.'/);
     assert.match(result.stderr, /finalrun cloud test login\.yaml --platform android/);
     assert.match(result.stderr, /model: google\/gemini-3-flash-preview/);
-    assert.match(result.stderr, /export GOOGLE_API_KEY=\.\.\./);
+    assert.match(result.stderr, /macOS\/Linux: export GOOGLE_API_KEY=\.\.\./);
+    assert.match(result.stderr, /PowerShell: {2}\$env:GOOGLE_API_KEY = '\.\.\.'/);
     assert.match(result.stderr, /finalrun test login\.yaml --model google\/gemini-3-flash-preview/);
     assert.match(result.stderr, /Supported providers: openai, google, anthropic\./);
     assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
