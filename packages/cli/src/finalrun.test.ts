@@ -566,7 +566,7 @@ test('finalrun test reports missing selectors before API key validation', async 
   }
 });
 
-test('finalrun test requires --model before resolving the workspace environment', async () => {
+test('finalrun test explains local model setup before resolving the workspace environment', async () => {
   const rootDir = createTempWorkspace({
     envFiles: {
       'prod.yaml': '{}\n',
@@ -577,10 +577,39 @@ test('finalrun test requires --model before resolving the workspace environment'
   try {
     const result = runCli(['test', 'login.yaml'], rootDir);
     assert.equal(result.status, 1);
-    assert.match(
-      result.stderr,
-      /--model is required\. Use provider\/model, for example google\/gemini-3-flash-preview\. Supported providers: openai, google, anthropic\./,
-    );
+    assert.match(result.stderr, /One more step — choose how to run this test/);
+    assert.match(result.stderr, /This command runs tests locally, so finalrun needs a provider\/model\./);
+    assert.match(result.stderr, /macOS\/Linux: export FINALRUN_API_KEY=fr_\.\.\./);
+    assert.match(result.stderr, /PowerShell: {2}\$env:FINALRUN_API_KEY = 'fr_\.\.\.'/);
+    assert.match(result.stderr, /finalrun cloud test login\.yaml --platform android/);
+    assert.match(result.stderr, /model: google\/gemini-3-flash-preview/);
+    assert.match(result.stderr, /macOS\/Linux: export GOOGLE_API_KEY=\.\.\./);
+    assert.match(result.stderr, /PowerShell: {2}\$env:GOOGLE_API_KEY = '\.\.\.'/);
+    assert.match(result.stderr, /finalrun test login\.yaml --model google\/gemini-3-flash-preview/);
+    assert.match(result.stderr, /Supported providers: openai, google, anthropic\./);
+    assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
+    assert.doesNotMatch(result.stderr, /API key is required/);
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('finalrun suite explains local model setup before resolving the workspace environment', async () => {
+  const rootDir = createTempWorkspace({
+    includeSuitesDir: true,
+    envFiles: {
+      'prod.yaml': '{}\n',
+      'staging.yaml': '{}\n',
+    },
+  });
+
+  try {
+    const result = runCli(['suite', 'login_suite.yaml'], rootDir);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /One more step — choose how to run this test/);
+    assert.match(result.stderr, /This command runs tests locally, so finalrun needs a provider\/model\./);
+    assert.match(result.stderr, /finalrun cloud suite login_suite\.yaml --platform android/);
+    assert.match(result.stderr, /finalrun suite login_suite\.yaml --model google\/gemini-3-flash-preview/);
     assert.doesNotMatch(result.stderr, /Pass --env <name>\. Available environments:/);
     assert.doesNotMatch(result.stderr, /API key is required/);
   } finally {
