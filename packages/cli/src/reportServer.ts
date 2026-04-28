@@ -207,7 +207,10 @@ async function tryServeFile(
     } else {
       response.destroy();
     }
-    return false;
+    // Response is already finalized (500 sent) or destroyed; signal "handled"
+    // so serveSpaAsset doesn't fall through to the SPA index.html and try to
+    // write to a closed response.
+    return true;
   }
   return true;
 }

@@ -15,8 +15,11 @@ test('isSafeRelativeSegment rejects parent traversal', () => {
   assert.equal(isSafeRelativeSegment('subdir/../../escape'), false);
 });
 
-test('isSafeRelativeSegment rejects absolute paths', () => {
+test('isSafeRelativeSegment rejects absolute paths across platforms', () => {
   assert.equal(isSafeRelativeSegment('/etc/passwd'), false);
+  assert.equal(isSafeRelativeSegment('C:\\Windows\\System32\\drivers\\etc\\hosts'), false);
+  assert.equal(isSafeRelativeSegment('c:\\tmp\\a'), false);
+  assert.equal(isSafeRelativeSegment('\\\\server\\share\\file.yml'), false);
 });
 
 test('isSafeRelativeSegment normalises Windows-style separators before checking', () => {

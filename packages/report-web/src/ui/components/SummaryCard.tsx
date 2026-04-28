@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { summaryIconStyle, type SummaryTone } from '../format';
 
 export function SummaryCard({
@@ -28,7 +28,7 @@ export function SummaryCard({
 // Helper: the legacy renderer emitted raw `style="color: x; background: y;"`
 // strings. React wants a camelCased object. This parses a CSS declaration list
 // back into the object form so the rendered HTML is byte-identical in effect.
-function inlineStyleFromString(css: string): React.CSSProperties {
+function inlineStyleFromString(css: string): CSSProperties {
   const result: Record<string, string> = {};
   for (const rule of css.split(';')) {
     const [rawProp, ...rest] = rule.split(':');
@@ -39,5 +39,5 @@ function inlineStyleFromString(css: string): React.CSSProperties {
     const camel = prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
     result[camel] = value;
   }
-  return result as React.CSSProperties;
+  return result as CSSProperties;
 }

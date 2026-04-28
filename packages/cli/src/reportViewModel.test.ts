@@ -88,11 +88,11 @@ test('loadRunManifestRecord throws RunManifestNotFoundError for missing runs', a
 
 test('loadRunManifestRecord surfaces non-ENOENT errors as generic errors', async () => {
   const { artifactsDir, cleanup } = mkArtifactsDir();
-  const context: ReportWorkspaceContext = { workspaceRoot: artifactsDir, artifactsDir };
-  const runDir = path.join(artifactsDir, 'corrupt-run');
-  await fsp.mkdir(runDir, { recursive: true });
-  await fsp.writeFile(path.join(runDir, 'run.json'), 'this is not json', 'utf-8');
   try {
+    const context: ReportWorkspaceContext = { workspaceRoot: artifactsDir, artifactsDir };
+    const runDir = path.join(artifactsDir, 'corrupt-run');
+    await fsp.mkdir(runDir, { recursive: true });
+    await fsp.writeFile(path.join(runDir, 'run.json'), 'this is not json', 'utf-8');
     await assert.rejects(
       () => loadRunManifestRecord('corrupt-run', context),
       (error: Error) => !(error instanceof RunManifestNotFoundError),
@@ -104,15 +104,15 @@ test('loadRunManifestRecord surfaces non-ENOENT errors as generic errors', async
 
 test('loadRunManifestRecord rejects unsupported schema versions with a generic error', async () => {
   const { artifactsDir, cleanup } = mkArtifactsDir();
-  const context: ReportWorkspaceContext = { workspaceRoot: artifactsDir, artifactsDir };
-  const runDir = path.join(artifactsDir, 'old-schema');
-  await fsp.mkdir(runDir, { recursive: true });
-  await fsp.writeFile(
-    path.join(runDir, 'run.json'),
-    JSON.stringify({ schemaVersion: 1 }),
-    'utf-8',
-  );
   try {
+    const context: ReportWorkspaceContext = { workspaceRoot: artifactsDir, artifactsDir };
+    const runDir = path.join(artifactsDir, 'old-schema');
+    await fsp.mkdir(runDir, { recursive: true });
+    await fsp.writeFile(
+      path.join(runDir, 'run.json'),
+      JSON.stringify({ schemaVersion: 1 }),
+      'utf-8',
+    );
     await assert.rejects(
       () => loadRunManifestRecord('old-schema', context),
       (error: Error) =>

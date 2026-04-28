@@ -46,12 +46,18 @@ export interface SubmitRunResult {
   appFilename?: string;
 }
 
-// Reject paths that escape the upload archive: absolute paths, `..` segments,
-// or anything that normalizes outside the implicit per-section root
-// (`tests/`, `suites/`, `env/`).
+// Reject paths that escape the upload archive: absolute paths (POSIX, Windows
+// drive-letter, UNC), `..` segments, or anything that normalizes outside the
+// implicit per-section root (`tests/`, `suites/`, `env/`).
+//
+// Both posix and win32 absolute-path shapes are checked because uploads can
+// originate from any client OS — POSIX `path.isAbsolute` alone misses `C:\foo`
+// on macOS/Linux.
 export function isSafeRelativeSegment(value: string): boolean {
-  if (!value || path.isAbsolute(value)) return false;
-  const normalized = path.posix.normalize(value.replace(/\\/g, '/'));
+  if (!value) return false;
+  const slashNormalized = value.replace(/\\/g, '/');
+  if (path.posix.isAbsolute(slashNormalized) || path.win32.isAbsolute(value)) return false;
+  const normalized = path.posix.normalize(slashNormalized);
   return !normalized.startsWith('../') && normalized !== '..';
 }
 
