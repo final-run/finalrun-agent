@@ -197,17 +197,62 @@ install_binary() {
   fi
 
   ok "Installed $BIN_DEST"
+
+  # Symlink into ~/.local/bin so users get a "just works" experience: this
+  # path is already on $PATH for most Linux distros, and it matches the
+  # convention used by claude, uv, pipx, pixi, mise. macOS users still need
+  # to start a new shell on first install (rc files written by setup_path),
+  # but that's the same constraint every curl|bash installer lives with.
+  #
+  # If the symlink fails (read-only ~/.local/bin, exotic filesystem),
+  # PATH_TARGET_DIR falls back to the binary's actual home so setup_path
+  # and verify_path don't end up pointing at a directory with no finalrun.
+  LOCAL_BIN="$HOME/.local/bin"
+  LOCAL_BIN_LINK="$LOCAL_BIN/finalrun"
+  if mkdir -p "$LOCAL_BIN" 2>/dev/null && ln -sf "$BIN_DEST" "$LOCAL_BIN_LINK" 2>/dev/null; then
+    ok "Linked $LOCAL_BIN_LINK -> $BIN_DEST"
+    PATH_TARGET_DIR="$LOCAL_BIN"
+  else
+    LOCAL_BIN_LINK=""
+    PATH_TARGET_DIR="$FINALRUN_DIR/bin"
+    warn "Could not write to $LOCAL_BIN — falling back to $PATH_TARGET_DIR for PATH setup."
+  fi
 }
 
 setup_path() {
-  local path_line="export PATH=\$PATH:$FINALRUN_DIR/bin"
+  # Already on PATH? Skip rc modification entirely. Common on Linux distros
+  # that put ~/.local/bin in PATH via /etc/profile or systemd.
+  case ":${PATH}:" in
+    *":$PATH_TARGET_DIR:"*) return 0 ;;
+  esac
+
+  local sh_line="export PATH=\"$PATH_TARGET_DIR:\$PATH\""
+  local fish_line="fish_add_path -p \"$PATH_TARGET_DIR\""
   local rc
-  for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "${ZDOTDIR:-$HOME}/.zshrc"; do
+
+  # POSIX-shell rc files. Idempotent via the literal target marker.
+  for rc in \
+    "$HOME/.bashrc" \
+    "$HOME/.bash_profile" \
+    "$HOME/.profile" \
+    "${ZDOTDIR:-$HOME}/.zshrc" \
+    "${ZDOTDIR:-$HOME}/.zprofile"
+  do
     touch "$rc" 2>/dev/null || true
-    if [ -f "$rc" ] && ! grep -qF "$FINALRUN_DIR/bin" "$rc" 2>/dev/null; then
-      echo "$path_line" >> "$rc"
+    if [ -f "$rc" ] && ! grep -qF "$PATH_TARGET_DIR" "$rc" 2>/dev/null; then
+      printf '\n# finalrun\n%s\n' "$sh_line" >> "$rc"
     fi
   done
+
+  # Fish has different syntax and a dedicated config file.
+  local fish_rc="$HOME/.config/fish/config.fish"
+  if [ -d "$HOME/.config/fish" ] || command -v fish >/dev/null 2>&1; then
+    mkdir -p "$HOME/.config/fish" 2>/dev/null || true
+    touch "$fish_rc" 2>/dev/null || true
+    if [ -f "$fish_rc" ] && ! grep -qF "$PATH_TARGET_DIR" "$fish_rc" 2>/dev/null; then
+      printf '\n# finalrun\n%s\n' "$fish_line" >> "$fish_rc"
+    fi
+  fi
 }
 
 print_ci_summary() {
@@ -221,8 +266,21 @@ print_ci_summary() {
   info "For local test execution on this machine, re-run without --ci:"
   echo ""
   echo "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | bash"
+  verify_path
+}
+
+# Tells the user whether finalrun is reachable in their *current* shell. If
+# yes (Linux usually, re-runs always), stay quiet. If no (typical macOS
+# first install), point them at the cheapest fix.
+verify_path() {
   echo ""
-  echo "Open a new terminal or run:  export PATH=\"\$PATH:$FINALRUN_DIR/bin\""
+  if command -v finalrun >/dev/null 2>&1; then
+    ok "finalrun is on your PATH."
+    return 0
+  fi
+  warn "finalrun isn't on PATH for this shell yet."
+  echo "  Open a new terminal — your shell rc files were updated."
+  echo "  If it still doesn't resolve, ensure $PATH_TARGET_DIR is in your PATH."
 }
 
 download_runtime() {
@@ -539,14 +597,14 @@ check_api_keys() {
     return
   fi
 
-  warn "No API key detected."
+  fail "No API key detected — finalrun cannot run tests without one."
   echo ""
   echo "  Fastest way to get started — FinalRun Cloud (free \$5 credits):"
   echo ""
   echo "      Sign up:  $(underline 'https://cloud.finalrun.app')"
   echo "      Docs:     $(underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
   echo ""
-  echo "  Prefer your own AI provider account? Bring your own key:"
+  echo "  Or bring your own provider key:"
   echo ""
   echo "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
   echo "      OPENAI_API_KEY       →  openai/gpt-* models"
@@ -571,10 +629,7 @@ print_summary() {
       ;;
   esac
 
-  echo ""
-  info "Open a new terminal, or run:"
-  echo ""
-  echo "    export PATH=\"\$PATH:$FINALRUN_DIR/bin\""
+  verify_path
   echo ""
   info "Try it:  finalrun --help"
   echo ""

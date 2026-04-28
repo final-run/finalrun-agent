@@ -173,24 +173,33 @@ function Install-Binary {
 function Update-UserPath {
     param([string]$BinDir)
 
+    # Two independent updates: User PATH in the registry (for new windows),
+    # and $env:Path in the current PS session (for the running window). The
+    # registry might already be correct while $env:Path lags behind — e.g.
+    # the PS process started before a previous installer run, or somebody
+    # manually pruned the session. Don't short-circuit one because the other
+    # is fine.
+
+    # Registry: idempotent via exact-segment, case-insensitive membership
+    # check (Windows paths are case-insensitive; substring matching would
+    # falsely match C:\foo\bin against C:\foo\bin\subdir).
     $current = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ($null -eq $current) { $current = '' }
-
-    # Idempotent: split and check exact membership, not substring (which
-    # would falsely match C:\foo\bin against C:\foo\bin\subdir).
-    # `-icontains` for case-insensitive comparison — Windows paths are
-    # case-insensitive, so a pre-existing entry with different casing
-    # (e.g. C:\Users\foo\.finalrun\Bin) shouldn't get a duplicate appended.
     $segments = ($current -split ';') | Where-Object { $_ }
-    if ($segments -icontains $BinDir) {
-        return
+    if (-not ($segments -icontains $BinDir)) {
+        $trimmed = $current.TrimEnd(';')
+        $newPath = if ($trimmed) { "$trimmed;$BinDir" } else { $BinDir }
+        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
     }
 
-    $trimmed = $current.TrimEnd(';')
-    $newPath = if ($trimmed) { "$trimmed;$BinDir" } else { $BinDir }
-    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-    # Note: this does NOT update $env:Path for the current shell. The summary
-    # message instructs the user to open a new terminal.
+    # Current PowerShell session: same idempotent check, separate state.
+    # The script is run via `irm | iex`, so this assignment lives in the
+    # user's shell process — no restart needed for the running window.
+    $sessionSegments = (($env:Path -split ';') | Where-Object { $_ })
+    if (-not ($sessionSegments -icontains $BinDir)) {
+        $sessionTrimmed = ($env:Path).TrimEnd(';')
+        $env:Path = if ($sessionTrimmed) { "$sessionTrimmed;$BinDir" } else { $BinDir }
+    }
 }
 
 function Install-Runtime {
@@ -405,14 +414,14 @@ function Test-ApiKeys {
         return
     }
 
-    Write-Notice "No API key detected."
+    Write-Failure "No API key detected — finalrun cannot run tests without one."
     Write-Heading ""
     Write-Heading '  Fastest way to get started — FinalRun Cloud (free $5 credits):'
     Write-Heading ""
     Write-Heading "      Sign up:  $(Format-Underline 'https://cloud.finalrun.app')"
     Write-Heading "      Docs:     $(Format-Underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
     Write-Heading ""
-    Write-Heading "  Prefer your own AI provider account? Bring your own key:"
+    Write-Heading "  Or bring your own provider key:"
     Write-Heading ""
     Write-Heading "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
     Write-Heading "      OPENAI_API_KEY       →  openai/gpt-* models"
@@ -422,9 +431,18 @@ function Test-ApiKeys {
     Write-Heading "  Docs: $(Format-Underline 'https://docs.finalrun.app/configuration/ai-providers')"
 }
 
+function Test-FinalrunOnPath {
+    Write-Heading ""
+    if (Get-Command finalrun -ErrorAction SilentlyContinue) {
+        Write-Success "finalrun is on your PATH."
+        return
+    }
+    Write-Notice "finalrun isn't on PATH for this shell yet."
+    Write-Heading "  Open a new PowerShell window — your User PATH was updated."
+}
+
 function Show-CISummary {
     param([string]$FinalRunDir)
-    $binDir = Join-Path $FinalRunDir 'bin'
     Write-Heading ""
     Write-Success "finalrun installed."
     Write-Heading ""
@@ -435,9 +453,7 @@ function Show-CISummary {
     Write-Heading "For local Android execution on this machine, re-run without -CI:"
     Write-Heading ""
     Write-Heading "    irm https://raw.githubusercontent.com/$script:GitHubRepo/main/scripts/install.ps1 | iex"
-    Write-Heading ""
-    Write-Heading "Open a new PowerShell window or run:"
-    Write-Heading "    `$env:Path = `"$binDir;`$env:Path`""
+    Test-FinalrunOnPath
 }
 
 function Show-Summary {
@@ -447,7 +463,6 @@ function Show-Summary {
         [bool]$AndroidOk,
         [string]$FinalRunDir
     )
-    $binDir = Join-Path $FinalRunDir 'bin'
     Write-Heading ""
     Write-Heading "── Summary ──"
     Write-Heading ""
@@ -461,9 +476,7 @@ function Show-Summary {
         Write-Notice "Android: setup incomplete — run 'finalrun doctor --platform android' for details."
     }
 
-    Write-Heading ""
-    Write-Heading "Open a new PowerShell window, or run:"
-    Write-Heading "    `$env:Path = `"$binDir;`$env:Path`""
+    Test-FinalrunOnPath
     Write-Heading ""
     Write-Heading "Try it:  finalrun --help"
     Write-Heading ""
