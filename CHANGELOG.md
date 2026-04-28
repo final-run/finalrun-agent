@@ -16,6 +16,12 @@ The root cause was inside `protobufjs` (transitively required by `@grpc/proto-lo
 
 Fixed by introducing `packages/device-node/src/grpc/protobufBundlerShim.ts`, a side-effect module that statically imports `node:fs` and `long` and assigns them onto `Protobuf.util`. `GrpcDriverClient.ts` imports the shim **before** `@grpc/proto-loader`, so the patch lands before proto-loader's transitive `protobufjs/ext/descriptor` import calls `Root.fromJSON(...).resolveAll()` at module-init time. Verified end-to-end against the wikipedia repo on a Bun-compiled darwin-arm64 binary: `Connected after 2 attempts (1s)` → `gRPC connection established successfully`.
 
+### Fixed — Planner crashing on `Prompt file not found` after device setup
+
+Once device setup succeeded (see fix above), the very next phase failed: `Planner call failed: ... Prompt file not found for key "planner". Searched: /home/runner/work/finalrun-agent/finalrun-agent/packages/goal-executor/...`. Same class of bug as the existing `BUNDLED_CLI_VERSION` workaround in `runtimePaths.ts` — `__dirname` in a Bun-compiled binary points to the source path on the *build* machine (the GitHub Actions runner) rather than the deploy machine, so `AIAgent._loadPrompt`'s disk lookups all missed.
+
+Fixed by shipping the AI prompt files (`planner.md`, `grounder.md`, the four sub-grounders, etc.) inside the runtime tarball under `prompts/`, alongside the existing `proto/`, `install-resources/`, and `report-app/` payloads — and by extending `initializeCliRuntimeEnvironment` in the CLI to set `FINALRUN_PROMPTS_DIR` from the runtime root. `_loadPrompt` already preferred that env var, so no behavior change there. Local dev still works because the `__dirname`-based fallbacks resolve correctly under `tsx`/`node`.
+
 ## [0.1.10] - 2026-04-26
 
 ### Added — Windows x86_64 support
