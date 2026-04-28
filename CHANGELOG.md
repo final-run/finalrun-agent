@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-04-28
+
+### Fixed
+
+- Local report server never spawned in the Bun-compiled binary. `resolveCliLaunchArgs` walked `__dirname`-relative entrypoint candidates that don't exist on a user's machine and threw "Could not resolve a FinalRun CLI entrypoint for background report server startup." `tryStartReportServer` swallowed the throw silently, so `finalrun test` advertised a "Report server: …" URL that was actually a leftover process from an unrelated dev session, and `finalrun start-server` failed outright. The standalone-binary path now spawns `process.execPath` directly.
+- Browser auto-launch after a test run did nothing. Same root cause: with no live report-server URL, the post-run `open <url>` handoff was never reached. Now that the server starts, Chrome (or whatever the macOS default browser is) opens to the run page on completion.
+- `finalrun start-server` failed with "Could not find an open port near 4173" when the 4173–4192 window was occupied by leftover processes. The port-finder now falls back to an OS-assigned ephemeral port instead of erroring out.
+
+### Changed
+
+- `finalrun stop-server` is now a single command with no flags. It reaps every FinalRun report-server process owned by the current user (matched by `internal-report-server` argv marker, so the blast radius is bounded to processes the CLI itself spawns) and clears every leftover `.server.json` under `~/.finalrun/workspaces/`. The previous workspace-scoped behavior was fragile — orphans from crashed or older runs accumulated and there was no way to clean them without `pkill`.
+- Spawn failures from `tryStartReportServer` and `openUrlBestEffort` now print to stderr instead of being swallowed, so regressions in the report-server pipeline surface within one run instead of two releases later.
+
 ## [0.1.12] - 2026-04-28
 
 ### Fixed — Planner crashing on `Prompt file not found` after device setup

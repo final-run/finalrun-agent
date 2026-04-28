@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import type { ReportServerState } from '@finalrun/common';
 import type { FinalRunWorkspace } from './workspace.js';
-import { resolveCliLaunchArgs } from './runtimePaths.js';
+import { resolveCliLaunchArgs, resolveFinalRunRootDir } from './runtimePaths.js';
 
 const DEFAULT_REPORT_SERVER_PORT = 4173;
 const HEALTH_ROUTE = '/health';
@@ -282,6 +282,77 @@ export async function stopWorkspaceReportServer(
   };
 }
 
+export interface StopAllReportServersResult {
+  killedPids: number[];
+  clearedStateFiles: string[];
+}
+
+/**
+ * Stop every FinalRun report-server process owned by the current user, plus
+ * sweep any leftover .server.json state files under ~/.finalrun/workspaces.
+ *
+ * Identifies servers by the `internal-report-server` argv marker, so the
+ * blast radius is bounded to processes the CLI itself would have spawned —
+ * not arbitrary node processes the user may have running.
+ */
+export async function stopAllReportServers(): Promise<StopAllReportServersResult> {
+  const killedPids = killOrphanReportServerProcesses();
+  const clearedStateFiles = await sweepWorkspaceReportServerStateFiles();
+  return { killedPids, clearedStateFiles };
+}
+
+function killOrphanReportServerProcesses(): number[] {
+  // Best-effort discovery via `ps`. macOS / Linux ps differ slightly but both
+  // accept `-x -o pid=,command=` for "all my processes, just the pid+argv".
+  const ps = spawnSync('ps', ['-x', '-o', 'pid=,command='], {
+    encoding: 'utf-8',
+  });
+  if (ps.status !== 0 || typeof ps.stdout !== 'string') {
+    return [];
+  }
+  const myPid = process.pid;
+  const killed: number[] = [];
+  for (const line of ps.stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+    if (!match) continue;
+    const pid = parseInt(match[1] ?? '', 10);
+    const cmd = match[2] ?? '';
+    if (!Number.isFinite(pid) || pid === myPid) continue;
+    // Marker has to be specific enough that we don't kill a test runner or
+    // an editor that happens to have these strings open.
+    if (!/\bfinalrun(?:-agent|\.js|\.ts)?\b/.test(cmd)) continue;
+    if (!/\binternal-report-server\b/.test(cmd)) continue;
+    try {
+      reportServerManagerDependencies.killProcess(pid, 'SIGTERM');
+      killed.push(pid);
+    } catch {
+      // ESRCH or permission — ignore; nothing more we can do.
+    }
+  }
+  return killed;
+}
+
+async function sweepWorkspaceReportServerStateFiles(): Promise<string[]> {
+  const cleared: string[] = [];
+  const workspacesRoot = path.join(resolveFinalRunRootDir(), 'workspaces');
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(workspacesRoot);
+  } catch {
+    return cleared;
+  }
+  for (const entry of entries) {
+    const stateFile = path.join(workspacesRoot, entry, 'artifacts', '.server.json');
+    try {
+      await fsp.unlink(stateFile);
+      cleared.push(stateFile);
+    } catch {
+      // ENOENT (no state file in this workspace) is the common case — skip.
+    }
+  }
+  return cleared;
+}
+
 export async function openReportUrl(url: string): Promise<void> {
   await reportServerManagerDependencies.openBrowser(url);
 }
@@ -472,7 +543,10 @@ async function findAvailablePort(startingPort: number): Promise<number> {
     }
     candidate += 1;
   }
-  throw new Error(`Could not find an open port near ${startingPort}.`);
+  // 20-port window exhausted (typically: leftover zombie report servers from
+  // earlier runs holding 4173..4192). Don't wedge the user — fall through to
+  // an OS-assigned ephemeral port instead of erroring out.
+  return await getEphemeralPort();
 }
 
 async function isPortAvailable(port: number): Promise<boolean> {
