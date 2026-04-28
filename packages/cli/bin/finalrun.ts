@@ -4,7 +4,12 @@
 import { Command } from 'commander';
 import { Logger, LogLevel, type TestResult } from '@finalrun/common';
 import { formatResolvedAppSummary } from '../src/appConfig.js';
-import { CliEnv, MODEL_FORMAT_EXAMPLE, parseModel } from '../src/env.js';
+import {
+  CliEnv,
+  MODEL_FORMAT_EXAMPLE,
+  SUPPORTED_AI_PROVIDERS_LABEL,
+  parseModel,
+} from '../src/env.js';
 import { resolveApiKeys } from '../src/apiKey.js';
 import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
 import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
@@ -378,7 +383,17 @@ async function runTestCommand(params: {
     }
     const workspace = await resolveWorkspace();
     const workspaceConfig = await loadWorkspaceConfig(workspace.finalrunDir);
-    const model = parseModel(params.options.model ?? workspaceConfig.model);
+    const configuredModel = params.options.model ?? workspaceConfig.model;
+    if (!configuredModel?.trim()) {
+      throw new Error(
+        formatMissingLocalModelMessage({
+          invokedCommand: params.invokedCommand,
+          selectors: normalizedSelectors,
+          suitePath: normalizedSuitePath,
+        }),
+      );
+    }
+    const model = parseModel(configuredModel);
     const features = workspaceConfig.features;
     const reasoning = workspaceConfig.reasoning;
 
@@ -670,6 +685,54 @@ async function openUrlBestEffort(
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`⚠ Could not open browser for ${url}: ${message}`);
   }
+}
+
+function formatMissingLocalModelMessage(params: {
+  invokedCommand: 'test' | 'suite';
+  selectors: string[];
+  suitePath?: string;
+}): string {
+  const target =
+    params.invokedCommand === 'suite'
+      ? params.suitePath
+        ? quoteCommandArg(params.suitePath)
+        : '<suite.yaml>'
+      : params.selectors.length > 0
+        ? params.selectors.map(quoteCommandArg).join(' ')
+        : '<test.yaml>';
+  const cloudCommand =
+    params.invokedCommand === 'suite'
+      ? `finalrun cloud suite ${target} --platform android`
+      : `finalrun cloud test ${target} --platform android`;
+  const localCommand = `finalrun ${params.invokedCommand} ${target} --model ${MODEL_FORMAT_EXAMPLE}`;
+
+  return [
+    'One more step — choose how to run this test',
+    '',
+    'This command runs tests locally, so finalrun needs a provider/model.',
+    '',
+    'Recommended cloud path:',
+    '  export FINALRUN_API_KEY=fr_...',
+    `  ${cloudCommand}`,
+    '',
+    'Local path:',
+    '  Add this to .finalrun/config.yaml:',
+    `    model: ${MODEL_FORMAT_EXAMPLE}`,
+    '',
+    '  Then set the matching provider key:',
+    '    export GOOGLE_API_KEY=...',
+    '',
+    'One-off local run:',
+    `  ${localCommand}`,
+    '',
+    `Supported providers: ${SUPPORTED_AI_PROVIDERS_LABEL}.`,
+    'Docs: https://docs.finalrun.app/configuration/ai-providers',
+  ].join('\n');
+}
+
+function quoteCommandArg(value: string): string {
+  if (/^[A-Za-z0-9_./@%+,:=-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 async function exitWithRawStderr(message: string, exitCode: number): Promise<never> {

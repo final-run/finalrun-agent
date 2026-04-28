@@ -143,8 +143,8 @@ main() {
   fi
   run_doctor
   sync_skills
-  check_api_keys
   print_summary
+  check_api_keys
 
   exit 0
 }
@@ -579,7 +579,7 @@ sync_skills() {
 
 check_api_keys() {
   echo ""
-  info "── AI Provider Key ──"
+  info "── API Key Setup ──"
   echo ""
 
   local detected=()
@@ -592,26 +592,25 @@ check_api_keys() {
 
   if [ ${#detected[@]} -gt 0 ]; then
     for var in "${detected[@]}"; do
-      ok "$var detected"
+      case "$var" in
+        FINALRUN_API_KEY) ok "$var detected — cloud runs ready." ;;
+        *) ok "$var detected — local provider key available." ;;
+      esac
     done
     return
   fi
 
-  fail "No API key detected — finalrun cannot run tests without one."
+  echo "  To run your first cloud test:"
+  echo "    1. Get an API key"
+  echo "         -> $(underline 'https://cloud.finalrun.app')   (free, ~30 seconds, \$5 credits)"
+  echo "    2. Save it to your shell"
+  echo "         -> export FINALRUN_API_KEY=fr_..."
+  echo "    3. Run from your app workspace"
+  echo "         -> finalrun cloud test <test.yaml> --platform android"
   echo ""
-  echo "  Fastest way to get started — FinalRun Cloud (free \$5 credits):"
-  echo ""
-  echo "      Sign up:  $(underline 'https://cloud.finalrun.app')"
-  echo "      Docs:     $(underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
-  echo ""
-  echo "  Or bring your own provider key:"
-  echo ""
-  echo "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
-  echo "      OPENAI_API_KEY       →  openai/gpt-* models"
-  echo "      GOOGLE_API_KEY       →  google/gemini-* models"
-  echo ""
-  echo "  Set via .env (workspace root), shell export, or --api-key."
-  echo "  Docs: $(underline 'https://docs.finalrun.app/configuration/ai-providers')"
+  echo "  Running locally instead?"
+  echo "    Configure a provider model/key:"
+  echo "    $(underline 'https://docs.finalrun.app/configuration/ai-providers')"
 }
 
 print_summary() {

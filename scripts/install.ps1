@@ -397,7 +397,7 @@ function Sync-Skills {
 
 function Test-ApiKeys {
     Write-Heading ""
-    Write-Heading "── AI Provider Key ──"
+    Write-Heading "── API Key Setup ──"
     Write-Heading ""
 
     $detected = @()
@@ -409,26 +409,26 @@ function Test-ApiKeys {
 
     if ($detected.Count -gt 0) {
         foreach ($v in $detected) {
-            Write-Success "$v detected"
+            if ($v -eq 'FINALRUN_API_KEY') {
+                Write-Success "$v detected — cloud runs ready."
+            } else {
+                Write-Success "$v detected — local provider key available."
+            }
         }
         return
     }
 
-    Write-Failure "No API key detected — finalrun cannot run tests without one."
+    Write-Heading "  To run your first cloud test:"
+    Write-Heading "    1. Get an API key"
+    Write-Heading "         -> $(Format-Underline 'https://cloud.finalrun.app')   (free, ~30 seconds, `$5 credits)"
+    Write-Heading "    2. Save it to your shell"
+    Write-Heading "         -> `$env:FINALRUN_API_KEY = 'fr_...'"
+    Write-Heading "    3. Run from your app workspace"
+    Write-Heading "         -> finalrun cloud test <test.yaml> --platform android"
     Write-Heading ""
-    Write-Heading '  Fastest way to get started — FinalRun Cloud (free $5 credits):'
-    Write-Heading ""
-    Write-Heading "      Sign up:  $(Format-Underline 'https://cloud.finalrun.app')"
-    Write-Heading "      Docs:     $(Format-Underline 'https://docs.finalrun.app/configuration/cloud-api-key')"
-    Write-Heading ""
-    Write-Heading "  Or bring your own provider key:"
-    Write-Heading ""
-    Write-Heading "      ANTHROPIC_API_KEY    →  anthropic/claude-* models"
-    Write-Heading "      OPENAI_API_KEY       →  openai/gpt-* models"
-    Write-Heading "      GOOGLE_API_KEY       →  google/gemini-* models"
-    Write-Heading ""
-    Write-Heading "  Set via .env (workspace root), shell export, or --api-key."
-    Write-Heading "  Docs: $(Format-Underline 'https://docs.finalrun.app/configuration/ai-providers')"
+    Write-Heading "  Running locally instead?"
+    Write-Heading "    Configure a provider model/key:"
+    Write-Heading "    $(Format-Underline 'https://docs.finalrun.app/configuration/ai-providers')"
 }
 
 function Test-FinalrunOnPath {
@@ -550,8 +550,8 @@ function Invoke-Main {
     }
 
     Sync-Skills
-    Test-ApiKeys
     Show-Summary -BinPath $binPath -RuntimeDir $runtimeDir -AndroidOk $androidOk -FinalRunDir $finalRunDir
+    Test-ApiKeys
 }
 
 Invoke-Main
