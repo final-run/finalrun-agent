@@ -1,23 +1,22 @@
+import type { ReactNode } from 'react';
 import { summaryIconStyle, type SummaryTone } from '../format';
 
 export function SummaryCard({
   label,
   value,
   tone,
-  iconSvg,
+  icon,
 }: {
   label: string;
   value: string;
   tone: SummaryTone;
-  iconSvg: string;
+  icon: ReactNode;
 }) {
   return (
     <div className="summary-card">
-      <span
-        className="summary-card-icon"
-        style={inlineStyleFromString(summaryIconStyle(tone))}
-        dangerouslySetInnerHTML={{ __html: iconSvg }}
-      />
+      <span className="summary-card-icon" style={inlineStyleFromString(summaryIconStyle(tone))}>
+        {icon}
+      </span>
       <span>
         <div className="summary-card-label">{label}</div>
         <div className="summary-card-value">{value}</div>

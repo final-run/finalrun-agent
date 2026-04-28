@@ -46,6 +46,23 @@ export interface SubmitRunResult {
   appFilename?: string;
 }
 
+// Reject paths that escape the upload archive: absolute paths, `..` segments,
+// or anything that normalizes outside the implicit per-section root
+// (`tests/`, `suites/`, `env/`).
+export function isSafeRelativeSegment(value: string): boolean {
+  if (!value || path.isAbsolute(value)) return false;
+  const normalized = path.posix.normalize(value.replace(/\\/g, '/'));
+  return !normalized.startsWith('../') && normalized !== '..';
+}
+
+// Env names land in filesystem path joins and as form-data values; restrict
+// to a conservative charset to keep both safe.
+const ENV_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+export function isSafeEnvName(value: string): boolean {
+  return ENV_NAME_PATTERN.test(value);
+}
+
 // Generous timeout to accommodate large APK/IPA uploads on slow uplinks while
 // still catching genuinely stalled connections. Override with
 // FINALRUN_SUBMIT_TIMEOUT_MS for ultra-large uploads or low-bandwidth tests.
@@ -88,6 +105,9 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
   const filesToZip: Array<{ absolutePath: string; relativePath: string }> = [];
 
   if (input.checked.suite?.sourcePath && input.checked.suite.relativePath) {
+    if (!isSafeRelativeSegment(input.checked.suite.relativePath)) {
+      throw new Error(`Invalid suite relativePath: ${input.checked.suite.relativePath}`);
+    }
     filesToZip.push({
       absolutePath: input.checked.suite.sourcePath,
       relativePath: path.join('suites', input.checked.suite.relativePath),
@@ -96,6 +116,9 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
 
   for (const spec of input.checked.tests) {
     if (!spec.sourcePath || !spec.relativePath) continue;
+    if (!isSafeRelativeSegment(spec.relativePath)) {
+      throw new Error(`Invalid test relativePath: ${spec.relativePath}`);
+    }
     filesToZip.push({
       absolutePath: spec.sourcePath,
       relativePath: path.join('tests', spec.relativePath),
@@ -119,6 +142,9 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
   // .finalrun/env/) avoids leaking other environments' bindings to the
   // cloud submission.
   if (input.envName) {
+    if (!isSafeEnvName(input.envName)) {
+      throw new Error(`Invalid env name: ${input.envName}`);
+    }
     const envDir = path.join(input.workspaceRoot, '.finalrun', 'env');
     const candidates = [`${input.envName}.yaml`, `${input.envName}.yml`];
     for (const candidate of candidates) {
