@@ -134,7 +134,16 @@ if (!existsSync(reportAppSource)) {
 }
 cpSync(reportAppSource, reportAppTarget, { recursive: true });
 
-// 4. Compute manifest.
+// 4. Copy AI prompts. Bun-compiled binaries can't read them from the
+// build-machine __dirname at runtime, so they ride in the runtime tarball
+// and the CLI exposes them via FINALRUN_PROMPTS_DIR.
+console.log('[build-runtime] Copying AI prompts...');
+const promptsSource = resolve(repoRoot, 'packages/goal-executor/src/prompts');
+const promptsTarget = resolve(stagingDir, 'prompts');
+if (!existsSync(promptsSource)) bail(`Missing prompts dir at ${promptsSource}`);
+cpSync(promptsSource, promptsTarget, { recursive: true });
+
+// 5. Compute manifest.
 console.log('[build-runtime] Computing sha256 manifest...');
 const manifestEntries = [];
 walk(stagingDir, (filePath) => {

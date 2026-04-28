@@ -151,6 +151,13 @@ export function initializeCliRuntimeEnvironment(startDir: string = __dirname): v
       process.env['FINALRUN_REPORT_APP_DIR'] = reportApp;
     }
   }
+
+  if (!process.env['FINALRUN_PROMPTS_DIR'] && runtimeRoot) {
+    const promptsDir = path.join(runtimeRoot, 'prompts');
+    if (fs.existsSync(promptsDir)) {
+      process.env['FINALRUN_PROMPTS_DIR'] = promptsDir;
+    }
+  }
 }
 
 function resolveLocalRuntimeRoot(): string | undefined {

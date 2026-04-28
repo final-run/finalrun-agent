@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-04-28
+
+### Fixed — Planner crashing on `Prompt file not found` after device setup
+
+After the v0.1.11 fix unblocked device setup, the very next phase failed: `Planner call failed: ... Prompt file not found for key "planner". Searched: /home/runner/work/finalrun-agent/finalrun-agent/packages/goal-executor/...`. Same class of bug as the existing `BUNDLED_CLI_VERSION` workaround in `runtimePaths.ts` — `__dirname` in a Bun-compiled binary points to the source path on the *build* machine (the GitHub Actions runner) rather than the deploy machine, so `AIAgent._loadPrompt`'s disk lookups all missed.
+
+Fixed by shipping the AI prompt files (`planner.md`, `grounder.md`, the four sub-grounders, etc.) inside the runtime tarball under `prompts/`, alongside the existing `proto/`, `install-resources/`, and `report-app/` payloads — and by extending `initializeCliRuntimeEnvironment` in the CLI to set `FINALRUN_PROMPTS_DIR` from the runtime root. `_loadPrompt` already preferred that env var, so no behavior change there. Local dev still works because the `__dirname`-based fallbacks resolve correctly under `tsx`/`node`.
+
 ## [0.1.11] - 2026-04-28
 
 ### Fixed — Android/iOS test runs crashing on first proto load
