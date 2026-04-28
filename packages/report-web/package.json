@@ -38,9 +38,11 @@
   },
   "dependencies": {
     "@finalrun/common": "^0.1.7",
+    "lightningcss": "^1.32.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.14.2"
+    "react-router-dom": "^7.14.2",
+    "rolldown": "^1.0.0-rc.17"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
