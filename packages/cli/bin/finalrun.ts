@@ -247,11 +247,10 @@ program
 
 program
   .command('stop-server')
-  .description('Stop the local FinalRun report server for a workspace')
-  .option('--workspace <path>', 'Workspace root or a path inside a FinalRun workspace')
-  .action(async (options: WorkspaceCommandOptions) => {
+  .description('Stop all running FinalRun report servers and clear stale state')
+  .action(async () => {
     await runCommand(async () => {
-      await stopWorkspaceReportServerCommand(options.workspace);
+      await stopWorkspaceReportServerCommand();
     });
   });
 
@@ -507,16 +506,27 @@ async function startWorkspaceReportServer(params: {
   await openUrlBestEffort(workspaceUrl, runtime);
 }
 
-async function stopWorkspaceReportServerCommand(workspacePath?: string): Promise<void> {
+async function stopWorkspaceReportServerCommand(_workspacePath?: string): Promise<void> {
+  // Reaps every FinalRun report-server process owned by the current user
+  // and clears all leftover .server.json state files. Workspace-scoped stop
+  // proved fragile in the wild — orphans left by crashed CLI invocations or
+  // older npm-dev runs accumulated until the 4173-port window was exhausted.
+  // Match-by-argv is bounded to processes the CLI itself spawns, so the
+  // blast radius stays safe.
   const runtime = await resolveLocalRuntime();
-  const workspace = await resolveCommandWorkspace(workspacePath);
-  const result = await runtime.reportServerManager.stopWorkspaceReportServer(workspace);
-  if (!result.stopped) {
-    console.log(`FinalRun report server is not running for ${workspace.rootDir}`);
+  const result = await runtime.reportServerManager.stopAllReportServers();
+  if (result.killedPids.length === 0 && result.clearedStateFiles.length === 0) {
+    console.log('No FinalRun report servers were running.');
     return;
   }
-
-  console.log(`Stopped FinalRun report server for ${workspace.rootDir}`);
+  if (result.killedPids.length > 0) {
+    console.log(
+      `Stopped ${result.killedPids.length} FinalRun report server process(es): ${result.killedPids.join(', ')}`,
+    );
+  }
+  if (result.clearedStateFiles.length > 0) {
+    console.log(`Cleared ${result.clearedStateFiles.length} stale state file(s).`);
+  }
 }
 
 async function printWorkspaceReportServerStatus(workspacePath?: string): Promise<void> {
@@ -579,7 +589,12 @@ async function tryStartReportServer(
     });
     console.log(`Report server: ${runtime.reportServerManager.buildWorkspaceReportUrl(server.url)}`);
     return server.url;
-  } catch {
+  } catch (err) {
+    // The test run continues without a live report URL, but don't swallow
+    // the cause silently — a previous spawn-shape regression went undetected
+    // for two releases because this catch was bare. Surface it to stderr.
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`⚠ Could not start local report server: ${message}`);
     return undefined;
   }
 }
@@ -649,8 +664,11 @@ async function openUrlBestEffort(
   try {
     const resolved = runtime ?? await resolveLocalRuntime();
     await resolved.reportServerManager.openReportUrl(url);
-  } catch {
-    // Silently ignore — the URL is already printed to the terminal.
+  } catch (err) {
+    // The URL is already printed; if the browser handoff failed, surface
+    // why so it doesn't disappear silently. Don't fail the run.
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`⚠ Could not open browser for ${url}: ${message}`);
   }
 }
 

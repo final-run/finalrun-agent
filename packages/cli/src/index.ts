@@ -16,4 +16,5 @@ export {
   readWorkspaceReportServerState,
   resolveHealthyWorkspaceReportServer,
   startOrReuseWorkspaceReportServer,
+  stopAllReportServers,
 } from './reportServerManager.js';

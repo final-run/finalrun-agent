@@ -75,10 +75,27 @@ export function resolveCliCacheRoot(startDir: string = __dirname): string {
   return path.join(resolveFinalRunRootDir(), 'assets', resolveCliPackageVersion(startDir));
 }
 
+// Set to "true" by `bun build --define` in scripts/build-binary.sh; undefined
+// in dev / tsc / `bun run` paths. Mirrors the declaration in localRuntime.ts.
+declare const FINALRUN_IS_STANDALONE_BINARY: string | undefined;
+
 export function resolveCliLaunchArgs(
   args: readonly string[],
   startDir: string = __dirname,
 ): string[] {
+  // Standalone Bun-compiled binary: process.execPath IS the entrypoint, and
+  // none of the build-machine __dirname-relative candidates below exist on
+  // the user's machine. Bun's compile already shapes the child's argv as
+  // ['bun', '/$bunfs/...', ...args], so Commander's default `from='node'`
+  // (which slices(2)) lands exactly on the user-supplied args — no need to
+  // prepend a script slot ourselves.
+  if (
+    typeof FINALRUN_IS_STANDALONE_BINARY !== 'undefined' &&
+    FINALRUN_IS_STANDALONE_BINARY === 'true'
+  ) {
+    return [...args];
+  }
+
   const compiledBinPath = path.resolve(startDir, '../bin/finalrun.js');
   if (fs.existsSync(compiledBinPath)) {
     return [compiledBinPath, ...args];
