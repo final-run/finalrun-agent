@@ -30,10 +30,14 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
   // overrides (FINALRUN_RUNTIME_ROOT, FINALRUN_ASSET_DIR, FINALRUN_CLOUD_URL,
   // FINALRUN_CACHE_DIR, etc.) — those are runtime concerns for THIS binary
   // and shouldn't influence where the installer puts the next version.
-  // FINALRUN_DIR is the one knob users intentionally pin install location
-  // with, so we preserve it. FINALRUN_VERSION we set explicitly when --version
-  // was passed; otherwise we drop it so the installer resolves "latest".
+  //
+  // The vars that DO mean something to the installer get explicitly carried
+  // over: FINALRUN_DIR (install root), FINALRUN_NON_INTERACTIVE (binary-only
+  // / no-prompt mode — install.sh and install.ps1 both honor this).
+  // FINALRUN_VERSION we set explicitly when --version was passed; otherwise
+  // we drop it so the installer resolves "latest".
   const preservedDir = process.env['FINALRUN_DIR'];
+  const preservedNonInteractive = process.env['FINALRUN_NON_INTERACTIVE'];
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!key.startsWith('FINALRUN_')) {
@@ -41,6 +45,7 @@ export async function runUpgrade(options: UpgradeOptions): Promise<void> {
     }
   }
   if (preservedDir) env['FINALRUN_DIR'] = preservedDir;
+  if (preservedNonInteractive) env['FINALRUN_NON_INTERACTIVE'] = preservedNonInteractive;
   if (options.version) env['FINALRUN_VERSION'] = options.version;
 
   let shell: string;
