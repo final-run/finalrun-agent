@@ -1,20 +1,14 @@
 ---
 title: "Install FinalRun: prerequisites, CLI setup, and host verification"
 sidebarTitle: "Installation"
-description: "Set up prerequisites, install the FinalRun CLI on macOS or Linux, and verify that your host is ready to run Android or iOS tests."
+description: "Set up prerequisites, install the FinalRun CLI on macOS, Linux, or Windows, and verify that your host is ready to run Android or iOS tests."
 ---
 
-FinalRun runs as a Node.js CLI. This page walks you through the prerequisites, the install itself, and how to verify your machine is ready. Once `finalrun doctor` reports a clean bill of health, continue to the [Quickstart](/quickstart) to write and run your first test.
+FinalRun is distributed as a standalone `finalrun` binary — no Node.js or npm required. This page walks you through the prerequisites, the install itself, and how to verify your machine is ready. Once `finalrun doctor` reports a clean bill of health, continue to the [Quickstart](/quickstart) to write and run your first test.
 
 ## Prerequisites
 
 Before installing FinalRun, make sure your machine has the following in place.
-
-### Node.js
-
-- **Node.js** 20.0.0 or later
-
-The one-line install script sets up Node.js for you if it isn't already present.
 
 ### AI provider API key
 
@@ -99,18 +93,22 @@ You'll set the key during the Quickstart. See [AI Providers](/configuration/ai-p
 
 ## Install FinalRun
 
-**One-line install (recommended):**
+The installer downloads the standalone `finalrun` binary for your platform, the bundled platform driver assets for Android and iOS, and the FinalRun AI agent skills for your coding agent.
 
-```bash
+<CodeGroup>
+```bash macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-The script installs Node.js (if needed), the `finalrun` CLI globally, the bundled platform driver assets for Android and iOS, and the FinalRun AI agent skills for your coding agent.
+```powershell Windows
+irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
+```
+</CodeGroup>
 
-**npm (if you already have Node.js 20+):**
+To keep the CLI up to date later, run:
 
 ```bash
-npm install -g @finalrun/finalrun-agent
+finalrun upgrade
 ```
 
 ## Verify the installation
