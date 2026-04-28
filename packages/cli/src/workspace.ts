@@ -3,12 +3,18 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
+  ALL_FEATURES,
   PLATFORM_ANDROID,
   PLATFORM_IOS,
   type AppConfig,
+  type FeatureName,
+  type FeatureOverride,
+  type FeatureOverrides,
+  type ReasoningLevel,
 } from '@finalrun/common';
 import YAML from 'yaml';
 import { readAppConfig } from './appConfig.js';
+import { parseReasoningLevel } from './env.js';
 import { resolveFinalRunRootDir } from './runtimePaths.js';
 import { promptForWorkspaceSelection, type WorkspaceSelectionIO } from './workspacePicker.js';
 
@@ -31,6 +37,8 @@ export interface AppOverrideValidationResult {
 export interface WorkspaceConfig {
   env?: string;
   model?: string;
+  reasoning?: ReasoningLevel;
+  features?: FeatureOverrides;
   app?: AppConfig;
 }
 
@@ -58,7 +66,15 @@ export interface RegisteredWorkspaceEntry {
   metadataPath: string;
 }
 
-const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set(['env', 'model', 'app']);
+const WORKSPACE_CONFIG_TOP_LEVEL_KEYS = new Set([
+  'env',
+  'model',
+  'reasoning',
+  'features',
+  'app',
+]);
+const FEATURE_OVERRIDE_KEYS = new Set(['model', 'reasoning']);
+const ALL_FEATURES_SET = new Set<string>(ALL_FEATURES);
 const WORKSPACE_HASH_LENGTH = 16;
 
 export async function resolveWorkspace(
@@ -425,8 +441,45 @@ export async function loadWorkspaceConfig(finalrunDir: string): Promise<Workspac
     model: readOptionalTrimmedString(parsed['model'], `${configPath} model`, {
       allowEmpty: true,
     }),
+    reasoning: parseReasoningLevel(parsed['reasoning'], `${configPath} reasoning`),
+    features: readFeaturesConfig(parsed['features'], `${configPath} features`),
     app: readAppConfig(parsed['app'], `${configPath} app`),
   };
+}
+
+function readFeaturesConfig(value: unknown, label: string): FeatureOverrides | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  assertPlainObject(value, label);
+  assertAllowedKeys(value, ALL_FEATURES_SET, label);
+
+  const overrides: FeatureOverrides = {};
+  for (const [featureKey, rawOverride] of Object.entries(value)) {
+    if (rawOverride === undefined || rawOverride === null) {
+      continue;
+    }
+    const featureLabel = `${label}.${featureKey}`;
+    assertPlainObject(rawOverride, featureLabel);
+    assertAllowedKeys(rawOverride, FEATURE_OVERRIDE_KEYS, featureLabel);
+
+    const override: FeatureOverride = {};
+    const model = readOptionalTrimmedString(rawOverride['model'], `${featureLabel}.model`, {
+      allowEmpty: false,
+    });
+    if (model !== undefined) {
+      override.model = model;
+    }
+    const reasoning = parseReasoningLevel(rawOverride['reasoning'], `${featureLabel}.reasoning`);
+    if (reasoning !== undefined) {
+      override.reasoning = reasoning;
+    }
+    if (override.model !== undefined || override.reasoning !== undefined) {
+      overrides[featureKey as FeatureName] = override;
+    }
+  }
+
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
 
 export async function resolveConfiguredEnvironmentFile(

@@ -500,6 +500,8 @@ Standard Grounder (hierarchy-based)
 
 **Why Vercel AI SDK?** It provides a unified interface across providers, so the goal executor doesn't need provider-specific code for each LLM.
 
+Model and reasoning effort are configurable per feature (planner, grounder, and the specialized grounders) via the `features:` block in `.finalrun/config.yaml`. See [configuration.md](configuration.md) for the YAML shape.
+
 ---
 
 ## 8. The Device Layer (Physical Actions)

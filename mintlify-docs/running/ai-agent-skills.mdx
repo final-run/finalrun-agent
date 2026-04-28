@@ -1,0 +1,120 @@
+---
+title: "FinalRun AI agent skills: generate, run, and fix tests"
+sidebarTitle: "AI Agent Skills"
+description: "Install and use FinalRun's three AI agent skills — generate-test, use-cli, and test-and-fix — to automate mobile test creation, execution, and debugging."
+---
+
+FinalRun ships three AI coding agent skills that let your AI coding agent generate tests, run them, and fix failures — all from chat. The skills work with any agent that supports the skills protocol, including Claude Code, Cursor, Windsurf, and similar tools.
+
+## Install the skills
+
+Run the following command once in your repository to install all three skills into your coding agent:
+
+```sh
+npx skills add final-run/finalrun-agent
+```
+
+<Note>
+  These skills work with any AI coding agent that supports the skills protocol. You do not need to configure them separately for each tool.
+</Note>
+
+## Available skills
+
+<CardGroup cols={1}>
+  <Card title="/finalrun-generate-test" icon="wand-magic-sparkles">
+    Reads your app's source code, infers the app identity, and generates complete YAML test specs with setup, steps, and expected state — organized by feature folder.
+  </Card>
+  <Card title="/finalrun-use-cli" icon="terminal">
+    Validates and runs tests once they are generated. Handles flag selection, env binding, and post-run artifact inspection.
+  </Card>
+  <Card title="/finalrun-test-and-fix" icon="rotate">
+    Orchestrates the full generate → run → diagnose → fix loop. Keeps iterating until the run is green or a genuine blocker is hit.
+  </Card>
+</CardGroup>
+
+---
+
+## /finalrun-generate-test
+
+The `/finalrun-generate-test` skill reads your app's source code, infers the app identity (package name or bundle ID), and generates complete test specs organized by feature folder under `.finalrun/tests/`.
+
+**Example usage**
+
+```sh
+/finalrun-generate-test Generate tests for the authentication feature — cover login with valid credentials, login with wrong password, and logout
+```
+
+When you invoke this skill, the agent works through the following sequence:
+
+<Steps>
+  <Step title="Read source code">
+    Reads relevant application source code to understand the UI, user flows, and infer the app's package name or bundle ID.
+  </Step>
+  <Step title="Set up configuration">
+    Creates or updates `.finalrun/config.yaml` with the app identity and scaffolds environment bindings under `.finalrun/env/`.
+  </Step>
+  <Step title="Propose a test plan">
+    Presents the proposed test files, feature folder structure, and environment binding strategy for your approval before writing any files.
+  </Step>
+  <Step title="Generate YAML specs">
+    After you approve, writes YAML specs under `.finalrun/tests/<feature>/` and a matching suite manifest under `.finalrun/suites/`.
+  </Step>
+  <Step title="Validate with finalrun check">
+    Runs `finalrun check` to validate the workspace, bindings, and generated specs. Fixes any issues until the check passes.
+  </Step>
+</Steps>
+
+<Warning>
+  The agent will not write test files until you explicitly approve the proposed plan in step 3. Review the proposed paths and binding strategy before confirming.
+</Warning>
+
+---
+
+## /finalrun-use-cli
+
+The `/finalrun-use-cli` skill validates and runs your tests once they are generated. It handles CLI flag selection, env binding, and post-run artifact inspection — including reading `result.json`, screenshots, and device logs on failure.
+
+**Example usage**
+
+```sh
+/finalrun-use-cli Run the auth tests on Android
+```
+
+The agent validates the workspace with `finalrun check` before executing, explains the exact command it will run, and summarizes the outcome with artifact links when done.
+
+---
+
+## /finalrun-test-and-fix
+
+The `/finalrun-test-and-fix` skill orchestrates the full **generate → run → diagnose → fix** loop. It calls `/finalrun-generate-test` to author tests, runs them via `/finalrun-use-cli`, reads the CLI artifacts on failure, classifies whether the bug is in the app code or the test spec, applies the narrowest possible fix, and re-runs until the run is green.
+
+**Example usage**
+
+```sh
+/finalrun-test-and-fix Verify and fix the checkout feature end-to-end on Android
+```
+
+The agent stops the loop only when the run is green, or when execution is genuinely blocked — for example, no emulator is available, a required secret is missing, or you explicitly opt out. In a blocked state it prints the exact command for you to run locally.
+
+<Tip>
+  Use `/finalrun-test-and-fix` as your default entry point when you finish a UI feature. It covers the full cycle without needing to invoke the other two skills manually.
+</Tip>
+
+---
+
+## Auto-triggering FinalRun after feature work
+
+You can configure your AI agent to automatically generate and run FinalRun tests whenever it finishes a UI feature — without you having to ask explicitly. Add the autotrigger content to your `AGENTS.md` file:
+
+<Steps>
+  <Step title="Install the skills">
+    ```sh
+    npx skills add final-run/finalrun-agent
+    ```
+  </Step>
+  <Step title="Add the autotrigger rule to AGENTS.md">
+    Add a definition-of-done rule to your `AGENTS.md` that instructs the agent to run the `/finalrun-test-and-fix` skill automatically after every UI change. The rule tells the agent not to mark a task as done until FinalRun coverage is updated and the run is green.
+  </Step>
+</Steps>
+
+With the autotrigger in place, your agent treats a passing FinalRun run as a hard requirement for every UI task — no separate prompt needed.

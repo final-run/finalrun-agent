@@ -4,7 +4,9 @@ import {
   LogLevel,
   type DeviceInfo,
   type DeviceInventoryDiagnostic,
+  type FeatureOverrides,
   type LogEntry,
+  type ModelDefaults,
   type RunTarget,
   type RuntimeBindings,
   type TestResult,
@@ -40,9 +42,9 @@ import {
 } from './workspace.js';
 
 export interface TestRunnerOptions extends CheckRunnerOptions {
-  apiKey: string;
-  provider: string;
-  modelName: string;
+  apiKeys: Record<string, string>;
+  defaults: ModelDefaults;
+  features?: FeatureOverrides;
   maxIterations?: number;
   debug?: boolean;
   invokedCommand?: 'test' | 'suite';
@@ -261,7 +263,11 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
             tests: checked.tests,
             effectiveGoals,
             cli: buildCliContext(options),
-            model: buildModelContext(options.provider, options.modelName),
+            model: buildModelContext(options.defaults.provider, options.defaults.modelName),
+            ...(options.defaults.reasoning !== undefined
+              ? { reasoning: options.defaults.reasoning }
+              : {}),
+            ...(options.features !== undefined ? { features: options.features } : {}),
             app: buildAppContext(checked.resolvedApp, checked.appOverride?.appPath ?? options.appPath),
             target: checked.target,
             suite: checked.suite,
@@ -284,9 +290,9 @@ export async function runTests(options: TestRunnerOptions): Promise<TestRunnerRe
           );
           const goalResult = await testRunnerDependencies.executeTestOnSession(goalSession, {
             goal,
-            apiKey: options.apiKey,
-            provider: options.provider,
-            modelName: options.modelName,
+            apiKeys: options.apiKeys,
+            defaults: options.defaults,
+            features: options.features,
             maxIterations: options.maxIterations,
             debug: options.debug,
             runtimeBindings: checked.environment.bindings,

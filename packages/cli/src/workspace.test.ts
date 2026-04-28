@@ -581,7 +581,7 @@ test('runCheck rejects unknown keys in .finalrun/config.yaml', async () => {
   try {
     await assert.rejects(
       () => runCheck({ cwd: rootDir }),
-      /config\.yaml contains unsupported key "region"\. Supported keys: env, model, app\./,
+      /config\.yaml contains unsupported key "region"\. Supported keys: env, model, reasoning, features, app\./,
     );
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
@@ -628,6 +628,87 @@ test('runCheck rejects empty env values in .finalrun/config.yaml', async () => {
       () => runCheck({ cwd: rootDir }),
       /config\.yaml env must not be empty\./,
     );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects invalid reasoning level in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: 'reasoning: extreme\n',
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /config\.yaml reasoning has invalid value "extreme"\. Allowed values: minimal, low, medium, high\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects unknown feature names in .finalrun/config.yaml', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['features:', '  plannerX:', '    reasoning: high'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /features contains unsupported key "plannerX"\. Supported keys: planner, grounder, visual-grounder, scroll-index-grounder, input-focus-grounder, launch-app-grounder, set-location-grounder\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects unknown inner keys in a features override', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['features:', '  planner:', '    temperature: 0.2'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /features\.planner contains unsupported key "temperature"\. Supported keys: model, reasoning\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck rejects invalid reasoning in a features override', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: ['features:', '  planner:', '    reasoning: extreme'].join('\n'),
+  });
+
+  try {
+    await assert.rejects(
+      () => runCheck({ cwd: rootDir }),
+      /features\.planner\.reasoning has invalid value "extreme"\./,
+    );
+  } finally {
+    await fsp.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('runCheck accepts a valid features block and preserves unset features', async () => {
+  const rootDir = createTempWorkspace({
+    configYaml: [
+      'model: openai/gpt-5.4-mini',
+      'reasoning: medium',
+      'features:',
+      '  planner:',
+      '    model: anthropic/claude-opus-4-7',
+      '    reasoning: high',
+      '  scroll-index-grounder:',
+      '    reasoning: low',
+    ].join('\n'),
+  });
+
+  try {
+    await assert.doesNotReject(() => runCheck({ cwd: rootDir }));
   } finally {
     await fsp.rm(rootDir, { recursive: true, force: true });
   }

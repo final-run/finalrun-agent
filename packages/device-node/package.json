@@ -1,6 +1,6 @@
 {
   "name": "@finalrun/device-node",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Device detection, gRPC communication, and driver management",
   "license": "Apache-2.0",
@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "ts-proto": "^2.6.0",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "grpc-tools": "^1.12.4"
   }
 }

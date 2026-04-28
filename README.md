@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a aria-label="npm package version" href="https://www.npmjs.com/package/@finalrun/finalrun-agent" target="_blank">
-    <img alt="npm version" src="https://img.shields.io/npm/v/@finalrun/finalrun-agent.svg?style=flat-square&label=npm&labelColor=000000&color=4630EB" />
+  <a aria-label="Latest GitHub release" href="https://github.com/final-run/finalrun-agent/releases/latest" target="_blank">
+    <img alt="GitHub release" src="https://img.shields.io/github/v/release/final-run/finalrun-agent?style=flat-square&label=release&labelColor=000000&color=4630EB" />
   </a>
   <a aria-label="License: Apache-2.0" href="LICENSE">
     <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square&color=33CC12" />
@@ -15,6 +15,8 @@
 
 <p align="center">
   <a aria-label="FinalRun website" href="https://finalrun.app/"><b>finalrun.app</b></a>
+  &ensp;•&ensp;
+  <a aria-label="FinalRun documentation" href="https://docs.finalrun.app/">Docs</a>
   &ensp;•&ensp;
   <a aria-label="FinalRun blog" href="https://blogs.finalrun.app/">Blog</a>
   &ensp;•&ensp;
@@ -49,11 +51,19 @@
 
 ## Install
 
+**macOS / Linux**
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
 
-Sets up Node.js, the CLI, AI coding agent skills, and platform tools. Run `finalrun doctor` to verify host readiness.
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
+```
+
+iOS local testing requires macOS (`xcodebuild`). On Windows, use `finalrun cloud` for iOS — Android works locally. CI flags, env overrides, and the artifact list live in the [latest release notes](https://github.com/final-run/finalrun-agent/releases/latest).
 
 
 ## Write and Run Your First Test Using AI Agents
@@ -132,6 +142,8 @@ finalrun suite auth_smoke.yaml --platform android --model google/gemini-3-flash-
 
 
 ## Documentation
+
+Full docs: **[docs.finalrun.app](https://docs.finalrun.app/)**
 
 - [Autotrigger FinalRun tests (AI agents)](docs/autotrigger-finalrun.md) — when coding agents should generate, validate, and run tests after UI work
 - [YAML Tests](docs/yaml-tests.md) — test format, fields, suites, and environment placeholders

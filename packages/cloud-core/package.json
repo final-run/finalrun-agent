@@ -1,0 +1,22 @@
+{
+  "name": "@finalrun/cloud-core",
+  "version": "0.1.7",
+  "private": true,
+  "description": "Pure cloud-submission logic for the FinalRun CLI. Internal workspace package; bundled into the Bun-compiled CLI binary, not published to npm.",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "node --test \"dist/**/*.test.js\""
+  },
+  "dependencies": {
+    "@finalrun/common": "*",
+    "adm-zip": "^0.5.17"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,139 @@
+---
+title: "Install FinalRun: prerequisites, CLI setup, and host verification"
+sidebarTitle: "Installation"
+description: "Set up prerequisites, install the FinalRun CLI on macOS, Linux, or Windows, and verify that your host is ready to run Android or iOS tests."
+---
+
+FinalRun is distributed as a standalone `finalrun` binary — no Node.js or npm required. This page walks you through the prerequisites, the install itself, and how to verify your machine is ready. Once `finalrun doctor` reports a clean bill of health, continue to the [Quickstart](/quickstart) to write and run your first test.
+
+## Prerequisites
+
+Before installing FinalRun, make sure your machine has the following in place.
+
+### AI provider API key
+
+FinalRun is BYOK (bring your own key). Before your first test run, obtain an API key from one of the supported providers:
+
+| Provider | Environment variable |
+|---|---|
+| Google Gemini | `GOOGLE_API_KEY` |
+| OpenAI GPT | `OPENAI_API_KEY` |
+| Anthropic Claude | `ANTHROPIC_API_KEY` |
+
+You'll set the key during the Quickstart. See [AI Providers](/configuration/ai-providers) for details on choosing a model and configuring the key.
+
+### Platform tools
+
+<Tabs>
+  <Tab title="Android">
+    Android tests run on emulators via `adb`. You need the Android SDK and a few additional tools on your PATH.
+
+    **Required:**
+
+    | Tool | How to provide |
+    |---|---|
+    | `adb` | Available through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH` |
+    | `emulator` | Must be on `PATH`; used to discover and boot Android Virtual Devices |
+    | `scrcpy` | Must be on `PATH`; used for screen recording during local runs |
+    | FinalRun Android driver assets | Installed automatically by the CLI during installation |
+
+    **Install the Android SDK** via [Android Studio](https://developer.android.com/studio) or the standalone command-line tools. Once installed, make sure `platform-tools` and `emulator` directories are on your `PATH`, or set `ANDROID_HOME` to your SDK root.
+
+    **Install scrcpy** using your system package manager:
+
+    <CodeGroup>
+    ```bash macOS
+    brew install scrcpy
+    ```
+
+    ```bash Ubuntu / Debian
+    sudo apt install scrcpy
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="iOS">
+    <Warning>
+      iOS testing requires macOS. It is not supported on Linux or Windows.
+    </Warning>
+
+    iOS tests run on simulators via Xcode's `xcrun simctl`. You need Xcode command line tools and a few standard utilities.
+
+    **Required:**
+
+    | Tool | Notes |
+    |---|---|
+    | macOS | iOS simulator support is macOS-only |
+    | Xcode command line tools | Provides `xcrun` |
+    | `xcrun simctl` | Used to manage and boot iOS simulators |
+    | `unzip` | Standard macOS utility |
+    | `/bin/bash` | Standard macOS shell |
+    | `plutil` | Standard macOS utility |
+    | FinalRun iOS driver archives | Installed automatically by the CLI during installation |
+
+    Install Xcode command line tools if you haven't already:
+
+    ```bash
+    xcode-select --install
+    ```
+
+    **Optional tools:**
+
+    | Tool | Purpose |
+    |---|---|
+    | `ffmpeg` | Compresses iOS recordings after capture |
+    | `applesimutils` | Enables simulator permission helpers |
+
+    Install optional tools via Homebrew:
+
+    ```bash
+    brew install ffmpeg applesimutils
+    ```
+  </Tab>
+</Tabs>
+
+## Install FinalRun
+
+The installer downloads the standalone `finalrun` binary for your platform, the bundled platform driver assets for Android and iOS, and the FinalRun AI agent skills for your coding agent.
+
+<CodeGroup>
+```bash macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
+```
+
+```powershell Windows
+irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
+```
+</CodeGroup>
+
+To keep the CLI up to date later, run:
+
+```bash
+finalrun upgrade
+```
+
+## Verify the installation
+
+Confirm the CLI is on your PATH:
+
+```bash
+finalrun --help
+```
+
+Then check host readiness for your target platform:
+
+```bash
+finalrun doctor
+```
+
+`finalrun doctor` reports which required tools are present, missing, or misconfigured. You can also check a single platform:
+
+```bash
+finalrun doctor --platform android
+finalrun doctor --platform ios
+```
+
+Fix any issues reported before running tests.
+
+## Next steps
+
+Once `finalrun doctor` reports your host as ready, follow the [Quickstart](/quickstart) guide to write and run your first test.
