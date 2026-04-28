@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "ts-proto": "^2.6.0",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "grpc-tools": "^1.12.4"
   }
 }

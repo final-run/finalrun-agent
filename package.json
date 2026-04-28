@@ -45,6 +45,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
     "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.2",
     "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.4.0",
