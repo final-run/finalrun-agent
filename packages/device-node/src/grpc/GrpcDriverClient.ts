@@ -2,6 +2,11 @@
 // Uses @grpc/grpc-js with dynamic proto loading.
 // MATCHES the Dart pattern: createChannel (lazy) → ping (getDeviceScale) → poll
 
+// Patches protobufjs's `util.fs` / `util.Long` so the bundle survives Bun's
+// standalone compile path. MUST be the first import — `@grpc/proto-loader`
+// calls `Root.fromJSON(...)` at module-init time, so the patch has to land
+// before that import is evaluated.
+import './protobufBundlerShim.js';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as fs from 'node:fs';
