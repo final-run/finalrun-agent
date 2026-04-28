@@ -203,28 +203,34 @@ install_binary() {
   # convention used by claude, uv, pipx, pixi, mise. macOS users still need
   # to start a new shell on first install (rc files written by setup_path),
   # but that's the same constraint every curl|bash installer lives with.
+  #
+  # If the symlink fails (read-only ~/.local/bin, exotic filesystem),
+  # PATH_TARGET_DIR falls back to the binary's actual home so setup_path
+  # and verify_path don't end up pointing at a directory with no finalrun.
   LOCAL_BIN="$HOME/.local/bin"
   LOCAL_BIN_LINK="$LOCAL_BIN/finalrun"
   if mkdir -p "$LOCAL_BIN" 2>/dev/null && ln -sf "$BIN_DEST" "$LOCAL_BIN_LINK" 2>/dev/null; then
     ok "Linked $LOCAL_BIN_LINK -> $BIN_DEST"
+    PATH_TARGET_DIR="$LOCAL_BIN"
   else
     LOCAL_BIN_LINK=""
-    warn "Could not write to $LOCAL_BIN — binary is at $BIN_DEST but you'll need to add it to PATH manually."
+    PATH_TARGET_DIR="$FINALRUN_DIR/bin"
+    warn "Could not write to $LOCAL_BIN — falling back to $PATH_TARGET_DIR for PATH setup."
   fi
 }
 
 setup_path() {
-  # Already on PATH via $LOCAL_BIN? Skip rc modification entirely. Common on
-  # Linux distros that put ~/.local/bin in PATH via /etc/profile or systemd.
+  # Already on PATH? Skip rc modification entirely. Common on Linux distros
+  # that put ~/.local/bin in PATH via /etc/profile or systemd.
   case ":${PATH}:" in
-    *":$LOCAL_BIN:"*) return 0 ;;
+    *":$PATH_TARGET_DIR:"*) return 0 ;;
   esac
 
-  local sh_line="export PATH=\"\$HOME/.local/bin:\$PATH\""
-  local fish_line="fish_add_path -p \"\$HOME/.local/bin\""
+  local sh_line="export PATH=\"$PATH_TARGET_DIR:\$PATH\""
+  local fish_line="fish_add_path -p \"$PATH_TARGET_DIR\""
   local rc
 
-  # POSIX-shell rc files. Idempotent via the literal $HOME/.local/bin marker.
+  # POSIX-shell rc files. Idempotent via the literal target marker.
   for rc in \
     "$HOME/.bashrc" \
     "$HOME/.bash_profile" \
@@ -233,7 +239,7 @@ setup_path() {
     "${ZDOTDIR:-$HOME}/.zprofile"
   do
     touch "$rc" 2>/dev/null || true
-    if [ -f "$rc" ] && ! grep -qF '$HOME/.local/bin' "$rc" 2>/dev/null; then
+    if [ -f "$rc" ] && ! grep -qF "$PATH_TARGET_DIR" "$rc" 2>/dev/null; then
       printf '\n# finalrun\n%s\n' "$sh_line" >> "$rc"
     fi
   done
@@ -243,7 +249,7 @@ setup_path() {
   if [ -d "$HOME/.config/fish" ] || command -v fish >/dev/null 2>&1; then
     mkdir -p "$HOME/.config/fish" 2>/dev/null || true
     touch "$fish_rc" 2>/dev/null || true
-    if [ -f "$fish_rc" ] && ! grep -qF '.local/bin' "$fish_rc" 2>/dev/null; then
+    if [ -f "$fish_rc" ] && ! grep -qF "$PATH_TARGET_DIR" "$fish_rc" 2>/dev/null; then
       printf '\n# finalrun\n%s\n' "$fish_line" >> "$fish_rc"
     fi
   fi
@@ -274,7 +280,7 @@ verify_path() {
   fi
   warn "finalrun isn't on PATH for this shell yet."
   echo "  Open a new terminal — your shell rc files were updated."
-  echo "  If it still doesn't resolve, ensure \$HOME/.local/bin is in your PATH."
+  echo "  If it still doesn't resolve, ensure $PATH_TARGET_DIR is in your PATH."
 }
 
 download_runtime() {

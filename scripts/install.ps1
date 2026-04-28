@@ -173,29 +173,32 @@ function Install-Binary {
 function Update-UserPath {
     param([string]$BinDir)
 
+    # Two independent updates: User PATH in the registry (for new windows),
+    # and $env:Path in the current PS session (for the running window). The
+    # registry might already be correct while $env:Path lags behind — e.g.
+    # the PS process started before a previous installer run, or somebody
+    # manually pruned the session. Don't short-circuit one because the other
+    # is fine.
+
+    # Registry: idempotent via exact-segment, case-insensitive membership
+    # check (Windows paths are case-insensitive; substring matching would
+    # falsely match C:\foo\bin against C:\foo\bin\subdir).
     $current = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ($null -eq $current) { $current = '' }
-
-    # Idempotent: split and check exact membership, not substring (which
-    # would falsely match C:\foo\bin against C:\foo\bin\subdir).
-    # `-icontains` for case-insensitive comparison — Windows paths are
-    # case-insensitive, so a pre-existing entry with different casing
-    # (e.g. C:\Users\foo\.finalrun\Bin) shouldn't get a duplicate appended.
     $segments = ($current -split ';') | Where-Object { $_ }
-    if ($segments -icontains $BinDir) {
-        return
+    if (-not ($segments -icontains $BinDir)) {
+        $trimmed = $current.TrimEnd(';')
+        $newPath = if ($trimmed) { "$trimmed;$BinDir" } else { $BinDir }
+        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
     }
 
-    $trimmed = $current.TrimEnd(';')
-    $newPath = if ($trimmed) { "$trimmed;$BinDir" } else { $BinDir }
-    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-
-    # Also update $env:Path for the *current* PowerShell session so finalrun
-    # works immediately in the same window. The script is run via `irm | iex`,
-    # so this assignment lives in the user's shell process — no restart needed
-    # for the running window. New windows pick up PATH from the registry.
-    if (-not (($env:Path -split ';') -icontains $BinDir)) {
-        $env:Path = "$env:Path;$BinDir"
+    # Current PowerShell session: same idempotent check, separate state.
+    # The script is run via `irm | iex`, so this assignment lives in the
+    # user's shell process — no restart needed for the running window.
+    $sessionSegments = (($env:Path -split ';') | Where-Object { $_ })
+    if (-not ($sessionSegments -icontains $BinDir)) {
+        $sessionTrimmed = ($env:Path).TrimEnd(';')
+        $env:Path = if ($sessionTrimmed) { "$sessionTrimmed;$BinDir" } else { $BinDir }
     }
 }
 
