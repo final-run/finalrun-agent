@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-04-28
+
+### Fixed — Android/iOS test runs crashing on first proto load
+
+`finalrun test` and `finalrun suite` aborted at device setup with `Run setup failed before execution: null is not an object (evaluating 'util.fs.readFileSync')` and a `SIGKILL`'d Android driver process. The crash hit every test run, not just first-install runs — the leading "Failed to clear app data" warning was harmless first-install noise and unrelated to the actual failure.
+
+The root cause was inside `protobufjs` (transitively required by `@grpc/proto-loader` when the gRPC client loads `driver.proto`): it lazy-resolves `fs` and `long` via `@protobufjs/inquire`'s `eval("require")(name)` shim to dodge bundler static analysis. In a Bun-compiled standalone binary that `eval`'d `require` can't see the bundle's resolver, so `util.fs` came back `null` and any subsequent `util.fs.readFileSync(...)` blew up. (`util.Long` had the same shape and would have tripped `resolveAll` on the first int64 field.) Local development never reproduced because `tsx` / `node` / `bun run` all expose a real `require` to the eval.
+
+Fixed by introducing `packages/device-node/src/grpc/protobufBundlerShim.ts`, a side-effect module that statically imports `node:fs` and `long` and assigns them onto `Protobuf.util`. `GrpcDriverClient.ts` imports the shim **before** `@grpc/proto-loader`, so the patch lands before proto-loader's transitive `protobufjs/ext/descriptor` import calls `Root.fromJSON(...).resolveAll()` at module-init time. Verified end-to-end against the wikipedia repo on a Bun-compiled darwin-arm64 binary: `Connected after 2 attempts (1s)` → `gRPC connection established successfully`.
+
 ## [0.1.10] - 2026-04-26
 
 ### Added — Windows x86_64 support
