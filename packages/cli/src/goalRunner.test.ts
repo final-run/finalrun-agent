@@ -284,9 +284,8 @@ test('runGoal starts and stops Android recording when recording is configured', 
   const result = await runGoal(
     {
       goal: 'Log in',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4.1',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-4.1' },
       platform: PLATFORM_ANDROID,
       recording: {
         runId: 'run-1',
@@ -340,9 +339,8 @@ test('executeTestOnSession forwards explicit recording output paths and preserve
           session,
           {
             goal: 'Test 1',
-            apiKey: 'test-key',
-            provider: 'openai',
-            modelName: 'gpt-4.1',
+            apiKeys: { openai: 'test-key' },
+            defaults: { provider: 'openai', modelName: 'gpt-4.1' },
             recording: {
               runId: 'run-1',
               testId: 'case-1',
@@ -662,9 +660,8 @@ test('executeTestOnSession reuses one prepared session while keeping recording s
       session,
       {
         goal: 'Test 1',
-        apiKey: 'test-key',
-        provider: 'openai',
-        modelName: 'gpt-4.1',
+        apiKeys: { openai: 'test-key' },
+        defaults: { provider: 'openai', modelName: 'gpt-4.1' },
         recording: {
           runId: 'run-1',
           testId: 'case-1',
@@ -676,9 +673,8 @@ test('executeTestOnSession reuses one prepared session while keeping recording s
       session,
       {
         goal: 'Test 2',
-        apiKey: 'test-key',
-        provider: 'openai',
-        modelName: 'gpt-4.1',
+        apiKeys: { openai: 'test-key' },
+        defaults: { provider: 'openai', modelName: 'gpt-4.1' },
         recording: {
           runId: 'run-1',
           testId: 'case-2',
@@ -744,9 +740,8 @@ test('executeTestOnSession forwards the prelaunch summary and app identifier to 
     session,
     {
       goal: 'Test 1',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4.1',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-4.1' },
     },
     dependencies,
   );
@@ -776,9 +771,8 @@ test('runGoal still performs isolated setup and cleanup for single-test executio
   const result = await runGoal(
     {
       goal: 'Log in',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4.1',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-4.1' },
       platform: PLATFORM_ANDROID,
     },
     dependencies,
@@ -808,9 +802,8 @@ test('runGoal fails before execution if required Android recording cannot start'
   const result = await runGoal(
     {
       goal: 'Log in',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4.1',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-4.1' },
       platform: PLATFORM_ANDROID,
       recording: {
         runId: 'run-1',
@@ -850,9 +843,8 @@ test('runGoal marks the Android test as failed if recording stops without a vide
   const result = await runGoal(
     {
       goal: 'Log in',
-      apiKey: 'test-key',
-      provider: 'openai',
-      modelName: 'gpt-4.1',
+      apiKeys: { openai: 'test-key' },
+      defaults: { provider: 'openai', modelName: 'gpt-4.1' },
       platform: PLATFORM_ANDROID,
       recording: {
         runId: 'run-1',

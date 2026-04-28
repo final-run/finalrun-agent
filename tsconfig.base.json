@@ -4,6 +4,8 @@
     "module": "Node16",
     "moduleResolution": "Node16",
     "lib": ["ES2022"],
+    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"],
+    "types": ["*"],
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

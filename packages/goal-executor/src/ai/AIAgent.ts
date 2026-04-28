@@ -43,6 +43,11 @@ import {
   PLANNER_ACTION_COMPLETED,
   PLANNER_ACTION_FAILED,
   PLANNER_ACTION_DEEPLINK,
+  parseModel,
+  type FeatureName,
+  type FeatureOverrides,
+  type ModelDefaults,
+  type ReasoningLevel,
 } from '@finalrun/common';
 import {
   describeLLMTrace,
@@ -53,8 +58,10 @@ import {
   roundDuration,
   startTracePhase,
   type LLMTrace,
+  type LLMCallTrace,
 } from '../trace.js';
 import { classifyFatalProviderError, FatalProviderError } from './providerFailure.js';
+import { schemaForFeature } from './schemas.js';
 
 // ============================================================================
 // Types
@@ -99,10 +106,12 @@ export interface PlannerResponse {
     act?: string;
   };
   trace?: LLMTrace;
+  /** Raw LLM call trace captured during planning — forwarded to observability. */
+  llmCall?: LLMCallTrace;
 }
 
 export interface GrounderRequest {
-  feature: string;
+  feature: FeatureName;
   act: string;
   hierarchy?: Hierarchy;
   screenshot?: string; // base64
@@ -120,6 +129,8 @@ export interface GrounderResponse {
   output: Record<string, unknown>;
   raw: string; // Raw LLM response for debugging
   trace?: LLMTrace;
+  /** Raw LLM call trace captured during grounding — forwarded to observability. */
+  llmCall?: LLMCallTrace;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -129,6 +140,23 @@ type AIAgentProviderOptions = {
   openai?: OpenAILanguageModelResponsesOptions;
   anthropic?: AnthropicLanguageModelOptions;
 };
+
+interface ResolvedFeatureConfig {
+  provider: string;
+  modelName: string;
+  reasoning: ReasoningLevel;
+}
+
+/** Fallback reasoning levels used when neither feature override nor workspace default is set. */
+const DEFAULT_REASONING_BY_PHASE: Record<LLMPhase, ReasoningLevel> = {
+  planner: 'medium',
+  grounder: 'low',
+};
+
+/** Map a feature to its phase (controls token budget + default reasoning). */
+function phaseForFeature(feature: FeatureName): LLMPhase {
+  return feature === FEATURE_PLANNER ? 'planner' : 'grounder';
+}
 
 const MAX_LLM_ATTEMPTS = 2;
 
@@ -143,17 +171,24 @@ const MAX_LLM_ATTEMPTS = 2;
  * Dart equivalent: FinalRunAgent in goal_executor/lib/src/FinalRunAgent.dart
  */
 export class AIAgent {
-  private _provider: string; // e.g., 'openai', 'google', 'anthropic'
-  private _modelName: string; // e.g., 'gpt-5.4-mini', 'gemini-2.0-flash'
-  private _apiKey: string;
+  private _apiKeys: Record<string, string>;
+  private _defaults: ModelDefaults;
+  private _features: FeatureOverrides;
 
   // Cached prompt contents
   private _promptCache: Map<string, string> = new Map();
+  // Cached Vercel AI SDK clients, keyed by provider
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _clientCache: Map<string, any> = new Map();
 
-  constructor(params: { provider: string; modelName: string; apiKey: string }) {
-    this._provider = params.provider;
-    this._modelName = params.modelName;
-    this._apiKey = params.apiKey;
+  constructor(params: {
+    apiKeys: Record<string, string>;
+    defaults: ModelDefaults;
+    features?: FeatureOverrides;
+  }) {
+    this._apiKeys = params.apiKeys;
+    this._defaults = params.defaults;
+    this._features = params.features ?? {};
   }
 
   /**
@@ -217,21 +252,24 @@ export class AIAgent {
     let parsedResponse: PlannerResponse | undefined;
     let llmMs = 0;
     let parseMs = 0;
+    let lastLLMCall: LLMCallTrace | undefined;
 
+    const plannerResolved = this._resolveFeatureConfig(FEATURE_PLANNER);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const llmPhase = startTracePhase(
         request.traceStep,
         'planning.llm',
-        `provider=${this._provider} model=${this._modelName} attempt=${attempt}/${maxAttempts}`,
+        `provider=${plannerResolved.provider} model=${plannerResolved.modelName} attempt=${attempt}/${maxAttempts}`,
       );
       const llmStartedAt = performance.now();
 
       let rawOutput: unknown;
       let rawText: string;
       try {
-        const llmResult = await this._callLLM(systemPrompt, userParts, 'planner');
+        const llmResult = await this._callLLM(systemPrompt, userParts, FEATURE_PLANNER);
         rawOutput = llmResult.output;
         rawText = llmResult.text;
+        lastLLMCall = llmResult.llmCall;
       } catch (error) {
         finishTracePhase(
           llmPhase,
@@ -311,6 +349,7 @@ export class AIAgent {
         llmMs,
         parseMs,
       },
+      ...(lastLLMCall ? { llmCall: lastLLMCall } : {}),
     };
   }
 
@@ -367,6 +406,7 @@ export class AIAgent {
     let parsed: GrounderResponse | undefined;
     let llmMs = 0;
     let parseMs = 0;
+    let lastLLMCall: LLMCallTrace | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const phase = startTracePhase(
@@ -379,9 +419,14 @@ export class AIAgent {
       let rawOutput: unknown;
       let rawText: string;
       try {
-        const llmResult = await this._callLLM(systemPrompt, userParts, 'grounder');
+        const llmResult = await this._callLLM(
+          systemPrompt,
+          userParts,
+          request.feature,
+        );
         rawOutput = llmResult.output;
         rawText = llmResult.text;
+        lastLLMCall = llmResult.llmCall;
       } catch (error) {
         finishTracePhase(
           phase,
@@ -465,6 +510,7 @@ export class AIAgent {
         llmMs,
         parseMs,
       },
+      ...(lastLLMCall ? { llmCall: lastLLMCall } : {}),
     };
   }
 
@@ -478,10 +524,12 @@ export class AIAgent {
   private async _callLLM(
     systemPrompt: string,
     userParts: Array<{ type: 'text'; text: string } | { type: 'image'; image: string }>,
-    phase: LLMPhase,
-  ): Promise<{ output: unknown; text: string }> {
-    const model = this._getModel();
-    const providerOptions = this._getProviderOptions(phase);
+    feature: FeatureName,
+  ): Promise<{ output: unknown; text: string; llmCall: LLMCallTrace }> {
+    const resolved = this._resolveFeatureConfig(feature);
+    const model = this._getModel(resolved);
+    const providerOptions = this._getProviderOptions(resolved, feature);
+    const phase = phaseForFeature(feature);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userContent: any[] = userParts.map((part) => {
@@ -491,9 +539,22 @@ export class AIAgent {
       return { type: 'text' as const, text: part.text };
     });
 
+    // Persist the exact messages we send so we can forward them verbatim to
+    // observability backends (Langfuse stores these for debugging).
+    const messages = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: userContent },
+    ];
+
+    const startedAt = new Date().toISOString();
+    const startPerfMs = performance.now();
+
     let output: unknown;
-    let text: string;
+    let text = '';
     let reasoningText: string | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let usage: any;
+    let thrownError: unknown;
     try {
       const result = await generateText({
         model,
@@ -501,78 +562,172 @@ export class AIAgent {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
-        output: Output.json(),
+        // Anthropic has no schema-less JSON mode — the @ai-sdk/anthropic
+        // adapter drops responseFormat silently without a schema, letting
+        // Claude free-write multiple candidate JSONs. Passing a schema routes
+        // the call through Anthropic's tool-use API for enforced structured
+        // output. OpenAI and Google keep their working schema-less paths.
+        output:
+          resolved.provider === 'anthropic'
+            ? Output.object({ schema: schemaForFeature(feature) })
+            : Output.json(),
         maxOutputTokens: phase === 'planner' ? 8192 : 4096,
         providerOptions,
       });
       output = result.output;
       text = result.text;
       reasoningText = result.reasoningText;
+      usage = result.usage;
     } catch (error) {
+      thrownError = error;
+    }
+
+    const completedAt = new Date().toISOString();
+    const durationMs = roundDuration(performance.now() - startPerfMs);
+
+    const llmCall: LLMCallTrace = {
+      provider: resolved.provider,
+      model: resolved.modelName,
+      feature: feature ?? phase,
+      prompt: messages,
+      completion: text,
+      usage: normalizeUsage(usage),
+      startedAt,
+      completedAt,
+      durationMs,
+      ...(thrownError
+        ? { statusMessage: thrownError instanceof Error ? thrownError.message : String(thrownError) }
+        : {}),
+    };
+
+    if (thrownError) {
       throw (
-        classifyFatalProviderError(error, {
-          provider: this._provider,
-          modelName: this._modelName,
-        }) ?? error
+        classifyFatalProviderError(thrownError, {
+          provider: resolved.provider,
+          modelName: resolved.modelName,
+        }) ?? thrownError
       );
     }
 
     if (reasoningText) {
       Logger.d(
-        `LLM reasoning [${phase}] (${this._provider}/${this._modelName}):\n${reasoningText}`,
+        `LLM reasoning [${feature}] (${resolved.provider}/${resolved.modelName}):\n${reasoningText}`,
       );
     }
 
     Logger.d(
-      `LLM response [${phase}] (${this._provider}/${this._modelName}):\n${text || '<empty response>'}`,
+      `LLM response [${feature}] (${resolved.provider}/${resolved.modelName}):\n${text || '<empty response>'}`,
     );
-    return { output, text };
+    return { output, text, llmCall };
+  }
+
+
+  /**
+   * Resolve the effective provider / model / reasoning for a feature by
+   * merging the optional per-feature override on top of workspace defaults.
+   */
+  private _resolveFeatureConfig(feature: FeatureName): ResolvedFeatureConfig {
+    const override = this._features[feature];
+    let provider = this._defaults.provider;
+    let modelName = this._defaults.modelName;
+    if (override?.model) {
+      // Reuse the shared parser so per-feature overrides fail with the same
+      // validation errors (empty provider/model, unsupported provider) as
+      // workspace-level `model:` and the `--model` CLI flag.
+      const parsed = parseModel(override.model, `features.${feature}.model`);
+      provider = parsed.provider;
+      modelName = parsed.modelName;
+    }
+    const reasoning: ReasoningLevel =
+      override?.reasoning ?? this._defaults.reasoning ?? DEFAULT_REASONING_BY_PHASE[phaseForFeature(feature)];
+    return { provider, modelName, reasoning };
   }
 
   /**
-   * Create the appropriate Vercel AI SDK model instance.
+   * Create (or reuse a cached) Vercel AI SDK model instance for the
+   * resolved provider/modelName.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _getModel(): any {
-    switch (this._provider) {
+  private _getModel(resolved: ResolvedFeatureConfig): any {
+    const cacheKey = `${resolved.provider}/${resolved.modelName}`;
+    const cached = this._clientCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const apiKey = this._apiKeys[resolved.provider];
+    if (!apiKey) {
+      throw new Error(
+        `Missing API key for provider "${resolved.provider}". Set the corresponding env var (e.g. OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY).`,
+      );
+    }
+    let client: unknown;
+    switch (resolved.provider) {
       case 'openai': {
-        const openai = createOpenAI({ apiKey: this._apiKey });
-        return openai(this._modelName);
+        const openai = createOpenAI({ apiKey });
+        // Use the Responses API (not Chat Completions) so that
+        // `providerOptions.openai.reasoningEffort` is honored by reasoning
+        // models like gpt-5.4-mini. `openai(modelId)` defaults to Chat
+        // Completions and silently ignores reasoning effort.
+        client = openai.responses(resolved.modelName);
+        break;
       }
       case 'google': {
-        const google = createGoogleGenerativeAI({ apiKey: this._apiKey });
-        return google(this._modelName);
+        const google = createGoogleGenerativeAI({ apiKey });
+        client = google(resolved.modelName);
+        break;
       }
       case 'anthropic': {
-        const anthropic = createAnthropic({ apiKey: this._apiKey });
-        return anthropic(this._modelName);
+        const anthropic = createAnthropic({ apiKey });
+        client = anthropic(resolved.modelName);
+        break;
       }
       default:
-        throw new Error(`Unsupported AI provider: ${this._provider}`);
+        throw new Error(`Unsupported AI provider: ${resolved.provider}`);
     }
+    this._clientCache.set(cacheKey, client);
+    return client;
   }
 
-  private _getProviderOptions(phase: LLMPhase): AIAgentProviderOptions | undefined {
-    switch (this._provider) {
-      case 'google':
+  private _getProviderOptions(
+    resolved: ResolvedFeatureConfig,
+    feature: FeatureName,
+  ): AIAgentProviderOptions | undefined {
+    const { provider, reasoning } = resolved;
+    if (reasoning === 'minimal' && provider !== 'openai') {
+      throw new Error(
+        `Reasoning level "minimal" is only supported for OpenAI. Feature "${feature}" is configured for provider "${provider}".`,
+      );
+    }
+    switch (provider) {
+      case 'google': {
         return {
           google: {
             thinkingConfig: {
-              thinkingLevel: phase === 'planner' ? 'high' : 'medium',
+              thinkingLevel: reasoning as 'low' | 'medium' | 'high',
               includeThoughts: false,
             },
           } satisfies GoogleLanguageModelOptions,
         };
+      }
       case 'openai':
         return {
           openai: {
-            reasoningEffort: phase === 'planner' ? 'medium' : 'low',
+            reasoningEffort: reasoning,
           } satisfies OpenAILanguageModelResponsesOptions,
         };
       case 'anthropic':
         return {
           anthropic: {
-            effort: phase === 'planner' ? 'medium' : 'low',
+            effort: reasoning as 'low' | 'medium' | 'high',
+            // Force Anthropic's native structured-output API
+            // (`output_config.format`). The SDK's `auto` mode falls back to a
+            // `json` tool wrapper when its hardcoded model-capability table
+            // doesn't recognize the model — but that table lags behind new
+            // releases (e.g. Opus 4.7 isn't listed even though it supports
+            // structured output). Pinning `outputFormat` makes us forward-
+            // compatible with every Claude 4.5+ model without any
+            // model-version checks on our side.
+            structuredOutputMode: 'outputFormat',
           } satisfies AnthropicLanguageModelOptions,
         };
       default:
@@ -676,7 +831,8 @@ export class AIAgent {
   private _summarizePlannerRequest(req: PlannerRequest): string {
     const parts: string[] = ['[AI plan]'];
     parts.push(this._formatLogContext(req.logContext, req.traceStep));
-    parts.push(`provider=${this._provider}/${this._modelName}`);
+    const plannerResolved = this._resolveFeatureConfig(FEATURE_PLANNER);
+    parts.push(`provider=${plannerResolved.provider}/${plannerResolved.modelName}`);
     parts.push(this._screenshotMetric('screenshot', req.preActionScreenshot));
     if (req.postActionScreenshot) {
       parts.push(this._screenshotMetric('postScreenshot', req.postActionScreenshot));
@@ -696,7 +852,8 @@ export class AIAgent {
   private _summarizeGrounderRequest(req: GrounderRequest): string {
     const parts: string[] = ['[AI ground]'];
     parts.push(this._formatLogContext(req.logContext, req.traceStep));
-    parts.push(`provider=${this._provider}/${this._modelName}`);
+    const grounderResolved = this._resolveFeatureConfig(req.feature);
+    parts.push(`provider=${grounderResolved.provider}/${grounderResolved.modelName}`);
     parts.push(`feature=${req.feature}`);
     parts.push(this._screenshotMetric('screenshot', req.screenshot));
     const hierarchyCount = req.hierarchy
@@ -951,4 +1108,39 @@ function normalizeBoolean(value: unknown): boolean | undefined {
 
 function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
   return values.find((value) => typeof value === 'string' && value.trim().length > 0);
+}
+
+/**
+ * Convert the Vercel AI SDK's `LanguageModelUsage` (inputTokens/outputTokens
+ * with nested *TokenDetails) into the Langfuse canonical shape
+ * (input/output/total, optional input_cached_tokens only if > 0).
+ * Fields default to 0 when the provider omits them.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeUsage(usage: any): { input: number; output: number; total: number; input_cached_tokens?: number } {
+  const input =
+    typeof usage?.inputTokens === 'number'
+      ? usage.inputTokens
+      : typeof usage?.promptTokens === 'number'
+        ? usage.promptTokens
+        : 0;
+  const output =
+    typeof usage?.outputTokens === 'number'
+      ? usage.outputTokens
+      : typeof usage?.completionTokens === 'number'
+        ? usage.completionTokens
+        : 0;
+  const total =
+    typeof usage?.totalTokens === 'number'
+      ? usage.totalTokens
+      : input + output;
+
+  const cacheRead =
+    typeof usage?.inputTokenDetails?.cacheReadTokens === 'number'
+      ? usage.inputTokenDetails.cacheReadTokens
+      : undefined;
+
+  return cacheRead !== undefined && cacheRead > 0
+    ? { input, output, total, input_cached_tokens: cacheRead }
+    : { input, output, total };
 }

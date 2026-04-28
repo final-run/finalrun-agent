@@ -40,6 +40,7 @@ import {
   PLANNER_ACTION_SET_LOCATION,
   PLANNER_ACTION_WAIT,
   PLANNER_ACTION_DEEPLINK,
+  type FeatureName,
   type RuntimeBindings,
   redactResolvedValue,
   resolveRuntimePlaceholders,
@@ -58,6 +59,7 @@ import {
   roundDuration,
   startTracePhase,
   type LLMTrace,
+  type LLMCallTrace,
   type SpanTiming,
   type TimingMetadata,
   type TraceStatus,
@@ -89,6 +91,8 @@ export interface ActionOutput {
   error?: string;
   trace?: TimingMetadata;
   terminalFailure?: TerminalFailureSignal;
+  /** Raw LLM calls made during this action (grounder + visual grounder). Forwarded to observability. */
+  llmCalls?: LLMCallTrace[];
 }
 
 interface GroundToPointResult {
@@ -150,49 +154,66 @@ export class ActionExecutor {
    * Routes to the correct handler based on action type.
    */
   async executeAction(input: ActionInput): Promise<ActionOutput> {
+    // Per-invocation accumulator — passed into helpers so concurrent
+    // executeAction() calls on the same executor do not share state.
+    const llmCalls: LLMCallTrace[] = [];
+    let output: ActionOutput;
     try {
       switch (input.action) {
         case PLANNER_ACTION_TAP:
-          return await this._executeTap(input);
+          output = await this._executeTap(input, llmCalls);
+          break;
 
         case PLANNER_ACTION_LONG_PRESS:
-          return await this._executeLongPress(input);
+          output = await this._executeLongPress(input, llmCalls);
+          break;
 
         case PLANNER_ACTION_TYPE:
-          return await this._executeType(input);
+          output = await this._executeType(input, llmCalls);
+          break;
 
         case PLANNER_ACTION_SCROLL:
-          return await this._executeScroll(input);
+          output = await this._executeScroll(input, llmCalls);
+          break;
 
         case PLANNER_ACTION_BACK:
-          return await this._executeSimpleAction(input, new BackAction());
+          output = await this._executeSimpleAction(input, new BackAction());
+          break;
 
         case PLANNER_ACTION_HOME:
-          return await this._executeSimpleAction(input, new HomeAction());
+          output = await this._executeSimpleAction(input, new HomeAction());
+          break;
 
         case PLANNER_ACTION_ROTATE:
-          return await this._executeSingleDevicePhase(input, new RotateAction());
+          output = await this._executeSingleDevicePhase(input, new RotateAction());
+          break;
 
         case PLANNER_ACTION_HIDE_KEYBOARD:
-          return await this._executeSimpleAction(input, new HideKeyboardAction());
+          output = await this._executeSimpleAction(input, new HideKeyboardAction());
+          break;
 
         case PLANNER_ACTION_PRESS_ENTER:
-          return await this._executePressEnter(input);
+          output = await this._executePressEnter(input);
+          break;
 
         case PLANNER_ACTION_LAUNCH_APP:
-          return await this._executeLaunchApp(input);
+          output = await this._executeLaunchApp(input, llmCalls);
+          break;
 
         case PLANNER_ACTION_SET_LOCATION:
-          return await this._executeSetLocation(input);
+          output = await this._executeSetLocation(input, llmCalls);
+          break;
 
         case PLANNER_ACTION_WAIT:
-          return await this._executeWait(input);
+          output = await this._executeWait(input);
+          break;
 
         case PLANNER_ACTION_DEEPLINK:
-          return await this._executeDeeplink(input);
+          output = await this._executeDeeplink(input);
+          break;
 
         default:
-          return { success: false, error: `Unknown action: ${input.action}` };
+          output = { success: false, error: `Unknown action: ${input.action}` };
       }
     } catch (error) {
       const terminalFailure = terminalFailureFromError(error);
@@ -201,11 +222,19 @@ export class ActionExecutor {
       } else {
         Logger.e(`Action ${input.action} failed:`, error);
       }
-      return this._failure([], error);
+      output = this._failure([], error);
     }
+
+    if (llmCalls.length > 0) {
+      output = { ...output, llmCalls };
+    }
+    return output;
   }
 
-  private async _executeTap(input: ActionInput): Promise<ActionOutput> {
+  private async _executeTap(
+    input: ActionInput,
+    llmCalls: LLMCallTrace[],
+  ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
 
     let groundOutcome: GroundToPointResult;
@@ -214,6 +243,7 @@ export class ActionExecutor {
         input,
         FEATURE_GROUNDER,
         'action.ground',
+        llmCalls,
       );
     } catch (error) {
       return this._failure(spans, error);
@@ -222,7 +252,7 @@ export class ActionExecutor {
     this._pushGroundSpan(spans, 'action.ground', groundOutcome);
     if (!groundOutcome.result.success || !groundOutcome.result.data) {
       if (groundOutcome.result.error === 'needsVisualGrounding') {
-        const fallbackResult = await this._executeVisualGroundingFallback(input, 'tap');
+        const fallbackResult = await this._executeVisualGroundingFallback(input, 'tap', llmCalls);
         this._mergeTrace(spans, fallbackResult.trace);
         if (!fallbackResult.success) {
           return {
@@ -276,7 +306,10 @@ export class ActionExecutor {
     }
   }
 
-  private async _executeLongPress(input: ActionInput): Promise<ActionOutput> {
+  private async _executeLongPress(
+    input: ActionInput,
+    llmCalls: LLMCallTrace[],
+  ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
 
     let groundOutcome: GroundToPointResult;
@@ -285,6 +318,7 @@ export class ActionExecutor {
         input,
         FEATURE_GROUNDER,
         'action.ground',
+        llmCalls,
       );
     } catch (error) {
       return this._failure(spans, error);
@@ -296,6 +330,7 @@ export class ActionExecutor {
         const fallbackResult = await this._executeVisualGroundingFallback(
           input,
           'longPress',
+          llmCalls,
         );
         this._mergeTrace(spans, fallbackResult.trace);
         if (!fallbackResult.success) {
@@ -339,7 +374,10 @@ export class ActionExecutor {
     }
   }
 
-  private async _executeType(input: ActionInput): Promise<ActionOutput> {
+  private async _executeType(
+    input: ActionInput,
+    llmCalls: LLMCallTrace[],
+  ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
 
     let textToType = '';
@@ -373,6 +411,7 @@ export class ActionExecutor {
         input,
         FEATURE_INPUT_FOCUS_GROUNDER,
         'action.ground',
+        llmCalls,
       );
     } catch (error) {
       return this._failure(spans, error);
@@ -422,7 +461,10 @@ export class ActionExecutor {
     }
   }
 
-  private async _executeScroll(input: ActionInput): Promise<ActionOutput> {
+  private async _executeScroll(
+    input: ActionInput,
+    llmCalls: LLMCallTrace[],
+  ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
     const act =
       input.reason.trim() ||
@@ -430,13 +472,17 @@ export class ActionExecutor {
 
     let grounderResponse;
     try {
-      grounderResponse = await this._callGrounder(input, {
-        feature: FEATURE_SCROLL_INDEX_GROUNDER,
-        act,
-        hierarchy: input.hierarchy,
-        screenshot: input.screenshot,
-        platform: this._platform,
-      });
+      grounderResponse = await this._callGrounder(
+        input,
+        {
+          feature: FEATURE_SCROLL_INDEX_GROUNDER,
+          act,
+          hierarchy: input.hierarchy,
+          screenshot: input.screenshot,
+          platform: this._platform,
+        },
+        llmCalls,
+      );
     } catch (error) {
       return this._failure(spans, error);
     }
@@ -490,7 +536,10 @@ export class ActionExecutor {
     return await this._executeSingleDevicePhase(input, action);
   }
 
-  private async _executeLaunchApp(input: ActionInput): Promise<ActionOutput> {
+  private async _executeLaunchApp(
+    input: ActionInput,
+    llmCalls: LLMCallTrace[],
+  ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
     let apps: Array<{ packageName: string; name: string }> = [];
 
@@ -526,12 +575,16 @@ export class ActionExecutor {
 
     let grounderResponse;
     try {
-      grounderResponse = await this._callGrounder(input, {
-        feature: FEATURE_LAUNCH_APP_GROUNDER,
-        act: input.reason,
-        platform: this._platform,
-        availableApps: apps,
-      });
+      grounderResponse = await this._callGrounder(
+        input,
+        {
+          feature: FEATURE_LAUNCH_APP_GROUNDER,
+          act: input.reason,
+          platform: this._platform,
+          availableApps: apps,
+        },
+        llmCalls,
+      );
     } catch (error) {
       return this._failure(spans, error);
     }
@@ -594,15 +647,22 @@ export class ActionExecutor {
     }
   }
 
-  private async _executeSetLocation(input: ActionInput): Promise<ActionOutput> {
+  private async _executeSetLocation(
+    input: ActionInput,
+    llmCalls: LLMCallTrace[],
+  ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
     let grounderResponse;
 
     try {
-      grounderResponse = await this._callGrounder(input, {
-        feature: FEATURE_SET_LOCATION_GROUNDER,
-        act: input.reason,
-      });
+      grounderResponse = await this._callGrounder(
+        input,
+        {
+          feature: FEATURE_SET_LOCATION_GROUNDER,
+          act: input.reason,
+        },
+        llmCalls,
+      );
     } catch (error) {
       return this._failure(spans, error);
     }
@@ -773,17 +833,22 @@ export class ActionExecutor {
 
   private async _groundToPoint(
     input: ActionInput,
-    feature: string,
+    feature: FeatureName,
     tracePhase: string,
+    llmCalls: LLMCallTrace[],
   ): Promise<GroundToPointResult> {
-    const grounderResponse = await this._callGrounder(input, {
-      feature,
-      act: input.reason,
-      hierarchy: input.hierarchy,
-      screenshot: input.screenshot,
-      platform: this._platform,
-      tracePhase,
-    });
+    const grounderResponse = await this._callGrounder(
+      input,
+      {
+        feature,
+        act: input.reason,
+        hierarchy: input.hierarchy,
+        screenshot: input.screenshot,
+        platform: this._platform,
+        tracePhase,
+      },
+      llmCalls,
+    );
 
     return {
       result: GrounderResponseConverter.extractPoint({
@@ -806,6 +871,7 @@ export class ActionExecutor {
   private async _executeVisualGroundingFallback(
     input: ActionInput,
     actionType: 'tap' | 'longPress',
+    llmCalls: LLMCallTrace[],
   ): Promise<ActionOutput> {
     const spans: SpanTiming[] = [];
 
@@ -833,6 +899,9 @@ export class ActionExecutor {
         traceStep: input.traceStep,
         logContext: this._logContext,
       });
+      if (result.llmCall) {
+        llmCalls.push(result.llmCall);
+      }
     } catch (error) {
       const message = this._redactRuntimeString(
         error instanceof Error ? error.message : String(error),
@@ -937,7 +1006,7 @@ export class ActionExecutor {
   private async _callGrounder(
     input: ActionInput,
     request: {
-      feature: string;
+      feature: FeatureName;
       act: string;
       hierarchy?: Hierarchy;
       screenshot?: string;
@@ -945,6 +1014,7 @@ export class ActionExecutor {
       availableApps?: Array<{ packageName: string; name: string }>;
       tracePhase?: string;
     },
+    llmCalls: LLMCallTrace[],
   ) {
     const startedAt = nowMs();
 
@@ -955,6 +1025,10 @@ export class ActionExecutor {
         tracePhase: request.tracePhase ?? 'action.ground',
         logContext: this._logContext,
       });
+
+      if (response.llmCall) {
+        llmCalls.push(response.llmCall);
+      }
 
       return {
         ...response,
@@ -1094,7 +1168,7 @@ export class ActionExecutor {
 
   private _groundTraceDetail(
     trace: LLMTrace | undefined,
-    feature: string,
+    feature: FeatureName,
     reason?: string,
   ): string {
     const detail = `feature=${feature}${reason ? ` reason=${reason}` : ''}`;

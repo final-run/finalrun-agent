@@ -11,6 +11,8 @@ import {
   RecordingRequest,
   type DeviceInventoryDiagnostic,
   type DeviceInventoryEntry,
+  type FeatureOverrides,
+  type ModelDefaults,
   type RuntimeBindings,
 } from '@finalrun/common';
 import { DeviceNode } from '@finalrun/device-node';
@@ -56,9 +58,9 @@ type GoalRunnerExecutor = Pick<
 
 export interface TestSessionConfig {
   goal: string;
-  apiKey: string;
-  provider: string;   // 'openai' | 'google' | 'anthropic'
-  modelName: string;  // e.g., 'gpt-5.4-mini', 'gemini-2.0-flash'
+  apiKeys: Record<string, string>;
+  defaults: ModelDefaults;
+  features?: FeatureOverrides;
   maxIterations?: number;
   debug?: boolean;
   platform?: string;
@@ -307,9 +309,9 @@ export async function executeTestOnSession(
 
   try {
     const aiAgent = dependencies.createAiAgent({
-      provider: config.provider,
-      modelName: config.modelName,
-      apiKey: config.apiKey,
+      apiKeys: config.apiKeys,
+      defaults: config.defaults,
+      features: config.features,
     });
 
     const executor = dependencies.createExecutor({
@@ -345,7 +347,7 @@ export async function executeTestOnSession(
         new RecordingRequest({
           runId: config.recording.runId,
           testId: config.recording.testId,
-          apiKey: config.apiKey,
+          apiKey: config.apiKeys[config.defaults.provider] ?? '',
           outputFilePath: config.recording.outputFilePath,
         }),
       );
@@ -693,7 +695,22 @@ function printRunBanner(config: TestSessionConfig): void {
   console.log('\n\x1b[1mFinalRun CLI\x1b[0m');
   console.log('─'.repeat(50));
   console.log(`Goal: ${config.goal}`);
-  console.log(`Model: ${config.provider}/${config.modelName}`);
+  const defaultReasoning = config.defaults.reasoning ? ` (${config.defaults.reasoning})` : '';
+  console.log(`Model: ${config.defaults.provider}/${config.defaults.modelName}${defaultReasoning}`);
+  if (config.features) {
+    const overrides = Object.entries(config.features)
+      .filter(([, override]) => override && (override.model || override.reasoning))
+      .map(([feature, override]) => {
+        const parts: string[] = [];
+        if (override!.model) parts.push(override!.model);
+        if (override!.reasoning) parts.push(override!.reasoning);
+        return `  ${feature}: ${parts.join(' ')}`;
+      });
+    if (overrides.length > 0) {
+      console.log('Feature overrides:');
+      for (const line of overrides) console.log(line);
+    }
+  }
   console.log('─'.repeat(50) + '\n');
 }
 

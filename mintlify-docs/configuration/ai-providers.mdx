@@ -1,0 +1,92 @@
+---
+title: "Connect FinalRun to Google, OpenAI, or Anthropic AI"
+sidebarTitle: "AI Providers"
+description: "Bring your own API key to FinalRun and configure Google Gemini, OpenAI GPT, or Anthropic Claude as the AI model that drives your Android and iOS test runs."
+---
+
+FinalRun uses a bring-your-own-key (BYOK) model — it does not proxy AI requests through its own infrastructure. When you run a test, the CLI calls your chosen AI provider directly using the API key you supply. This gives you full visibility into token usage and billing, and lets you use whichever model tier your team has access to.
+
+<Note>
+  Prefer managed AI without provisioning a provider account? See [Cloud API Key](/configuration/cloud-api-key) for the FinalRun Cloud option.
+</Note>
+
+## Supported providers
+
+| Provider prefix | Environment variable | Recommended model family |
+|---|---|---|
+| `google/...` | `GOOGLE_API_KEY` | Gemini 3 family and above |
+| `openai/...` | `OPENAI_API_KEY` | GPT-5 family and above |
+| `anthropic/...` | `ANTHROPIC_API_KEY` | Claude Sonnet 4 / Opus 4 and above |
+
+The provider is inferred from the prefix of the `--model` value or the `model` field in `.finalrun/config.yaml`.
+
+## Setting your API key
+
+You can supply an API key in three ways:
+
+<Tabs>
+  <Tab title=".env file">
+    Add the key to a `.env` file at your workspace root. This is the recommended approach for local development.
+
+    ```bash
+    echo "GOOGLE_API_KEY=your-key-here" > .env
+    ```
+
+    The file is read automatically on every run. See [Managing environments and secrets](/configuration/environments) for dotenv load order details.
+  </Tab>
+  <Tab title="Shell environment">
+    Export the variable in your shell session or CI environment:
+
+    ```bash
+    export GOOGLE_API_KEY=your-key-here
+    ```
+
+    Shell environment variables take the highest priority in FinalRun's load order.
+  </Tab>
+  <Tab title="--api-key flag">
+    Pass the key directly as a CLI flag for a one-off run without modifying any file:
+
+    ```bash
+    finalrun test smoke.yaml --api-key your-key-here --model google/gemini-3-flash-preview
+    ```
+  </Tab>
+</Tabs>
+
+## Setting a default model
+
+Add a `model` field to `.finalrun/config.yaml` so you don't need to pass `--model` on every command:
+
+```yaml .finalrun/config.yaml
+model: google/gemini-3-flash-preview
+```
+
+The model value must use `provider/model-name` format. Examples: `google/gemini-3-flash-preview`, `anthropic/claude-sonnet-4-6`, `openai/gpt-5`.
+
+<Tip>
+  Set `model` in `.finalrun/config.yaml` once during workspace setup. After that, commands like `finalrun test smoke.yaml --platform android` work without an explicit `--model` flag.
+</Tip>
+
+## Provider setup examples
+
+<CodeGroup>
+
+```bash Google Gemini
+echo "GOOGLE_API_KEY=your-key-here" > .env
+finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
+```
+
+```bash OpenAI GPT
+echo "OPENAI_API_KEY=your-key-here" > .env
+finalrun test smoke.yaml --platform android --model openai/gpt-5
+```
+
+```bash Anthropic Claude
+echo "ANTHROPIC_API_KEY=your-key-here" > .env
+finalrun test smoke.yaml --platform ios --model anthropic/claude-sonnet-4-6
+```
+
+</CodeGroup>
+
+<Note>
+  Test runs consume AI provider tokens. Standard API billing from your provider applies — FinalRun does not add any markup or usage fees on top of provider costs.
+</Note>

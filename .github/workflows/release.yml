@@ -1,0 +1,257 @@
+name: Release
+
+# Manual-only trigger. Click "Run workflow" in the Actions tab.
+#
+# Flow when triggered from main (or any branch):
+#   1. Reads version from packages/cli/package.json on the chosen branch.
+#   2. Fails fast if the matching tag (v<version>) already exists.
+#   3. Builds all 5 Bun binaries (darwin-arm64/x64, linux-x64/arm64, windows-x64).
+#   4. Builds all 5 runtime tarballs (per-platform).
+#   5. Smoke-tests the Windows binary on a real windows-latest runner.
+#   6. Tags the exact build SHA as v<version> and pushes the tag.
+#   7. Creates a GitHub Release at that tag, attaches all artifacts +
+#      their .sha256 sidecars, marks it as "latest".
+#
+# To cut a release:
+#   1. Bump packages/cli/package.json version on a branch (default main).
+#   2. Commit + push to the branch.
+#   3. Actions tab → Release → Run workflow → choose branch → Run.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to release from'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: write   # create tag + GitHub Release
+
+# Serialize releases so two clicks of "Run workflow" can't race on tag
+# creation, both build the full artifact set, and then duel on `git push`.
+# cancel-in-progress: false → queue rather than abort the in-flight run.
+concurrency:
+  group: release-${{ github.event.inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+      is_latest: ${{ steps.version.outputs.is_latest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0   # need history + tags so we can validate uniqueness
+
+      - name: Resolve & validate version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          TAG="v${VERSION}"
+          SHA=$(git rev-parse HEAD)
+          BRANCH="${{ github.event.inputs.branch }}"
+
+          # Strict semver: 0.1.7, 1.2.3, 0.2.0-rc.1, 0.2.0-beta.1, etc.
+          # Rejects empty, non-numeric, or trailing-junk versions.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid semver in packages/cli/package.json: '$VERSION'"
+            exit 1
+          fi
+
+          # Refuse if the tag already exists locally OR on origin (the local
+          # check alone misses tags pushed by other contributors / CI runs).
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists locally. Bump packages/cli/package.json or delete the existing tag."
+            exit 1
+          fi
+          if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists on origin. Bump packages/cli/package.json."
+            exit 1
+          fi
+
+          # Pre-release tags (e.g. 0.2.0-rc.1) should NOT clobber the
+          # "latest" pointer; only stable releases from main do that.
+          IS_LATEST="false"
+          if [[ "$BRANCH" == "main" && ! "$VERSION" =~ - ]]; then
+            IS_LATEST="true"
+          fi
+
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA"             >> "$GITHUB_OUTPUT"
+          echo "is_latest=$IS_LATEST" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG from $BRANCH commit $SHA (is-latest: $IS_LATEST)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+          # No cache: 'npm' — this repo intentionally does not commit
+          # package-lock.json (.gitignore line 4), so setup-node's npm
+          # cache feature has nothing to key on.
+      # Same reason `npm install` instead of `npm ci`: ci requires a lockfile.
+      - run: npm install
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.11'
+
+      - name: Build all workspace dist files
+        run: |
+          npm run build --workspace=@finalrun/common
+          npm run build --workspace=@finalrun/cloud-core
+          npm run build --workspace=@finalrun/device-node
+          npm run build --workspace=@finalrun/goal-executor
+          npm run build --workspace=@finalrun/report-web
+          npm run build --workspace=@finalrun/finalrun-agent
+
+      - name: Build binaries (all 5 targets via Bun cross-compile)
+        run: ./scripts/build-binary.sh
+
+      - name: Build runtime tarballs (all 5 targets)
+        run: |
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64; do
+            npm run build:tarball --workspace=@finalrun/local-runtime -- --target="$t"
+          done
+
+      - name: Stage release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp dist/binaries/finalrun-* release-artifacts/
+          cp packages/local-runtime/dist/finalrun-runtime-*.tar.gz* release-artifacts/
+          ls -la release-artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+          retention-days: 7
+
+  # Validate the Windows .exe actually executes on a real Windows host before
+  # we tag and publish. Bun cross-compiles the binary from ubuntu-24.04, so
+  # without this gate a Windows-specific runtime breakage (missing DLL, bad
+  # PE header, embedded-runtime mismatch) would only surface after release.
+  # Cheap insurance: ~30s of windows-latest runtime per release.
+  smoke-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+
+      - name: Smoke-test the Windows binary
+        shell: pwsh
+        run: |
+          $exe = "release-artifacts/finalrun-windows-x64.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Expected $exe in downloaded artifacts but did not find it."
+            exit 1
+          }
+          Write-Host "Running: $exe --version"
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "finalrun.exe --version exited $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "Running: $exe --help"
+          & $exe --help
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "finalrun.exe --help exited $LASTEXITCODE"
+            exit 1
+          }
+
+  release:
+    needs: [build, smoke-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+
+      - name: Tag the build commit and push the tag
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$SHA" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Build release notes from template + CHANGELOG section
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Extract the matching `## [VERSION]` section from CHANGELOG.md.
+          # Maintainers must update CHANGELOG.md (manually, or via Claude)
+          # in the release PR — the workflow refuses to publish without it,
+          # so a release can't accidentally go out without notes.
+          CHANGELOG_SECTION=$(awk -v marker="## [${VERSION}]" '
+            index($0, marker) == 1 { capture = 1; print; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$CHANGELOG_SECTION" ]; then
+            echo "::error::CHANGELOG.md has no '## [${VERSION}]' section."
+            echo "::error::Add an entry under that heading describing what changed in this release, then re-run the workflow."
+            exit 1
+          fi
+
+          # Combine the static install instructions (from the template)
+          # with the version-specific changelog section. The template is
+          # the same across releases; the changelog section changes.
+          {
+            cat .github/release-notes-template.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "## What's changed in this release"
+            echo ""
+            # Skip the first line (`## [VERSION] - DATE`) since we just
+            # printed our own heading; keep the rest verbatim.
+            echo "$CHANGELOG_SECTION" | tail -n +2
+          } > /tmp/release-notes.md
+
+          echo "::group::Final release notes"
+          cat /tmp/release-notes.md
+          echo "::endgroup::"
+
+      - name: Create GitHub Release with all artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          IS_LATEST: ${{ needs.build.outputs.is_latest }}
+        run: |
+          set -euo pipefail
+          # Pre-releases (e.g. 0.2.0-rc.1) and releases from non-main
+          # branches don't update the "latest" pointer that install.sh and
+          # the README badges resolve against.
+          extra_flags=()
+          if [ "$IS_LATEST" = "true" ]; then
+            extra_flags+=(--latest)
+          else
+            extra_flags+=(--prerelease)
+          fi
+          gh release create "$TAG" \
+            --title "FinalRun $VERSION" \
+            --notes-file /tmp/release-notes.md \
+            "${extra_flags[@]}" \
+            release-artifacts/*

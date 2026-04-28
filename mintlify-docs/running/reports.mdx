@@ -1,0 +1,101 @@
+---
+title: "FinalRun test reports: browse artifacts, video, and logs"
+sidebarTitle: "Reports"
+description: "Explore FinalRun run artifacts, open the local report UI, read result.json, and inspect failures with video playback and device logs."
+---
+
+After every test run, FinalRun saves a full set of artifacts to disk so you can diagnose failures, replay executions, and track results over time. You can browse these artifacts directly on the filesystem or through the local report UI, which adds video playback, log search, and step-by-step screenshot browsing.
+
+## Artifact layout
+
+Each run writes its artifacts to:
+
+```
+~/.finalrun/workspaces/<workspace-hash>/artifacts/
+```
+
+The `<workspace-hash>` is derived from your project directory, so each repository gets its own isolated artifacts folder.
+
+| File or folder | Contents |
+|---|---|
+| `result.json` | Test outcome, failure message, and step-level results. |
+| `actions/` | Individual agent action files (JSON) showing the agent's reasoning, the action taken, and whether it succeeded at each step. |
+| `screenshots/` | Per-step screenshots showing the device screen at each action. |
+| `recording.mp4` / `recording.mov` | Screen recording of the full test run. |
+| `device.log` | Device-level logs — logcat on Android, `log stream` on iOS — captured during the run. |
+| `runner.log` | The CLI's own log for the entire run, written at the run directory root. |
+
+## Listing recent runs
+
+Use `finalrun runs` to list local reports for the current workspace:
+
+<CodeGroup>
+
+```sh Standard output
+finalrun runs
+```
+
+```sh Machine-readable JSON
+finalrun runs --json
+```
+
+```sh Different workspace
+finalrun runs --workspace /path/to/other/app
+```
+
+</CodeGroup>
+
+## Opening the report UI
+
+The local report UI lets you browse run artifacts with video playback, device log search, and step-by-step screenshots.
+
+```sh
+finalrun start-server
+```
+
+FinalRun starts a local web server (or reuses an existing one) and opens the report UI in your browser. The UI shows all runs for the current workspace.
+
+<Tip>
+  Run `finalrun start-server` immediately after a test failure to replay the recording, step through screenshots, and search device logs — all in sync. This is the fastest way to understand what the AI agent saw on screen at each step.
+</Tip>
+
+### Report UI features
+
+<CardGroup cols={1}>
+  <Card title="Video playback" icon="video">
+    Watch the full screen recording of any run. Scrub to any moment to see exactly what was on the device.
+  </Card>
+  <Card title="Step-by-step screenshots" icon="images">
+    Browse per-action screenshots alongside the agent's action details for each step.
+  </Card>
+  <Card title="Device log search" icon="magnifying-glass">
+    Search and filter device logs (logcat or log stream) captured during the run. Filter by log level to focus on errors and warnings.
+  </Card>
+</CardGroup>
+
+## Managing the server
+
+```sh
+# Check whether the server is running
+finalrun server-status
+
+# Stop the server
+finalrun stop-server
+```
+
+## Targeting a different workspace
+
+All report commands accept `--workspace <path>` when you want to inspect runs from a project other than the current directory:
+
+```sh
+finalrun start-server --workspace /path/to/other/app
+finalrun runs --workspace /path/to/other/app
+```
+
+## Reading result.json
+
+`result.json` is the canonical record of a run. It contains the overall test outcome (`pass` or `fail`), a human-readable failure message, and step-level results that map directly to the entries in `actions/` and `screenshots/`. When your AI coding agent reads artifacts after a failure, `result.json` is the first file it reads to identify which step failed and why.
+
+<Note>
+  When the `/finalrun-use-cli` or `/finalrun-test-and-fix` skill diagnoses a failure, it reads `result.json`, the matching `actions/` entry, and the screenshot at the failed step before suggesting any fix. You can do the same inspection manually using `finalrun start-server`.
+</Note>

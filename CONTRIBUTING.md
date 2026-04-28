@@ -10,11 +10,13 @@ cd finalrun-agent
 npm ci
 ```
 
-Published npm package:
+End-user install (binary, not npm):
 
 ```sh
-npm install -g @finalrun/finalrun-agent
+curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
 ```
+
+The CLI is no longer published to npm — it ships as a Bun-compiled binary plus a per-platform runtime tarball uploaded to GitHub Releases. See [RELEASING.md](./RELEASING.md) for how a release is cut.
 
 Build the workspace packages:
 
@@ -40,7 +42,9 @@ npm run format:check
 - `packages/common`: shared models, types, and utilities
 - `packages/device-node`: device detection, gRPC communication, and platform-specific device runtime logic
 - `packages/goal-executor`: AI planning and action execution
-- `packages/cli`: published CLI package
+- `packages/cli`: CLI source — Bun-compiled into the distributed binary
+- `packages/cloud-core`: pure cloud-submission logic shared by the CLI binary
+- `packages/local-runtime`: builder for the per-platform runtime tarball (driver bundles, gRPC proto, Vite SPA dist) that ships alongside the binary on GitHub Releases
 - `packages/report-web`: local report UI
 - `drivers/android`: Android driver sources
 - `drivers/ios`: iOS simulator driver sources

@@ -1,0 +1,109 @@
+/* All agent UI styles are scoped under `.fr-report-ui` so they don't leak
+   into host applications (e.g. finalrun-cloud). Consumers apply the class
+   to the root wrapper automatically via <RunIndexView> / <RunDetailView>.
+
+   Global rules (html/body/anchor resets) removed on purpose — the library
+   is embeddable and must not fight the host's baseline.
+
+   Page padding + width are exposed as CSS vars so consumers can override:
+     --fr-page-padding   (default 28px)
+     --fr-page-max-width (default 1360px)
+*/
+
+.fr-report-ui {
+  --bg: #F4F7FE;
+  --panel: #FFFFFF;
+  --panel-alt: #F4F7FE;
+  --text: #2B3674;
+  --muted: #707EAE;
+  --icon: #8E9AB9;
+  --accent: #4318FF;
+  --accent-soft: rgba(67, 24, 255, 0.1);
+  --success: #05CD99;
+  --aborted: #475569;
+  --warning: #FF920C;
+  --failure: #EE5D50;
+  --border: #E0E5F2;
+  --border-light: #E9EDF7;
+  --selected: #F0F2F7;
+  --shadow: 0 18px 40px rgba(112, 126, 174, 0.12);
+  --radius: 20px;
+
+  --fr-page-padding: 28px;
+  --fr-page-max-width: 1360px;
+
+  color: var(--text);
+  font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  background:
+    radial-gradient(circle at top right, rgba(67, 24, 255, 0.08), transparent 32%),
+    linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+}
+
+.fr-report-ui *,
+.fr-report-ui *::before,
+.fr-report-ui *::after {
+  box-sizing: border-box;
+}
+
+.fr-report-ui a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.fr-report-ui a:hover {
+  text-decoration: underline;
+}
+
+.fr-report-ui .page {
+  max-width: var(--fr-page-max-width);
+  margin: 0 auto;
+  padding: var(--fr-page-padding);
+}
+
+.fr-report-ui .status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.fr-report-ui .status-pill.success {
+  background: rgba(5, 205, 153, 0.14);
+  color: var(--success);
+}
+
+.fr-report-ui .status-pill.failure {
+  background: rgba(238, 93, 80, 0.14);
+  color: var(--failure);
+}
+
+.fr-report-ui .status-pill.error {
+  background: rgba(255, 146, 12, 0.14);
+  color: var(--warning);
+}
+
+.fr-report-ui .status-pill.aborted {
+  background: rgba(71, 85, 105, 0.14);
+  color: var(--aborted);
+}
+
+.fr-report-ui .status-pill.not_executed {
+  background: rgba(112, 126, 174, 0.14);
+  color: var(--muted);
+}
+
+.fr-report-ui .muted {
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .fr-report-ui .page {
+    padding: 20px;
+  }
+}

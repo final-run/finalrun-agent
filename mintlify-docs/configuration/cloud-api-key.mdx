@@ -1,0 +1,67 @@
+---
+title: "Get your FinalRun Cloud API key"
+sidebarTitle: "Cloud API Key"
+description: "Sign up for FinalRun Cloud, generate an API key, and set FINALRUN_API_KEY for the CLI."
+---
+
+FinalRun Cloud runs tests on FinalRun's hosted infrastructure with managed AI access, so you don't need to bring your own provider key. New accounts include $5 of credits.
+
+<iframe
+  width="100%"
+  height="400"
+  src="https://www.youtube.com/embed/XDPef_yIbCU"
+  title="Get your FinalRun Cloud API key"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen
+></iframe>
+
+## 1. Sign up
+
+Create an account at [https://cloud.finalrun.app](https://cloud.finalrun.app).
+
+## 2. Generate an API key
+
+In the dashboard, open the **API keys** section and create a new key. Copy the value — it is shown only once.
+
+## 3. Set `FINALRUN_API_KEY`
+
+The CLI reads `FINALRUN_API_KEY` from the same sources as provider keys.
+
+<Tabs>
+  <Tab title=".env file">
+    Add the key to a `.env` file at your workspace root:
+
+    ```bash
+    echo "FINALRUN_API_KEY=your-key-here" > .env
+    ```
+
+    See [Managing environments and secrets](/configuration/environments) for dotenv load order details.
+  </Tab>
+  <Tab title="Shell environment">
+    Export the variable in your shell session or CI environment:
+
+    ```bash
+    export FINALRUN_API_KEY=your-key-here
+    ```
+
+    Shell variables take the highest priority in FinalRun's load order.
+  </Tab>
+  <Tab title="--api-key flag">
+    Pass the key directly as a CLI flag:
+
+    ```bash
+    finalrun cloud test smoke.yaml --api-key your-key-here
+    ```
+  </Tab>
+</Tabs>
+
+## Run a cloud test
+
+```bash
+finalrun cloud test smoke.yaml --platform android
+```
+
+<Note>
+  Prefer to use your own AI provider account instead? See [AI Providers](/configuration/ai-providers) for the bring-your-own-key setup.
+</Note>
