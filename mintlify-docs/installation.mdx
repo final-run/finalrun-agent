@@ -89,14 +89,14 @@ If `finalrun` isn't found, open a new shell — the rc files were updated for ne
 
 ## Set an API key
 
-FinalRun needs an API key at test-run time. You have two options:
+The fastest way to get started is FinalRun Cloud — sign up, drop in one key, and run. If you'd rather use your own AI provider account, that path works too.
 
 <CardGroup cols={2}>
+  <Card title="FinalRun Cloud — recommended" icon="cloud" href="/configuration/cloud-api-key">
+    Sign up at [cloud.finalrun.app](https://cloud.finalrun.app) and set `FINALRUN_API_KEY`. Managed AI, no provider account needed, and new accounts get $5 of free credits.
+  </Card>
   <Card title="Bring your own provider key" icon="key" href="/configuration/ai-providers">
     Use your own Google, OpenAI, or Anthropic API key (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Standard provider billing applies.
-  </Card>
-  <Card title="FinalRun Cloud" icon="cloud" href="/configuration/cloud-api-key">
-    Sign up at [cloud.finalrun.app](https://cloud.finalrun.app) and use FinalRun's managed AI with `FINALRUN_API_KEY`. New accounts include $5 of credits — no provider account needed.
   </Card>
 </CardGroup>
 
