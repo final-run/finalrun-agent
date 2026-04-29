@@ -1,140 +1,69 @@
 ---
-title: "Quickstart: run your first FinalRun test"
+title: "Quickstart: generate and run your first FinalRun test from your AI coding agent"
 sidebarTitle: "Quickstart"
-description: "Configure your AI provider key, create a minimal workspace, write a YAML test spec, and execute it on an Android emulator or iOS simulator."
+description: "Use FinalRun's AI agent skills inside Claude Code, Cursor, or Codex to generate, run, and fix mobile tests for your app — no manual YAML required."
 ---
 
-This guide assumes you've already completed [Installation](/installation) and that `finalrun doctor` reports your host as ready. You'll configure your AI provider key, create a minimal workspace, write a test, and execute it on a connected Android emulator or iOS simulator.
+FinalRun's three AI agent skills let you go from "I have an app repo" to a green mobile test run inside your AI coding agent. The skills work in **Claude Code, Cursor, and Codex** (and any other agent that supports the skills protocol). You describe what you want covered in plain English; the skills generate the YAML, run the CLI, read the artifacts on failure, and apply fixes until the run is green.
+
+This guide assumes you've finished [Installation](/installation) and have an [API key set](/configuration/cloud-api-key).
 
 <Steps>
-  <Step title="Set your AI provider key">
-    FinalRun uses your own AI provider API key. Create a `.env` file at the root of your project with the key for your chosen provider:
-
-    <CodeGroup>
-    ```bash Google Gemini
-    echo "GOOGLE_API_KEY=your-key-here" > .env
-    ```
-
-    ```bash OpenAI
-    echo "OPENAI_API_KEY=your-key-here" > .env
-    ```
-
-    ```bash Anthropic Claude
-    echo "ANTHROPIC_API_KEY=your-key-here" > .env
-    ```
-    </CodeGroup>
-
-    Add `.env` to your `.gitignore` so secrets are never committed.
+  <Step title="Open your app's repo in your AI coding agent">
+    Launch Claude Code, Cursor, or Codex from the root of the mobile app repository you want to test. The skills run from chat — you don't have to switch tools.
 
     <Note>
-      Each test run makes real AI API calls that consume tokens. Standard billing from your AI provider applies.
+      The FinalRun installer registers all three skills globally. If you skipped that step, install them with:
+
+      ```bash
+      npx skills add final-run/finalrun-agent -g
+      ```
+
+      See [AI Agent Skills](/running/ai-agent-skills) for the full skill reference.
     </Note>
   </Step>
 
-  <Step title="Create the workspace structure">
-    Create the `.finalrun/` directory and a folder for your test specs:
+  <Step title="Generate tests with /finalrun-generate-test">
+    Ask the agent to generate tests for a feature in your app. The skill reads your source code, infers the package name or bundle ID, scaffolds `.finalrun/config.yaml` and `.finalrun/env/<env>.yaml`, and writes YAML specs grouped by feature.
 
     ```bash
-    mkdir -p .finalrun/tests
+    /finalrun-generate-test Generate tests for the authentication feature — cover login with valid credentials, login with wrong password, and logout
     ```
 
-    Then create `.finalrun/config.yaml` with your app's identity and default settings:
-
-    ```yaml
-    app:
-      name: MyApp
-      packageName: com.example.myapp
-      bundleId: com.example.myapp
-    env: dev
-    model: google/gemini-3-flash-preview
-    ```
-
-    | Field | Description |
-    |---|---|
-    | `app.packageName` | Android package identifier |
-    | `app.bundleId` | iOS bundle identifier |
-    | `env` | Default environment name (can be omitted if not using env files) |
-    | `model` | Default AI model in `provider/model` format |
-
-    At least one of `app.packageName` or `app.bundleId` is required.
+    The skill proposes a test plan first and waits for your approval before writing files. Once approved, it writes specs under `.finalrun/tests/<feature>/`, a matching suite under `.finalrun/suites/`, and runs `finalrun check` to validate the workspace.
   </Step>
 
-  <Step title="Write your first test">
-    Create `.finalrun/tests/login_smoke.yaml` with a basic login scenario:
-
-    ```yaml
-    name: login_smoke
-    description: Verify that a user can log in and reach the home screen.
-
-    setup:
-      - Clear app data.
-
-    steps:
-      - Launch the app.
-      - Enter ${secrets.email} on the login screen.
-      - Enter ${secrets.password} on the password screen.
-      - Tap the login button.
-
-    expected_state:
-      - The home screen is visible.
-      - The user's name appears in the header.
-    ```
-
-    The `${secrets.email}` and `${secrets.password}` placeholders are resolved at runtime. To use them, **append** the values to your existing `.env` (use `>>`, not `>`, so you don't overwrite the API key you set in step 1):
+  <Step title="Run and fix with /finalrun-test-and-fix">
+    Hand the running and triage to the orchestrator skill. It executes the new tests, reads `result.json`, screenshots, and device logs on failure, decides whether the bug is in the **app code** or the **test**, applies the narrowest fix, and re-runs until the run is green.
 
     ```bash
-    cat >> .env <<'EOF'
-    TEST_USER_EMAIL=test@example.com
-    TEST_USER_PASSWORD=password123
-    EOF
+    /finalrun-test-and-fix Verify and fix the auth feature end-to-end on Android
     ```
 
-    Then declare the bindings in `.finalrun/env/dev.yaml`:
+    Prefer to run without orchestration? Use the lower-level skill instead — it just runs the tests and reports the outcome:
 
-    ```yaml
-    secrets:
-      email: ${TEST_USER_EMAIL}
-      password: ${TEST_USER_PASSWORD}
+    ```bash
+    /finalrun-use-cli Run the auth tests on Android
     ```
   </Step>
 
-  <Step title="Run the test">
-    Run your test on Android or iOS. The `--model` flag can be omitted if you set a default in `config.yaml`.
-
-    <CodeGroup>
-    ```bash Android
-    finalrun test login_smoke.yaml --platform android --model google/gemini-3-flash-preview
-    ```
-
-    ```bash iOS
-    finalrun test login_smoke.yaml --platform ios --model google/gemini-3-flash-preview
-    ```
-    </CodeGroup>
-
-    FinalRun will boot the emulator or simulator, install the app, and begin executing the test steps. You'll see live output as the AI works through each action.
-
-    <Tip>
-      Run `finalrun check` from inside your project directory before executing tests. It validates your workspace config, environment bindings, and suite manifests without launching a device.
-    </Tip>
-  </Step>
-
-  <Step title="View results">
-    List your recent test runs:
+  <Step title="View the report">
+    List recent runs and open the local report UI to see screenshots, video, and device logs:
 
     ```bash
     finalrun runs
-    ```
-
-    Open the local report UI in your browser to see screenshots, video, and device logs:
-
-    ```bash
     finalrun start-server
     ```
   </Step>
 </Steps>
 
+## Make it automatic
+
+Add a definition-of-done rule to your `AGENTS.md` that triggers `/finalrun-test-and-fix` after every UI change. Your agent then treats a passing FinalRun run as a requirement for closing any UI task — see [Auto-triggering FinalRun](/running/ai-agent-skills#auto-triggering-finalrun-after-feature-work).
+
 ## What's next
 
-- [YAML test format](/tests/yaml-format) — learn all test spec fields, suite manifests, and placeholder syntax
-- [CLI reference](/running/cli-reference) — full list of commands and flags
-- [Workspace configuration](/configuration/workspace) — app identity, per-environment overrides, and `--app` flag
+- [AI Agent Skills](/running/ai-agent-skills) — full reference for all three skills.
+- [YAML Test Format](/tests/yaml-format) — the format the skills produce, for when you want to read or hand-edit tests.
+- [CLI Reference](/running/cli-reference) — every `finalrun` command and flag, for running tests without an agent.
+- [Workspace Configuration](/configuration/workspace) — app identity, environments, and the `--app` flag.
