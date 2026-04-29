@@ -4,9 +4,13 @@ sidebarTitle: "Quickstart"
 description: "Use FinalRun's AI agent skills inside Claude Code, Cursor, or Codex to generate, run, and fix mobile tests for your app — no manual YAML required."
 ---
 
-FinalRun's three AI agent skills let you go from "I have an app repo" to a green mobile test run inside your AI coding agent. The skills work in **Claude Code, Cursor, and Codex** (and any other agent that supports the skills protocol). You describe what you want covered in plain English; the skills generate the YAML, run the CLI, read the artifacts on failure, and apply fixes until the run is green.
+FinalRun ships three AI agent skills that work in **Claude Code, Cursor, and Codex** (and any other agent that supports the skills protocol), each handling a distinct part of the flow:
 
-This guide assumes you've finished [Installation](/installation) and have an [API key set](/configuration/cloud-api-key).
+- `/finalrun-generate-test` — turns a plain-English description into a YAML test spec.
+- `/finalrun-use-cli` — runs the FinalRun CLI from your agent and surfaces results.
+- `/finalrun-test-and-fix` — owns the end-to-end loop: generates, runs, reads artifacts on failure, and applies fixes until the run is green.
+
+This guide assumes you've finished [Installation](/installation) and have either a [FinalRun Cloud API key](/configuration/cloud-api-key) or a [provider (BYOK) key configured](/configuration/ai-providers).
 
 <Steps>
   <Step title="Open your app's repo in your AI coding agent">
