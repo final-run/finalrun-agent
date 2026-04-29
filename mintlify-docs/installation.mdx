@@ -100,21 +100,6 @@ FinalRun needs an API key at test-run time. You have two options:
   </Card>
 </CardGroup>
 
-## Environment overrides
-
-The installers read these environment variables:
-
-| Variable | Purpose |
-|---|---|
-| `FINALRUN_DIR` | Install root. Default: `$HOME/.finalrun` (`%USERPROFILE%\.finalrun` on Windows). |
-| `FINALRUN_VERSION` | Pin a specific version (e.g. `0.1.13`). Default: latest from [GitHub releases](https://github.com/final-run/finalrun-agent/releases). |
-
-Pin a version:
-
-```bash
-FINALRUN_VERSION=0.1.13 curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-```
-
 ## Upgrade and uninstall
 
 **Upgrade:** re-run the same one-line installer. It overwrites the binary and runtime in place.
