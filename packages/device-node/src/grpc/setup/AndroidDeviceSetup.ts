@@ -124,10 +124,11 @@ export class AndroidDeviceSetup {
       }
 
       Logger.i(`Installing driver app on ${deviceSerial}...`);
-      const installed = await this._adbClient.installApp(
+      const installed = await this._adbClient.installDriverApp(
         adbPath,
         deviceSerial,
         driverPath,
+        ANDROID_DRIVER_APP_PACKAGE_NAME,
       );
       if (!installed) {
         throw new Error('Failed to install driver app APK');
@@ -137,10 +138,11 @@ export class AndroidDeviceSetup {
       const testAppPath = await this._filePathUtil.getDriverTestAppPath();
       if (testAppPath) {
         Logger.i(`Installing test runner APK on ${deviceSerial}...`);
-        const testInstalled = await this._adbClient.installApp(
+        const testInstalled = await this._adbClient.installDriverApp(
           adbPath,
           deviceSerial,
           testAppPath,
+          ANDROID_DRIVER_TEST_PACKAGE_NAME,
         );
         if (!testInstalled) {
           throw new Error('Failed to install test runner APK');

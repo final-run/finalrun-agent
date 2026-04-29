@@ -114,6 +114,132 @@ test('AdbClient.installApp uses reinstall and grant flags for app overrides', as
   ]);
 });
 
+test('AdbClient.installDriverApp returns true on first install without checking package', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const installed = await adbClient.installDriverApp(
+    '/platform-tools/adb',
+    'emulator-5554',
+    '/tmp/app.apk',
+    'app.finalrun.android',
+  );
+
+  assert.equal(installed, true);
+  assert.deepEqual(execCalls, [
+    {
+      file: '/platform-tools/adb',
+      args: ['-s', 'emulator-5554', 'install', '-r', '-g', '/tmp/app.apk'],
+    },
+  ]);
+});
+
+test('AdbClient.installDriverApp returns false without retry when package is absent', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (args.includes('install')) {
+        throw adbExecError('adb: failed to install /tmp/app.apk: storage full');
+      }
+      if (args.includes('packages')) {
+        return { stdout: 'package:com.other.app\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const installed = await adbClient.installDriverApp(
+    '/platform-tools/adb',
+    'emulator-5554',
+    '/tmp/app.apk',
+    'app.finalrun.android',
+  );
+
+  assert.equal(installed, false);
+  // install (fails) + pm list packages (returns no match). No uninstall, no retry.
+  assert.equal(execCalls.length, 2);
+  assert.equal(execCalls[0]?.args.includes('install'), true);
+  assert.equal(execCalls[1]?.args.includes('packages'), true);
+  assert.equal(
+    execCalls.some((call) => call.args.includes('uninstall')),
+    false,
+  );
+});
+
+test('AdbClient.installDriverApp uninstalls and retries when package already exists', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  let installAttempts = 0;
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (args.includes('install')) {
+        installAttempts += 1;
+        if (installAttempts === 1) {
+          throw adbExecError('adb: failed to install /tmp/app.apk: INSTALL_FAILED_UPDATE_INCOMPATIBLE');
+        }
+        return { stdout: 'Success', stderr: '' };
+      }
+      if (args.includes('packages')) {
+        return { stdout: 'package:app.finalrun.android\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const installed = await adbClient.installDriverApp(
+    '/platform-tools/adb',
+    'emulator-5554',
+    '/tmp/app.apk',
+    'app.finalrun.android',
+  );
+
+  assert.equal(installed, true);
+  assert.equal(installAttempts, 2);
+  const verbs = execCalls.map((call) =>
+    call.args.find((arg) => ['install', 'uninstall', 'shell'].includes(arg)),
+  );
+  // install (fails) -> shell pm list packages -> uninstall -> install (succeeds)
+  assert.deepEqual(verbs, ['install', 'shell', 'uninstall', 'install']);
+});
+
+test('AdbClient.installDriverApp returns false when retry install also fails', async () => {
+  const execCalls: Array<{ file: string; args: readonly string[] }> = [];
+  const adbClient = new AdbClient({
+    execFileFn: async (file, args) => {
+      execCalls.push({ file, args });
+      if (args.includes('install')) {
+        throw adbExecError('adb: failed to install /tmp/app.apk: INSTALL_FAILED_UPDATE_INCOMPATIBLE');
+      }
+      if (args.includes('uninstall')) {
+        throw adbExecError('Failure [DELETE_FAILED_INTERNAL_ERROR]');
+      }
+      if (args.includes('packages')) {
+        return { stdout: 'package:app.finalrun.android\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    },
+  });
+
+  const installed = await adbClient.installDriverApp(
+    '/platform-tools/adb',
+    'emulator-5554',
+    '/tmp/app.apk',
+    'app.finalrun.android',
+  );
+
+  assert.equal(installed, false);
+  const verbs = execCalls.map((call) =>
+    call.args.find((arg) => ['install', 'uninstall', 'shell'].includes(arg)),
+  );
+  assert.deepEqual(verbs, ['install', 'shell', 'uninstall', 'install']);
+});
+
 test('AdbClient.openDeepLink uses adb am start with the deeplink URL', async () => {
   const execCalls: Array<{ file: string; args: readonly string[] }> = [];
   const adbClient = new AdbClient({
