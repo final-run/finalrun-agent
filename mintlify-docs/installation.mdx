@@ -100,28 +100,13 @@ The fastest way to get started is FinalRun Cloud — sign up, drop in one key, a
   </Card>
 </CardGroup>
 
-## Upgrade and uninstall
+## Upgrade
 
-**Upgrade:** re-run the same one-line installer. It overwrites the binary and runtime in place.
+```bash
+finalrun upgrade
+```
 
-**Uninstall:**
-
-<Tabs>
-  <Tab title="macOS / Linux">
-    ```bash
-    rm -rf ~/.finalrun ~/.local/bin/finalrun
-    ```
-
-    Then remove the `# finalrun` block from your `~/.bashrc`, `~/.zshrc`, `~/.profile`, or `~/.config/fish/config.fish` if present.
-  </Tab>
-  <Tab title="Windows">
-    ```powershell
-    Remove-Item -Recurse -Force "$env:USERPROFILE\.finalrun"
-    ```
-
-    Then remove the FinalRun entry from your user `PATH` (System Properties → Environment Variables).
-  </Tab>
-</Tabs>
+Pulls the latest release and replaces the binary and runtime in place.
 
 ## Next steps
 
