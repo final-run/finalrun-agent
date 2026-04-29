@@ -1,7 +1,7 @@
 ---
 title: "FinalRun FAQ: accounts, AI providers, pricing, and CI/CD"
 sidebarTitle: "FAQ"
-description: "Answers to common FinalRun questions: BYOK vs FinalRun Cloud, supported AI providers, platform compatibility, CI/CD usage, the three-phase test model, and artifact storage."
+description: "Answers to common FinalRun questions: BYOK vs FinalRun Cloud, supported AI providers, platform compatibility, CI/CD usage, and artifact storage."
 ---
 
 FinalRun is an open-source, CLI-based tool. You can run it with your own AI provider key (BYOK), or sign up for FinalRun Cloud for managed AI without provisioning a provider account. The questions below cover the most common things people ask.
@@ -41,19 +41,12 @@ FinalRun is an open-source, CLI-based tool. You can run it with your own AI prov
   </Accordion>
 
   <Accordion title="Does FinalRun work with real devices or only emulators?">
-    For local runs, FinalRun targets Android emulators (AVDs) and iOS simulators on your own machine.
-
-    For cloud runs (`finalrun cloud test`), FinalRun executes against managed Android emulators and iOS simulators on FinalRun's hosted infrastructure — no local device required.
-
-    Support for **physical** cloud devices is on the roadmap. [Join the waitlist](https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor) for early access.
+    - **Android** — both real devices (over `adb`) and emulators are supported.
+    - **iOS** — simulators only today. Physical iOS device support is on the roadmap; [join the waitlist](https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor) for early access.
   </Accordion>
 
   <Accordion title="Which platforms does FinalRun support?">
-    - **Android** — local execution works on macOS, Linux, or Windows with Android SDK tools (`adb`, `emulator`, `scrcpy`) installed and a running Android Virtual Device.
-    - **iOS** — local execution requires macOS with the full Xcode app (not just Command Line Tools).
-    - **Cloud** — `finalrun cloud test` works for both platforms from any host (macOS, Linux, or Windows). Use this when you can't or don't want to run a simulator locally.
-
-    Run `finalrun doctor` to check that all required dependencies are present on your machine before running tests locally.
+    Android and iOS.
   </Accordion>
 
   <Accordion title="How much does each test run cost?">
@@ -64,44 +57,13 @@ FinalRun is an open-source, CLI-based tool. You can run it with your own AI prov
   </Accordion>
 
   <Accordion title="Can I run FinalRun in CI/CD?">
-    Yes. The simplest path is FinalRun Cloud — set `FINALRUN_API_KEY` as a CI secret and call `finalrun cloud test` as a pipeline step:
+    Yes — only on FinalRun Cloud. Set `FINALRUN_API_KEY` as a CI secret and call `finalrun cloud test` as a pipeline step:
 
     ```sh
     finalrun cloud test smoke.yaml --platform android
     ```
 
-    For BYOK, set your provider's API key (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`) plus any secrets your test specs reference. For local Android runs in CI, you also need `ANDROID_HOME` and a running emulator on the runner:
-
-    ```sh
-    finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
-    ```
-
-    Run `finalrun check` before your test step to catch workspace configuration errors early, before you consume any API tokens.
-  </Accordion>
-
-  <Accordion title="What is the three-phase test execution model?">
-    Every FinalRun test has three phases:
-
-    - **`setup`** — optional actions that prepare a clean state before the test starts (for example, clearing app data).
-    - **`steps`** — the ordered, plain-English instructions the AI executes on your device screen.
-    - **`expected_state`** — the UI conditions the AI verifies once all steps have completed.
-
-    A test passes only when all three phases succeed. If any phase fails, FinalRun stops the run and records the failure with the current screenshot, video, and device log.
-  </Accordion>
-
-  <Accordion title="What is finalrun check for?">
-    `finalrun check` validates your entire workspace before you run any tests. It checks:
-
-    - Selector definitions
-    - Suite manifests
-    - Environment bindings (secrets and variables)
-    - App overrides
-
-    Running `finalrun check` before a test run catches configuration errors early, so you are not spending API tokens on a run that will fail at startup.
-
-    ```sh
-    finalrun check --env dev --platform android
-    ```
+    Local emulator/simulator runs aren't supported in CI today.
   </Accordion>
 
   <Accordion title="How do I use FinalRun with AI coding agents like Claude Code, Cursor, or Codex?">
