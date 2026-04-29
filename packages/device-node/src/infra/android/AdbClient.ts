@@ -266,6 +266,32 @@ export class AdbClient {
     return result.success;
   }
 
+  // Install a FinalRun-owned APK (driver or test runner). If the install fails
+  // and the package is already present (almost always a signature mismatch
+  // from a prior build), uninstall it and retry once. Skipped when the package
+  // is absent — uninstall can't fix unrelated failures (storage, ABI, USB).
+  async installDriverApp(
+    adbPath: string,
+    deviceSerial: string,
+    apkPath: string,
+    packageName: string,
+  ): Promise<boolean> {
+    if (await this.installApp(adbPath, deviceSerial, apkPath)) {
+      return true;
+    }
+
+    const existing = await this.isPackageInstalled(adbPath, deviceSerial, packageName);
+    if (!existing.success) {
+      return false;
+    }
+
+    Logger.w(
+      `Driver install failed and ${packageName} already on ${deviceSerial}; uninstalling and retrying once`,
+    );
+    await this.uninstallApp(adbPath, deviceSerial, packageName);
+    return await this.installApp(adbPath, deviceSerial, apkPath);
+  }
+
   async uninstallApp(
     adbPath: string,
     deviceSerial: string,

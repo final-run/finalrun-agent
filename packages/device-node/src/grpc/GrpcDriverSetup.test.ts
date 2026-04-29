@@ -114,6 +114,18 @@ function createAndroidAdbClientFake(
     async installApp() {
       return true;
     },
+    async installDriverApp(
+      adbPath: string,
+      deviceSerial: string,
+      apkPath: string,
+      _packageName: string,
+    ) {
+      return await (this as unknown as AdbClient).installApp(
+        adbPath,
+        deviceSerial,
+        apkPath,
+      );
+    },
     async removePortForward() {},
     async forwardPort() {
       return 50051;
