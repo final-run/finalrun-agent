@@ -1,18 +1,33 @@
 ---
-title: "FinalRun FAQ: pricing, AI providers, and CI/CD usage"
+title: "FinalRun FAQ: accounts, AI providers, pricing, and CI/CD"
 sidebarTitle: "FAQ"
-description: "Answers to common FinalRun questions: pricing, supported AI providers, platform compatibility, CI/CD usage, three-phase test model, and artifact storage."
+description: "Answers to common FinalRun questions: BYOK vs FinalRun Cloud, supported AI providers, platform compatibility, CI/CD usage, the three-phase test model, and artifact storage."
 ---
 
-FinalRun is an open-source, CLI-based tool — no account required, no platform lock-in. The questions below cover the most common things people ask about how FinalRun works, what it costs, and how to get the most out of it.
+FinalRun is an open-source, CLI-based tool. You can run it with your own AI provider key (BYOK), or sign up for FinalRun Cloud for managed AI without provisioning a provider account. The questions below cover the most common things people ask.
 
 <AccordionGroup>
   <Accordion title="Do I need to create a FinalRun account?">
-    No. FinalRun is open-source and runs entirely from the command line. Install the CLI, set your AI provider API key, and start running tests. There is no account, signup, or FinalRun subscription required.
+    Only if you want to use **FinalRun Cloud** for managed AI. Cloud accounts are free to create and include $5 of credits — sign up at [cloud.finalrun.app](https://cloud.finalrun.app) and set `FINALRUN_API_KEY`. See [Cloud API Key](/configuration/cloud-api-key).
+
+    If you'd rather **bring your own AI provider key** (Google, OpenAI, or Anthropic), no FinalRun account is needed — install the CLI, set the provider key, and run. See [AI Providers](/configuration/ai-providers).
+  </Accordion>
+
+  <Accordion title="What's the difference between BYOK and FinalRun Cloud?">
+    Both run the same CLI and produce the same test artifacts. They differ in how AI access is provisioned and billed:
+
+    | | FinalRun Cloud | BYOK |
+    |---|---|---|
+    | Account needed | FinalRun account at [cloud.finalrun.app](https://cloud.finalrun.app) | None for FinalRun; you supply a Google/OpenAI/Anthropic key |
+    | Env variable | `FINALRUN_API_KEY` | `GOOGLE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
+    | Billing | $5 free credits, then per-run via FinalRun | Standard provider API rates, billed by Google/OpenAI/Anthropic |
+    | Provider account | Not required | Required (one of the three above) |
+
+    Cloud is the fastest way to get started. BYOK is useful if your team already has a provider account, wants a specific model tier, or needs provider-side billing visibility.
   </Accordion>
 
   <Accordion title="Which AI providers does FinalRun support?">
-    FinalRun supports three AI providers. You bring your own key (BYOK) — costs are billed directly by your provider at standard API rates.
+    Three AI providers are supported when bringing your own key:
 
     | Provider | Supported models | Environment variable |
     |---|---|---|
@@ -20,28 +35,42 @@ FinalRun is an open-source, CLI-based tool — no account required, no platform 
     | OpenAI | GPT-5+ | `OPENAI_API_KEY` |
     | Anthropic | Claude Sonnet 4 / Opus 4+ | `ANTHROPIC_API_KEY` |
 
-    Set the key in your shell or in a `.env` file at your workspace root. You can also override it for a single run with the `--api-key` flag.
+    Costs are billed directly by your provider at standard API rates. Set the key in your shell, in a `.env` file at your workspace root, or pass `--api-key` for a single run.
+
+    Prefer not to provision a provider account? Use [FinalRun Cloud](/configuration/cloud-api-key) instead — set `FINALRUN_API_KEY` and you're done.
   </Accordion>
 
   <Accordion title="Does FinalRun work with real devices or only emulators?">
-    Currently FinalRun targets Android emulators (AVDs) and iOS simulators for local runs. Support for cloud devices and physical hardware is on the roadmap.
+    For local runs, FinalRun targets Android emulators (AVDs) and iOS simulators on your own machine.
 
-    If you want early access to cloud device support, [join the waitlist](https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor).
+    For cloud runs (`finalrun cloud test`), FinalRun executes against managed Android emulators and iOS simulators on FinalRun's hosted infrastructure — no local device required.
+
+    Support for **physical** cloud devices is on the roadmap. [Join the waitlist](https://docs.google.com/forms/d/e/1FAIpQLScOTaNWjvxIG8Ywn6THHYJuqBM-b86Y-Fx39YVoBVhHuBDZ2w/viewform?usp=publish-editor) for early access.
   </Accordion>
 
   <Accordion title="Which platforms does FinalRun support?">
-    - **Android** — any macOS, Linux, or Windows machine with Android SDK tools (`adb`, `emulator`, `scrcpy`) installed and a running Android Virtual Device.
-    - **iOS** — macOS only. Requires Xcode command line tools with `xcrun simctl`.
+    - **Android** — local execution works on macOS, Linux, or Windows with Android SDK tools (`adb`, `emulator`, `scrcpy`) installed and a running Android Virtual Device.
+    - **iOS** — local execution requires macOS with the full Xcode app (not just Command Line Tools).
+    - **Cloud** — `finalrun cloud test` works for both platforms from any host (macOS, Linux, or Windows). Use this when you can't or don't want to run a simulator locally.
 
-    Run `finalrun doctor` to check that all required dependencies are present on your machine before running tests.
+    Run `finalrun doctor` to check that all required dependencies are present on your machine before running tests locally.
   </Accordion>
 
   <Accordion title="How much does each test run cost?">
-    FinalRun itself is free and open-source. You pay your AI provider — Google, OpenAI, or Anthropic — for the tokens consumed during test execution. The cost depends on the model you choose and how long the test takes to complete. There are no additional charges from FinalRun.
+    FinalRun the CLI is free and open-source. AI execution is billed in one of two ways:
+
+    - **FinalRun Cloud** — new accounts include $5 of free credits. After that, runs are billed per execution. Sign up at [cloud.finalrun.app](https://cloud.finalrun.app).
+    - **BYOK** — you pay your AI provider (Google, OpenAI, or Anthropic) directly for tokens consumed during test execution. Cost depends on the model you choose and how long the test takes. FinalRun adds no markup.
   </Accordion>
 
   <Accordion title="Can I run FinalRun in CI/CD?">
-    Yes. Install the CLI in your CI environment and set the required environment variables — your AI provider API key, `ANDROID_HOME` (for Android), and any secrets your test specs reference. Then call `finalrun test` or `finalrun suite` as a step in your pipeline.
+    Yes. The simplest path is FinalRun Cloud — set `FINALRUN_API_KEY` as a CI secret and call `finalrun cloud test` as a pipeline step:
+
+    ```sh
+    finalrun cloud test smoke.yaml --platform android
+    ```
+
+    For BYOK, set your provider's API key (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`) plus any secrets your test specs reference. For local Android runs in CI, you also need `ANDROID_HOME` and a running emulator on the runner:
 
     ```sh
     finalrun test smoke.yaml --platform android --model google/gemini-3-flash-preview
@@ -75,20 +104,24 @@ FinalRun is an open-source, CLI-based tool — no account required, no platform 
     ```
   </Accordion>
 
-  <Accordion title="How do I use FinalRun with AI coding agents like Claude Code or Cursor?">
-    FinalRun ships a set of agent skills that let you generate tests, run them, and fix failures — all from your AI coding agent chat. Install the skills with:
+  <Accordion title="How do I use FinalRun with AI coding agents like Claude Code, Cursor, or Codex?">
+    FinalRun ships a set of agent skills that let you generate tests, run them, and fix failures — all from your AI coding agent chat. They work in **Claude Code, Cursor, and Codex** (and any other agent that supports the skills protocol).
+
+    The FinalRun installer registers the skills globally. To install or update them manually:
 
     ```sh
-    npx skills add final-run/finalrun-agent
+    npx skills add final-run/finalrun-agent -g
     ```
 
-    Once installed, three slash commands are available in your AI coding agent:
+    Three slash commands are then available:
 
     | Command | What it does |
     |---|---|
     | `/finalrun-generate-test` | Reads your source code, infers app identity, and generates complete YAML test specs |
     | `/finalrun-use-cli` | Validates and runs your tests using the CLI |
     | `/finalrun-test-and-fix` | Runs the full generate → run → diagnose → fix loop until the test is green |
+
+    See [AI Agent Skills](/running/ai-agent-skills) for details.
   </Accordion>
 
   <Accordion title="Where are test artifacts stored?">
