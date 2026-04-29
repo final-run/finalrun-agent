@@ -42,18 +42,6 @@ FinalRun ships as a standalone binary. The one-line installer downloads it, puts
 6. Runs `finalrun doctor` to verify host readiness.
 7. Detects existing API keys in your environment and prints next steps.
 
-### Alternative: install via npm
-
-If you already have Node.js 20+ and prefer npm, the package is also published to the registry:
-
-```bash
-npm install -g @finalrun/finalrun-agent
-```
-
-<Warning>
-  The npm release can lag behind GitHub releases by a few versions. The curl/PowerShell installers always fetch the latest release. Prefer them unless you have a specific reason to use npm.
-</Warning>
-
 ## Manual prerequisites
 
 The installer handles `scrcpy` and `applesimutils` for you. The tooling below isn't auto-installable — you have to provision it yourself before running local tests on that platform. Cloud-only users can skip this section entirely.
