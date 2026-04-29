@@ -1,53 +1,22 @@
 ---
 title: "Install FinalRun on macOS, Linux, or Windows"
 sidebarTitle: "Installation"
-description: "Pick a cloud-only or full local install, run the one-line installer for your OS, and verify your host with finalrun doctor."
+description: "Run the one-line installer for your OS and verify your host with finalrun doctor."
 ---
 
-FinalRun ships as a standalone binary. The one-line installer downloads it, puts it on your `PATH`, and — for full local installs — also walks you through Android and iOS host tooling. Once it finishes, you can jump straight to the [Quickstart](/quickstart).
-
-## Pick your install path
-
-<CardGroup cols={2}>
-  <Card title="Cloud-only" icon="cloud">
-    You'll only run `finalrun cloud test` against FinalRun's hosted infrastructure. No emulators or simulators on your machine.
-
-    Use the **`--ci`** flag below — it installs just the binary, skips the runtime tarball, host-tool prompts, and brew installs.
-  </Card>
-  <Card title="Full local" icon="laptop-code">
-    You want to run tests against an Android emulator or iOS simulator on this machine.
-
-    Use the default install — it adds the runtime, prompts you for Android/iOS tooling, and installs `scrcpy` / `applesimutils` via Homebrew when needed.
-  </Card>
-</CardGroup>
+FinalRun ships as a standalone binary. The one-line installer downloads it, puts it on your `PATH`, and walks you through Android and iOS host tooling. Once it finishes, you can jump straight to the [Quickstart](/quickstart).
 
 ## Install
 
 <Tabs>
   <Tab title="macOS">
-    **Full local install:**
-
     ```bash
     curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-    ```
-
-    **Cloud-only (`--ci`):**
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
     ```
   </Tab>
   <Tab title="Linux">
-    **Full local install:**
-
     ```bash
     curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-    ```
-
-    **Cloud-only (`--ci`):**
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash -s -- --ci
     ```
 
     Linux supports Android local execution. iOS testing is macOS-only — use `finalrun cloud test` for iOS from Linux.
@@ -55,29 +24,15 @@ FinalRun ships as a standalone binary. The one-line installer downloads it, puts
   <Tab title="Windows">
     Run in PowerShell:
 
-    **Full local install:**
-
     ```powershell
     irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
-    ```
-
-    **Cloud-only (non-interactive):**
-
-    ```powershell
-    $env:FINALRUN_NON_INTERACTIVE=1; irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
     ```
 
     Windows supports Android local execution. iOS testing is macOS-only — use `finalrun cloud test` for iOS from Windows.
   </Tab>
 </Tabs>
 
-<Note>
-  CI runners (`CI=1` in env) automatically use cloud-only behavior — `curl ... | bash` is enough, no flag needed.
-</Note>
-
 ### What the installer does
-
-The full local installer:
 
 1. Downloads the prebuilt `finalrun` binary to `~/.finalrun/bin/` and symlinks it to `~/.local/bin/finalrun` (or `%USERPROFILE%\.finalrun\bin\` on Windows).
 2. Updates your shell rc files (`.bashrc`, `.zshrc`, `.profile`, fish config) so `finalrun` is on your `PATH` in new shells.
@@ -86,8 +41,6 @@ The full local installer:
 5. Installs the FinalRun [AI agent skills](/running/ai-agent-skills) via `npx skills add` (requires Node.js 20+ — skipped with a warning if `npx` isn't available).
 6. Runs `finalrun doctor` to verify host readiness.
 7. Detects existing API keys in your environment and prints next steps.
-
-The `--ci` path stops after step 2.
 
 ### Alternative: install via npm
 
@@ -167,7 +120,6 @@ The installers read these environment variables:
 |---|---|
 | `FINALRUN_DIR` | Install root. Default: `$HOME/.finalrun` (`%USERPROFILE%\.finalrun` on Windows). |
 | `FINALRUN_VERSION` | Pin a specific version (e.g. `0.1.13`). Default: latest GitHub release. |
-| `FINALRUN_NON_INTERACTIVE` | Skip all prompts and host-tool setup. Same effect as `--ci`. |
 
 Pin a version:
 
