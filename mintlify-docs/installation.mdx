@@ -1,141 +1,111 @@
 ---
-title: "Install FinalRun: prerequisites, CLI setup, and host verification"
+title: "Install FinalRun on macOS, Linux, or Windows"
 sidebarTitle: "Installation"
-description: "Set up prerequisites, install the FinalRun CLI on macOS or Linux, and verify that your host is ready to run Android or iOS tests."
+description: "Run the one-line installer for your OS and verify your host with finalrun doctor."
 ---
 
-FinalRun runs as a Node.js CLI. This page walks you through the prerequisites, the install itself, and how to verify your machine is ready. Once `finalrun doctor` reports a clean bill of health, continue to the [Quickstart](/quickstart) to write and run your first test.
+FinalRun ships as a standalone binary. The one-line installer downloads it, puts it on your `PATH`, and walks you through Android and iOS host tooling. Once it finishes, you can jump straight to the [Quickstart](/quickstart).
 
-## Prerequisites
-
-Before installing FinalRun, make sure your machine has the following in place.
-
-### Node.js
-
-- **Node.js** 20.0.0 or later
-
-The one-line install script sets up Node.js for you if it isn't already present.
-
-### AI provider API key
-
-FinalRun is BYOK (bring your own key). Before your first test run, obtain an API key from one of the supported providers:
-
-| Provider | Environment variable |
-|---|---|
-| Google Gemini | `GOOGLE_API_KEY` |
-| OpenAI GPT | `OPENAI_API_KEY` |
-| Anthropic Claude | `ANTHROPIC_API_KEY` |
-
-You'll set the key during the Quickstart. See [AI Providers](/configuration/ai-providers) for details on choosing a model and configuring the key.
-
-### Platform tools
+## Install
 
 <Tabs>
-  <Tab title="Android">
-    Android tests run on emulators via `adb`. You need the Android SDK and a few additional tools on your PATH.
-
-    **Required:**
-
-    | Tool | How to provide |
-    |---|---|
-    | `adb` | Available through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH` |
-    | `emulator` | Must be on `PATH`; used to discover and boot Android Virtual Devices |
-    | `scrcpy` | Must be on `PATH`; used for screen recording during local runs |
-    | FinalRun Android driver assets | Installed automatically by the CLI during installation |
-
-    **Install the Android SDK** via [Android Studio](https://developer.android.com/studio) or the standalone command-line tools. Once installed, make sure `platform-tools` and `emulator` directories are on your `PATH`, or set `ANDROID_HOME` to your SDK root.
-
-    **Install scrcpy** using your system package manager:
-
-    <CodeGroup>
-    ```bash macOS
-    brew install scrcpy
+  <Tab title="macOS">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
     ```
-
-    ```bash Ubuntu / Debian
-    sudo apt install scrcpy
-    ```
-    </CodeGroup>
   </Tab>
-  <Tab title="iOS">
-    <Warning>
-      iOS testing requires macOS. It is not supported on Linux or Windows.
-    </Warning>
-
-    iOS tests run on simulators via Xcode's `xcrun simctl`. You need Xcode command line tools and a few standard utilities.
-
-    **Required:**
-
-    | Tool | Notes |
-    |---|---|
-    | macOS | iOS simulator support is macOS-only |
-    | Xcode command line tools | Provides `xcrun` |
-    | `xcrun simctl` | Used to manage and boot iOS simulators |
-    | `unzip` | Standard macOS utility |
-    | `/bin/bash` | Standard macOS shell |
-    | `plutil` | Standard macOS utility |
-    | FinalRun iOS driver archives | Installed automatically by the CLI during installation |
-
-    Install Xcode command line tools if you haven't already:
-
+  <Tab title="Linux">
     ```bash
-    xcode-select --install
+    curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
     ```
 
-    **Optional tools:**
+    Linux supports Android local execution. iOS testing is macOS-only — use `finalrun cloud test` for iOS from Linux.
+  </Tab>
+  <Tab title="Windows">
+    Run in PowerShell:
 
-    | Tool | Purpose |
-    |---|---|
-    | `ffmpeg` | Compresses iOS recordings after capture |
-    | `applesimutils` | Enables simulator permission helpers |
-
-    Install optional tools via Homebrew:
-
-    ```bash
-    brew install ffmpeg applesimutils
+    ```powershell
+    irm https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.ps1 | iex
     ```
+
+    Windows supports Android local execution. iOS testing is macOS-only — use `finalrun cloud test` for iOS from Windows.
   </Tab>
 </Tabs>
 
-## Install FinalRun
+### What the installer does
 
-**One-line install (recommended):**
+1. Downloads the prebuilt `finalrun` binary to `~/.finalrun/bin/` and symlinks it to `~/.local/bin/finalrun` (or `%USERPROFILE%\.finalrun\bin\` on Windows).
+2. Updates your shell rc files (`.bashrc`, `.zshrc`, `.profile`, fish config) so `finalrun` is on your `PATH` in new shells.
+3. Downloads the matching runtime tarball into `~/.finalrun/runtime/<version>/`.
+4. Prompts you for Android, iOS, or both, then installs `scrcpy` and/or `applesimutils` via Homebrew when missing.
+5. Installs the FinalRun [AI agent skills](/running/ai-agent-skills) via `npx skills add` (requires Node.js 20+ — skipped with a warning if `npx` isn't available).
+6. Runs `finalrun doctor` to verify host readiness.
+7. Detects existing API keys in your environment and prints next steps.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/final-run/finalrun-agent/main/scripts/install.sh | bash
-```
+## Manual prerequisites
 
-The script installs Node.js (if needed), the `finalrun` CLI globally, the bundled platform driver assets for Android and iOS, and the FinalRun AI agent skills for your coding agent.
+The tooling below isn't auto-installable — you have to provision it yourself before running local tests on that platform. Cloud-only users can skip this section entirely.
 
-**npm (if you already have Node.js 20+):**
+<Tabs>
+  <Tab title="Android (local)">
+    | Tool | How to provide |
+    |---|---|
+    | Android SDK | Install via [Android Studio](https://developer.android.com/studio) or the standalone command-line tools. Set `ANDROID_HOME` (or `ANDROID_SDK_ROOT`), or put `platform-tools` and `emulator` on your `PATH`. |
+    | `adb` | Ships with the Android SDK platform-tools. |
+  </Tab>
+  <Tab title="iOS (local, macOS only)">
+    <Warning>
+      iOS simulators require the **full Xcode app** from the App Store — Xcode Command Line Tools alone are not enough. The installer rejects CLT-only setups because `xcrun simctl` ships only with Xcode.
+    </Warning>
 
-```bash
-npm install -g @finalrun/finalrun-agent
-```
+    | Tool | How to provide |
+    |---|---|
+    | macOS | iOS simulator support is macOS-only. |
+    | Xcode (full app) | Install from the App Store, launch once to accept the license, then run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` if needed. |
+  </Tab>
+</Tabs>
 
-## Verify the installation
+## Verify
 
-Confirm the CLI is on your PATH:
+The interactive installer runs `finalrun doctor` for you at the end. To re-check at any time:
 
 ```bash
 finalrun --help
-```
-
-Then check host readiness for your target platform:
-
-```bash
 finalrun doctor
 ```
 
-`finalrun doctor` reports which required tools are present, missing, or misconfigured. You can also check a single platform:
+Check a single platform:
 
 ```bash
 finalrun doctor --platform android
 finalrun doctor --platform ios
 ```
 
-Fix any issues reported before running tests.
+If `finalrun` isn't found, open a new shell — the rc files were updated for new sessions. On Windows, restart your terminal.
+
+## Set an API key
+
+The fastest way to get started is FinalRun Cloud — sign up, drop in one key, and run. If you'd rather use your own AI provider account, that path works too.
+
+<CardGroup cols={2}>
+  <Card title="FinalRun Cloud — recommended" icon="cloud" href="/configuration/cloud-api-key">
+    Grab a [FinalRun Cloud API key](/configuration/cloud-api-key) at [cloud.finalrun.app](https://cloud.finalrun.app) and set `FINALRUN_API_KEY`. Managed AI, no provider account needed, and new accounts get $5 of free credits.
+  </Card>
+  <Card title="Bring your own provider key" icon="key" href="/configuration/ai-providers">
+    Use your own [Google, OpenAI, or Anthropic API key](/configuration/ai-providers) (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Standard provider billing applies.
+  </Card>
+</CardGroup>
+
+## Upgrade
+
+```bash
+finalrun upgrade
+```
+
+Pulls the latest release and replaces the binary and runtime in place.
 
 ## Next steps
 
-Once `finalrun doctor` reports your host as ready, follow the [Quickstart](/quickstart) guide to write and run your first test.
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Generate, run, and fix your first FinalRun test from your AI coding agent.
+</Card>
