@@ -53,6 +53,10 @@ test('IOSSimulator refreshes app IDs before launchApp', async () => {
       grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
+      async isAppInstalled(_deviceId: string, bundleId: string) {
+        calls.push(`isAppInstalled:${bundleId}`);
+        return { success: true, data: { bundleId, installed: true } };
+      },
       async listInstalledAppIds() {
         calls.push('listAppIds');
         return ['app.finalrun.iosUITests.xctrunner', 'org.wikipedia'];
@@ -83,10 +87,71 @@ test('IOSSimulator refreshes app IDs before launchApp', async () => {
   assert.equal(response.success, true);
   assert.equal(response.message, 'launched');
   assert.deepEqual(calls, [
+    'isAppInstalled:org.wikipedia',
     'listAppIds',
     'update:app.finalrun.iosUITests.xctrunner,org.wikipedia',
     'launch',
   ]);
+});
+
+test('IOSSimulator returns explicit failure when launching an app that is not installed', async () => {
+  const calls: string[] = [];
+  const grpcClient = {
+    isConnected: true,
+    async updateAppIds() {
+      calls.push('grpc:updateAppIds');
+      return { success: true };
+    },
+    async launchApp() {
+      calls.push('grpc:launch');
+      return { success: true, message: 'launched' };
+    },
+    close() {},
+  };
+
+  const runtime = new IOSSimulator({
+    commonDriverActions: new CommonDriverActions({
+      grpcClient: grpcClient as unknown as GrpcDriverClient,
+    }),
+    simctlClient: {
+      async isAppInstalled(_deviceId: string, bundleId: string) {
+        calls.push(`isAppInstalled:${bundleId}`);
+        return {
+          success: false,
+          message: `App not installed: ${bundleId}`,
+          data: { bundleId, installed: false },
+        };
+      },
+      async listInstalledAppIds() {
+        calls.push('listAppIds');
+        return [];
+      },
+      async terminateApp() {},
+      async listInstalledApps() {
+        return [];
+      },
+      async openUrl() {
+        return true;
+      },
+    } as never,
+    deviceId: 'SIM-1',
+    ...stubRecoveryParams(),
+  });
+
+  const response = await runtime.launchApp(
+    new LaunchAppAction({
+      appUpload: new AppUpload({
+        id: '',
+        platform: 'ios',
+        packageName: 'org.wikimedia.wikipedia',
+      }),
+      allowAllPermissions: false,
+    }),
+  );
+
+  assert.equal(response.success, false);
+  assert.match(response.message ?? '', /not installed: org\.wikimedia\.wikipedia/i);
+  assert.deepEqual(calls, ['isAppInstalled:org.wikimedia.wikipedia']);
 });
 
 test('IOSSimulator routes scroll through gRPC swipe and installed-app listing through simctl', async () => {
@@ -305,6 +370,9 @@ test('IOSSimulator fails explicitly when clearState is requested without reinsta
       grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
+      async isAppInstalled(_deviceId: string, bundleId: string) {
+        return { success: true, data: { bundleId, installed: true } };
+      },
       async listInstalledAppIds() {
         return ['org.wikipedia'];
       },
@@ -368,6 +436,9 @@ test('IOSSimulator continues launch when allowAllPermissions warns about missing
       grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
+      async isAppInstalled(_deviceId: string, bundleId: string) {
+        return { success: true, data: { bundleId, installed: true } };
+      },
       async listInstalledAppIds() {
         calls.push('simctl:listAppIds');
         return ['org.wikipedia'];
@@ -451,6 +522,9 @@ test('IOSSimulator applies supported custom permissions through simctl before la
       grpcClient: grpcClient as unknown as GrpcDriverClient,
     }),
     simctlClient: {
+      async isAppInstalled(_deviceId: string, bundleId: string) {
+        return { success: true, data: { bundleId, installed: true } };
+      },
       async listInstalledAppIds() {
         calls.push('simctl:listAppIds');
         return ['org.wikipedia'];

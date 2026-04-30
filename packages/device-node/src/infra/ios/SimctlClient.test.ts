@@ -38,6 +38,47 @@ test('SimctlClient.listInstalledApps parses app metadata from simctl listapps', 
   );
 });
 
+test('SimctlClient.isAppInstalled returns success when bundle id is in listapps output', async () => {
+  const simctlClient = new SimctlClient({
+    execFileFn: async () => ({
+      stdout: JSON.stringify({
+        'org.wikipedia': { CFBundleDisplayName: 'Wikipedia' },
+      }),
+      stderr: '',
+    }),
+  });
+
+  const present = await simctlClient.isAppInstalled('SIM-1', 'org.wikipedia');
+  assert.equal(present.success, true);
+  assert.deepEqual(present.data, { bundleId: 'org.wikipedia', installed: true });
+
+  const absent = await simctlClient.isAppInstalled(
+    'SIM-1',
+    'org.wikimedia.wikipedia',
+  );
+  assert.equal(absent.success, false);
+  assert.match(absent.message ?? '', /not installed: org\.wikimedia\.wikipedia/i);
+  assert.deepEqual(absent.data, {
+    bundleId: 'org.wikimedia.wikipedia',
+    installed: false,
+  });
+});
+
+test('SimctlClient.isAppInstalled flags query failures distinctly from absent apps', async () => {
+  const simctlClient = new SimctlClient({
+    execFileFn: async () => {
+      throw new Error('simctl listapps unavailable');
+    },
+  });
+
+  const result = await simctlClient.isAppInstalled('SIM-1', 'org.wikipedia');
+  assert.equal(result.success, false);
+  assert.match(result.message ?? '', /simctl listapps unavailable|Failed to query installed apps/i);
+  assert.equal(result.data?.['checkFailed'], true);
+  assert.equal(result.data?.['installed'], false);
+  assert.equal(result.data?.['bundleId'], 'org.wikipedia');
+});
+
 test('SimctlClient.installApp uses simctl install for app overrides', async () => {
   const execCalls: Array<{ file: string; args: readonly string[] }> = [];
   const simctlClient = new SimctlClient({

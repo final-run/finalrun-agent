@@ -388,6 +388,35 @@ export class SimctlClient {
     return DeviceAppInfo.getAppIdList(apps);
   }
 
+  async isAppInstalled(
+    deviceId: string,
+    bundleId: string,
+  ): Promise<IOSCommandResult> {
+    // Go through _listInstalledAppMetadata directly rather than
+    // listInstalledAppIds: the latter swallows simctl/plutil query failures
+    // into an empty array, which would mask "couldn't query" as "not
+    // installed" and falsely abort launches on transient simulator errors.
+    const metadata = await this._listInstalledAppMetadata(deviceId);
+    if (!metadata.success || !metadata.data?.['apps']) {
+      return {
+        success: false,
+        message:
+          metadata.message ?? `Failed to query installed apps on ${deviceId}`,
+        data: { bundleId, installed: false, checkFailed: true },
+      };
+    }
+
+    const apps = metadata.data['apps'] as Array<Record<string, unknown>>;
+    const installed = apps.some((app) => app['bundleId'] === bundleId);
+    return {
+      success: installed,
+      message: installed
+        ? `App installed: ${bundleId}`
+        : `App not installed: ${bundleId}`,
+      data: { bundleId, installed },
+    };
+  }
+
   async getAppExecutableName(deviceId: string, bundleId: string): Promise<string | null> {
     const metadata = await this._listInstalledAppMetadata(deviceId);
     if (!metadata.success || !metadata.data?.['apps']) return null;
