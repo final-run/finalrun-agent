@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "npm run clean && tsc",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "clean": "node -e \"const fs=require('node:fs'); for (const p of ['dist','tsconfig.tsbuildinfo']) fs.rmSync(p,{recursive:true,force:true});\"",
     "test": "node --test \"dist/**/*.test.js\""
   },
   "dependencies": {

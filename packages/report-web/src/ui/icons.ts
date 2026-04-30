@@ -18,16 +18,9 @@ export const LOCAL_ICON_SRC = svgDataUri(
   '<svg width="65" height="48" viewBox="0 0 65 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="63" height="42" rx="8" stroke="#707EAE" stroke-width="2"/><line x1="16" y1="47" x2="52" y2="47" stroke="#707EAE" stroke-width="2" stroke-linecap="round"/></svg>',
 );
 
-// Inline stroke-based SVGs used inside summary cards and buttons.
-
-export const PLAY_CIRCLE_ICON_SVG =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M10.4 8.8l5.2 3.2-5.2 3.2z" fill="currentColor" stroke="none"></path></svg>';
-
-export const CHECK_CIRCLE_ICON_SVG =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M8.8 12.2l2.1 2.1 4.3-4.6"></path></svg>';
-
-export const TIMER_ICON_SVG =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7"></circle><path d="M12 13V9.5"></path><path d="M15 5h-6"></path></svg>';
+// Inline stroke-based SVGs used inside buttons. The summary-card icons that
+// were here previously have moved to iconNodes.tsx as React elements so the
+// SummaryCard prop can be typed as ReactNode (no dangerouslySetInnerHTML).
 
 export const BACK_ARROW_ICON_SVG =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"></path></svg>';

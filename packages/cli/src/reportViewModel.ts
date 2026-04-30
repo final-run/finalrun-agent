@@ -21,6 +21,25 @@ import { loadRunIndex } from './runIndex.js';
 const MISSING_WORKSPACE_CONFIG_ERROR =
   'The FinalRun report server is missing workspace configuration. Start it with `finalrun start-server`.';
 
+export class RunManifestNotFoundError extends Error {
+  constructor(runId: string) {
+    super(`Run manifest not found for runId: ${runId}`);
+    this.name = 'RunManifestNotFoundError';
+  }
+}
+
+// Resolve `parts` relative to `baseDir` and refuse to escape it. Returns
+// undefined when the resolved path lies outside the base — callers turn that
+// into a not-found / rejection instead of touching the filesystem.
+export function safeResolveWithin(baseDir: string, ...parts: string[]): string | undefined {
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(base, ...parts);
+  if (resolved === base || resolved.startsWith(`${base}${path.sep}`)) {
+    return resolved;
+  }
+  return undefined;
+}
+
 export interface ReportWorkspaceContext {
   workspaceRoot: string;
   artifactsDir: string;
@@ -92,8 +111,19 @@ export async function loadRunManifestRecord(
   runId: string,
   context: ReportWorkspaceContext = resolveReportWorkspaceContext(),
 ): Promise<RunManifest> {
-  const runJsonPath = path.join(context.artifactsDir, runId, 'run.json');
-  const raw = await fsp.readFile(runJsonPath, 'utf-8');
+  const runJsonPath = safeResolveWithin(context.artifactsDir, runId, 'run.json');
+  if (!runJsonPath) {
+    throw new RunManifestNotFoundError(runId);
+  }
+  let raw: string;
+  try {
+    raw = await fsp.readFile(runJsonPath, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new RunManifestNotFoundError(runId);
+    }
+    throw error;
+  }
   const parsed = JSON.parse(raw) as RunManifest;
   if (parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3) {
     throw new Error(`Unsupported schema version: ${parsed.schemaVersion}`);
@@ -165,8 +195,13 @@ async function readRunArtifactText(
   const normalizedPath = normalizeRunArtifactPath(runId, artifactPath);
   if (!normalizedPath) return undefined;
 
+  const runRoot = safeResolveWithin(context.artifactsDir, runId);
+  if (!runRoot) return undefined;
+  const artifactFsPath = safeResolveWithin(runRoot, normalizedPath);
+  if (!artifactFsPath) return undefined;
+
   try {
-    return await fsp.readFile(path.join(context.artifactsDir, runId, normalizedPath), 'utf-8');
+    return await fsp.readFile(artifactFsPath, 'utf-8');
   } catch {
     return undefined;
   }

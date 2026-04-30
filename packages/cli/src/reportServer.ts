@@ -12,9 +12,11 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { pipeline } from 'node:stream/promises';
 import {
   loadReportIndexViewModel,
   loadReportRunManifestViewModel,
+  RunManifestNotFoundError,
   type ReportWorkspaceContext,
 } from './reportViewModel.js';
 import { decodeArtifactPath, serveArtifactHttp } from './reportArtifactStream.js';
@@ -71,10 +73,14 @@ export async function serveReportWorkspace(params: {
         try {
           writeJson(response, 200, await loadReportRunManifestViewModel(runId, context));
         } catch (error) {
-          writeJson(response, 404, {
-            status: 'error',
-            message: error instanceof Error ? error.message : String(error),
-          });
+          if (error instanceof RunManifestNotFoundError) {
+            writeJson(response, 404, { status: 'error', message: error.message });
+          } else {
+            writeJson(response, 500, {
+              status: 'error',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
         return;
       }
@@ -192,7 +198,20 @@ async function tryServeFile(
     response.end();
     return true;
   }
-  fs.createReadStream(filePath).pipe(response);
+  try {
+    await pipeline(fs.createReadStream(filePath), response);
+  } catch {
+    if (!response.headersSent) {
+      response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Failed to stream file.');
+    } else {
+      response.destroy();
+    }
+    // Response is already finalized (500 sent) or destroyed; signal "handled"
+    // so serveSpaAsset doesn't fall through to the SPA index.html and try to
+    // write to a closed response.
+    return true;
+  }
   return true;
 }
 
