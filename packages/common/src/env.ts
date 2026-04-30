@@ -4,7 +4,7 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
-import { REASONING_LEVELS, type ReasoningLevel } from '@finalrun/common';
+import { REASONING_LEVELS, type ReasoningLevel } from './constants.js';
 export {
   MODEL_FORMAT_EXAMPLE,
   PROVIDER_ENV_VARS,
@@ -13,7 +13,7 @@ export {
   parseModel,
   type ParsedModel,
   type SupportedProvider,
-} from '@finalrun/common';
+} from './constants.js';
 
 /**
  * Environment configuration for the CLI.

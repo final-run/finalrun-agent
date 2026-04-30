@@ -16,6 +16,10 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "test": "node --test \"dist/**/*.test.js\""
   },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "yaml": "^2.8.2"
+  },
   "devDependencies": {
     "typescript": "^6.0.3"
   }

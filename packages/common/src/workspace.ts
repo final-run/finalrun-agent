@@ -1,22 +1,26 @@
 import * as crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   ALL_FEATURES,
   PLATFORM_ANDROID,
   PLATFORM_IOS,
-  type AppConfig,
   type FeatureName,
   type FeatureOverride,
   type FeatureOverrides,
   type ReasoningLevel,
-} from '@finalrun/common';
+} from './constants.js';
+import type { AppConfig } from './models/Environment.js';
 import YAML from 'yaml';
 import { readAppConfig } from './appConfig.js';
 import { parseReasoningLevel } from './env.js';
-import { resolveFinalRunRootDir } from './runtimePaths.js';
 import { promptForWorkspaceSelection, type WorkspaceSelectionIO } from './workspacePicker.js';
+
+function resolveFinalRunRootDir(): string {
+  return path.join(os.homedir(), '.finalrun');
+}
 
 export interface FinalRunWorkspace {
   rootDir: string;

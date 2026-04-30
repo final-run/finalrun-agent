@@ -23,8 +23,8 @@ import {
 } from '@finalrun/goal-executor';
 import type { TestExecutionResult } from '@finalrun/goal-executor';
 import type { DeviceLogCaptureResult } from '@finalrun/common';
-import type { ResolvedAppConfig } from './appConfig.js';
-import { CliFilePathUtil } from './filePathUtil.js';
+import type { ResolvedAppConfig } from '@finalrun/common';
+import { CliFilePathUtil } from '@finalrun/device-node';
 import {
   type DeviceSelectionIO,
   printInventorySummary,

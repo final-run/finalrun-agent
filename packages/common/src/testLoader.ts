@@ -1,14 +1,14 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import YAML from 'yaml';
+import type { TestDefinition } from './models/TestDefinition.js';
+import type { SuiteDefinition } from './models/SuiteDefinition.js';
 import type {
-  TestDefinition,
-  SuiteDefinition,
   EnvironmentConfig,
   VariableValue,
   RuntimeBindings,
   SecretReference,
-} from '@finalrun/common';
+} from './models/Environment.js';
 import { readAppConfig } from './appConfig.js';
 import { sanitizeId } from './workspace.js';
 import { CliEnv } from './env.js';

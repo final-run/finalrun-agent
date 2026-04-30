@@ -17,7 +17,7 @@ import {
   stopWorkspaceReportServer,
   writeWorkspaceReportServerState,
 } from './reportServerManager.js';
-import type { FinalRunWorkspace } from './workspace.js';
+import type { FinalRunWorkspace } from '@finalrun/common';
 
 function createWorkspace(): FinalRunWorkspace {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-report-manager-'));

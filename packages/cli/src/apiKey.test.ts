@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { CliEnv } from './env.js';
+import { CliEnv } from '@finalrun/common';
 import { resolveApiKey, resolveApiKeys } from './apiKey.js';
 
 function createEnv(values: Record<string, string>) {

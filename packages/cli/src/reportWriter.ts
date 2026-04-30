@@ -27,7 +27,7 @@ import {
 } from '@finalrun/common';
 import type { TestExecutionResult, AgentActionResult } from '@finalrun/goal-executor';
 import type { DeviceLogCaptureResult } from '@finalrun/common';
-import type { LoadedEnvironmentConfig } from './testLoader.js';
+import type { LoadedEnvironmentConfig } from '@finalrun/common';
 
 interface TestSnapshotState {
   authored: {

@@ -3,7 +3,7 @@ import * as net from 'node:net';
 import * as path from 'node:path';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import type { ReportServerState } from '@finalrun/common';
-import type { FinalRunWorkspace } from './workspace.js';
+import type { FinalRunWorkspace } from '@finalrun/common';
 import { resolveCliLaunchArgs, resolveFinalRunRootDir } from './runtimePaths.js';
 
 const DEFAULT_REPORT_SERVER_PORT = 4173;

@@ -1,4 +1,4 @@
-import { PROVIDER_ENV_VARS, type CliEnv } from './env.js';
+import { PROVIDER_ENV_VARS, type CliEnv } from '@finalrun/common';
 
 export function resolveApiKey(params: {
   env: Pick<CliEnv, 'get'>;

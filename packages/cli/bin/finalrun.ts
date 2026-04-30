@@ -3,16 +3,16 @@
 
 import { Command } from 'commander';
 import { Logger, LogLevel, type TestResult } from '@finalrun/common';
-import { formatResolvedAppSummary } from '../src/appConfig.js';
+import { formatResolvedAppSummary } from '@finalrun/common';
 import {
   CliEnv,
   MODEL_FORMAT_EXAMPLE,
   SUPPORTED_AI_PROVIDERS_LABEL,
   parseModel,
-} from '../src/env.js';
+} from '@finalrun/common';
 import { resolveApiKeys } from '../src/apiKey.js';
-import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '../src/checkRunner.js';
-import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '../src/testSelection.js';
+import { runCheck, SUITE_SELECTOR_CONFLICT_ERROR } from '@finalrun/common';
+import { normalizeTestSelectors, TEST_SELECTION_REQUIRED_ERROR } from '@finalrun/common';
 import { runCloud, uploadApp } from '../src/cloudRunner.js';
 import { formatRunIndexForConsole, loadRunIndex } from '../src/runIndex.js';
 import { initializeCliRuntimeEnvironment, resolveCliPackageVersion } from '../src/runtimePaths.js';
@@ -21,8 +21,8 @@ import {
   resolveConfiguredEnvironmentFile,
   resolveWorkspace,
   resolveWorkspaceForCommand,
-} from '../src/workspace.js';
-import { WorkspaceSelectionCancelledError } from '../src/workspacePicker.js';
+} from '@finalrun/common';
+import { WorkspaceSelectionCancelledError } from '@finalrun/common';
 import { LocalRuntimeMissingError, resolveLocalRuntime } from '../src/localRuntime.js';
 import { runUpgrade } from '../src/upgradeCommand.js';
 // Type-only imports — erased at runtime, do not pull the heavy module graph.

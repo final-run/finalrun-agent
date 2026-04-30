@@ -103,3 +103,51 @@ export {
   containsSecretPlaceholder,
   redactResolvedValue,
 } from './repoPlaceholders.js';
+
+// Test runner pipeline (relocated from @finalrun/finalrun-agent)
+export {
+  runCheck,
+  SUITE_SELECTOR_CONFLICT_ERROR,
+  type CheckRunnerOptions,
+  type CheckRunnerResult,
+} from './checkRunner.js';
+export { CliEnv, parseReasoningLevel } from './env.js';
+export {
+  resolveAppConfig,
+  resolveAppOverrideIdentifier,
+  readAppConfig,
+  formatResolvedAppSummary,
+  type ResolvedAppConfig,
+  type ValidatedAppOverrideLike,
+} from './appConfig.js';
+export {
+  loadEnvironmentConfig,
+  loadTest,
+  loadTestSuite,
+  validateTestBindings,
+  type LoadedEnvironmentConfig,
+} from './testLoader.js';
+export {
+  TEST_SELECTION_REQUIRED_ERROR,
+  normalizeTestSelectors,
+  selectTestFiles,
+} from './testSelection.js';
+export {
+  resolveWorkspace,
+  resolveWorkspaceForCommand,
+  loadWorkspaceConfig,
+  resolveConfiguredEnvironmentFile,
+  resolveSuiteManifestPath,
+  validateAppOverride,
+  sanitizeId,
+  assertPathWithinRoot,
+  isYamlFile,
+  createRunId,
+  type AppOverrideValidationResult,
+  type FinalRunWorkspace,
+} from './workspace.js';
+export {
+  promptForWorkspaceSelection,
+  WorkspaceSelectionCancelledError,
+  type WorkspaceSelectionIO,
+} from './workspacePicker.js';

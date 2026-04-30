@@ -3,8 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { PLATFORM_ANDROID, PLATFORM_IOS, type DeviceNodeResponse } from '@finalrun/common';
-import { AndroidRecordingProvider, IOSRecordingProvider } from '@finalrun/device-node';
-import { CliFilePathUtil } from './filePathUtil.js';
+import { AndroidRecordingProvider, CliFilePathUtil, IOSRecordingProvider } from '@finalrun/device-node';
 
 const execFileAsync = promisify(execFile);
 
