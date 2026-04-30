@@ -64,6 +64,21 @@ test('SimctlClient.isAppInstalled returns success when bundle id is in listapps 
   });
 });
 
+test('SimctlClient.isAppInstalled flags query failures distinctly from absent apps', async () => {
+  const simctlClient = new SimctlClient({
+    execFileFn: async () => {
+      throw new Error('simctl listapps unavailable');
+    },
+  });
+
+  const result = await simctlClient.isAppInstalled('SIM-1', 'org.wikipedia');
+  assert.equal(result.success, false);
+  assert.match(result.message ?? '', /simctl listapps unavailable|Failed to query installed apps/i);
+  assert.equal(result.data?.['checkFailed'], true);
+  assert.equal(result.data?.['installed'], false);
+  assert.equal(result.data?.['bundleId'], 'org.wikipedia');
+});
+
 test('SimctlClient.installApp uses simctl install for app overrides', async () => {
   const execCalls: Array<{ file: string; args: readonly string[] }> = [];
   const simctlClient = new SimctlClient({
