@@ -388,6 +388,21 @@ export class SimctlClient {
     return DeviceAppInfo.getAppIdList(apps);
   }
 
+  async isAppInstalled(
+    deviceId: string,
+    bundleId: string,
+  ): Promise<IOSCommandResult> {
+    const appIds = await this.listInstalledAppIds(deviceId);
+    const installed = appIds.includes(bundleId);
+    return {
+      success: installed,
+      message: installed
+        ? `App installed: ${bundleId}`
+        : `App not installed: ${bundleId}`,
+      data: { bundleId, installed },
+    };
+  }
+
   async getAppExecutableName(deviceId: string, bundleId: string): Promise<string | null> {
     const metadata = await this._listInstalledAppMetadata(deviceId);
     if (!metadata.success || !metadata.data?.['apps']) return null;

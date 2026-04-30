@@ -38,6 +38,32 @@ test('SimctlClient.listInstalledApps parses app metadata from simctl listapps', 
   );
 });
 
+test('SimctlClient.isAppInstalled returns success when bundle id is in listapps output', async () => {
+  const simctlClient = new SimctlClient({
+    execFileFn: async () => ({
+      stdout: JSON.stringify({
+        'org.wikipedia': { CFBundleDisplayName: 'Wikipedia' },
+      }),
+      stderr: '',
+    }),
+  });
+
+  const present = await simctlClient.isAppInstalled('SIM-1', 'org.wikipedia');
+  assert.equal(present.success, true);
+  assert.deepEqual(present.data, { bundleId: 'org.wikipedia', installed: true });
+
+  const absent = await simctlClient.isAppInstalled(
+    'SIM-1',
+    'org.wikimedia.wikipedia',
+  );
+  assert.equal(absent.success, false);
+  assert.match(absent.message ?? '', /not installed: org\.wikimedia\.wikipedia/i);
+  assert.deepEqual(absent.data, {
+    bundleId: 'org.wikimedia.wikipedia',
+    installed: false,
+  });
+});
+
 test('SimctlClient.installApp uses simctl install for app overrides', async () => {
   const execCalls: Array<{ file: string; args: readonly string[] }> = [];
   const simctlClient = new SimctlClient({

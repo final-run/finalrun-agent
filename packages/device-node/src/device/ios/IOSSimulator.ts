@@ -116,6 +116,14 @@ export class IOSSimulator implements DeviceRuntime {
   }
 
   async launchApp(action: LaunchAppAction): Promise<DeviceNodeResponse> {
+    const presenceCheck = await this._simctlClient.isAppInstalled(
+      this._deviceId,
+      action.appUpload.packageName,
+    );
+    if (!presenceCheck.success) {
+      return this._toResponse(presenceCheck);
+    }
+
     try {
       await this.refreshInstalledAppIds({ throwOnFailure: false });
     } catch (error) {
