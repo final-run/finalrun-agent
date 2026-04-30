@@ -1,5 +1,6 @@
 // Barrel export for @finalrun/device-node
 
+export { CliFilePathUtil } from './filePathUtil.js';
 export { DeviceNode } from './DeviceNode.js';
 export { Device } from './device/Device.js';
 export { AndroidDevice } from './device/android/AndroidDevice.js';

@@ -1,12 +1,12 @@
 // Barrel export for @finalrun/cli
 
-export { CliEnv } from './env.js';
-export { parseModel } from './env.js';
+export { CliEnv } from '@finalrun/common';
+export { parseModel } from '@finalrun/common';
 export { runGoal } from './sessionRunner.js';
 export type { TestSessionConfig } from './sessionRunner.js';
-export { CliFilePathUtil } from './filePathUtil.js';
+export { CliFilePathUtil } from '@finalrun/device-node';
 export { TerminalRenderer } from './terminalRenderer.js';
-export { runCheck } from './checkRunner.js';
+export { runCheck } from '@finalrun/common';
 export { runTests } from './testRunner.js';
 export { loadRunIndex, rebuildRunIndex, formatRunIndexForConsole } from './runIndex.js';
 export {

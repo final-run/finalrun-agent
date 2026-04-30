@@ -21,14 +21,14 @@ import {
 import {
   formatResolvedAppSummary,
   type ResolvedAppConfig,
-} from './appConfig.js';
+} from '@finalrun/common';
 import { formatDiagnosticsForOutput } from './deviceInventoryPresenter.js';
 import { compileTestObjective } from './testCompiler.js';
 import type { ExecutionStatus } from '@finalrun/goal-executor';
-import { runCheck, type CheckRunnerOptions, type CheckRunnerResult } from './checkRunner.js';
+import { runCheck, type CheckRunnerOptions, type CheckRunnerResult } from '@finalrun/common';
 import { ReportWriter } from './reportWriter.js';
 import { rebuildRunIndex } from './runIndex.js';
-import type { LoadedEnvironmentConfig } from './testLoader.js';
+import type { LoadedEnvironmentConfig } from '@finalrun/common';
 import {
   formatHostPreflightReport,
   resolveTestRequestedPlatforms,
@@ -39,7 +39,7 @@ import {
   createRunId,
   resolveWorkspace,
   type FinalRunWorkspace,
-} from './workspace.js';
+} from '@finalrun/common';
 
 export interface TestRunnerOptions extends CheckRunnerOptions {
   apiKeys: Record<string, string>;

@@ -2,11 +2,8 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
-import {
-  PLATFORM_ANDROID,
-  PLATFORM_IOS,
-  type AppConfig,
-} from '@finalrun/common';
+import { PLATFORM_ANDROID, PLATFORM_IOS } from './constants.js';
+import type { AppConfig } from './models/Environment.js';
 
 const execFileAsync = promisify(execFile);
 const APP_TOP_LEVEL_KEYS = new Set(['name', 'packageName', 'bundleId']);

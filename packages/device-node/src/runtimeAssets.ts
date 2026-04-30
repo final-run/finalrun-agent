@@ -1,9 +1,20 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveCliCacheRoot } from './runtimePaths.js';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pkgVersion: string = (require('../package.json') as { version?: string }).version ?? '0.0.0';
+
+function resolveAssetCacheRoot(): string {
+  const override = process.env['FINALRUN_CACHE_DIR'];
+  if (override && override.trim()) {
+    return path.resolve(override, pkgVersion);
+  }
+  return path.join(os.homedir(), '.finalrun', 'assets', pkgVersion);
+}
 
 export type RuntimeAssetKind =
   | 'android-driver-apk'
@@ -70,7 +81,7 @@ export class RuntimeAssetStore {
   constructor(resourceDir?: string, options?: RuntimeAssetStoreOptions) {
     this._resourceDir = resourceDir
       ? path.resolve(resourceDir)
-      : resolveLocalResourceDir() ?? resolveCliCacheRoot();
+      : resolveLocalResourceDir() ?? resolveAssetCacheRoot();
     this._downloadAssets = options?.downloadAssets === true;
   }
 

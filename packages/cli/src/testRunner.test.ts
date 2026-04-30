@@ -19,7 +19,7 @@ import {
   selectExecutionPlatform,
   testRunnerDependencies,
 } from './testRunner.js';
-import { resolveWorkspace } from './workspace.js';
+import { resolveWorkspace } from '@finalrun/common';
 
 function createDevice(platform: string): { getPlatform(): string } {
   return {

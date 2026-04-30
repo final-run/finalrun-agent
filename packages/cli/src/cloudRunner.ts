@@ -3,7 +3,7 @@
 // and upload logic lives in cloud-core so the slim cloud-only binary can use
 // it without pulling the local-runtime dependency graph.
 
-import { runCheck } from './checkRunner.js';
+import { runCheck } from '@finalrun/common';
 import {
   submitRun,
   uploadApp as uploadAppCore,

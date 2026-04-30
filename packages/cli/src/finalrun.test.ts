@@ -8,7 +8,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { PLATFORM_ANDROID, PLATFORM_IOS } from '@finalrun/common';
 import { runDoctorCommand } from './doctorRunner.js';
-import { resolveWorkspace } from './workspace.js';
+import { resolveWorkspace } from '@finalrun/common';
 
 const CLI_TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'finalrun-cli-home-'));
 

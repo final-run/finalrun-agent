@@ -1,4 +1,6 @@
-import { type SuiteDefinition, type TestDefinition, type RunTarget } from '@finalrun/common';
+import type { SuiteDefinition } from './models/SuiteDefinition.js';
+import type { TestDefinition } from './models/TestDefinition.js';
+import type { RunTarget } from './models/RunManifest.js';
 import { CliEnv } from './env.js';
 import {
   resolveAppOverrideIdentifier,
