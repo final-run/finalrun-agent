@@ -15,11 +15,22 @@ import type { DeviceRuntime } from '../device/shared/DeviceRuntime.js';
 import { AdbClient } from '../infra/android/AdbClient.js';
 import { SimctlClient } from '../infra/ios/SimctlClient.js';
 import { GrpcDriverClient } from './GrpcDriverClient.js';
+import { GrpcPortAllocator } from './GrpcPortAllocator.js';
 import {
   AndroidDeviceSetup,
   type AndroidDriverProcessHandle,
 } from './setup/AndroidDeviceSetup.js';
 import { IOSSimulatorSetup } from './setup/IOSSimulatorSetup.js';
+
+// iOS port pool. Lives above the AdbClient pool (DEFAULT_GRPC_PORT_START
+// + 100 slots) so an Android emulator and an iOS simulator running on the
+// same host can never both try to bind the same loopback port. Without this
+// they both used to land on DEFAULT_GRPC_PORT_START, the iOS gRPC client
+// would connect to the Android instrumentation driver, and launchApp came
+// back with Android's "Cannot launch: <pkg>, maybe the app is not present"
+// — see PR notes for the failing PROD run.
+const IOS_GRPC_PORT_RANGE_START = 50151;
+const IOS_GRPC_PORT_RANGE_END = IOS_GRPC_PORT_RANGE_START + 100;
 
 const execFileAsync = promisify(execFile);
 
@@ -45,6 +56,7 @@ export class GrpcDriverSetup {
   ) => AndroidDriverProcessHandle;
   private _androidDeviceSetup: AndroidDeviceSetup;
   private _iosSimulatorSetup: IOSSimulatorSetup;
+  private _iosPortAllocator: GrpcPortAllocator;
 
   constructor(params: {
     adbClient: AdbClient;
@@ -60,6 +72,7 @@ export class GrpcDriverSetup {
       deviceSerial: string,
       port: number,
     ) => AndroidDriverProcessHandle;
+    iosPortAllocator?: GrpcPortAllocator;
   }) {
     this._adbClient = params.adbClient;
     this._simctlClient = params.simctlClient;
@@ -75,6 +88,12 @@ export class GrpcDriverSetup {
       params.startAndroidDriverFn ??
       ((adbPath, deviceSerial, port) =>
         this._startAndroidDriver(adbPath, deviceSerial, port));
+    this._iosPortAllocator =
+      params.iosPortAllocator ??
+      new GrpcPortAllocator({
+        rangeStart: IOS_GRPC_PORT_RANGE_START,
+        rangeEnd: IOS_GRPC_PORT_RANGE_END,
+      });
 
     this._androidDeviceSetup = new AndroidDeviceSetup({
       adbClient: this._adbClient,
@@ -93,6 +112,7 @@ export class GrpcDriverSetup {
       captureReadinessTimeoutMs: this._captureReadinessTimeoutMs,
       captureReadinessDelayMs: this._captureReadinessDelayMs,
       killStaleHostProcessesOnPortFn: this._killStaleHostProcessesOnPortFn,
+      portAllocator: this._iosPortAllocator,
     });
   }
 

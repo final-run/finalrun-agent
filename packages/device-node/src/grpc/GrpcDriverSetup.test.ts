@@ -12,6 +12,20 @@ import type { AdbClient } from '../infra/android/AdbClient.js';
 import type { IOSDriverProcessHandle, SimctlClient } from '../infra/ios/SimctlClient.js';
 import type { GrpcDriverClient, GrpcScreenshotResponse } from './GrpcDriverClient.js';
 import { GrpcDriverSetup } from './GrpcDriverSetup.js';
+import { GrpcPortAllocator } from './GrpcPortAllocator.js';
+
+/**
+ * Allocator used by iOS-path tests. Mirrors the default range
+ * (50151 + 100 slots) but skips the kernel bindability probe so tests are
+ * deterministic regardless of what's listening on the host.
+ */
+function stubIOSPortAllocator(): GrpcPortAllocator {
+  return new GrpcPortAllocator({
+    rangeStart: 50151,
+    rangeEnd: 50251,
+    isPortBindable: async () => true,
+  });
+}
 
 class FakeGrpcClient {
   channelCreations: Array<{ host: string; port: number }> = [];
@@ -717,6 +731,7 @@ test('GrpcDriverSetup installs, starts, and initializes the iOS simulator driver
     },
     captureReadinessTimeoutMs: 1000,
     captureReadinessDelayMs: 0,
+    iosPortAllocator: stubIOSPortAllocator(),
   });
 
   const device = await setup.setUp(
@@ -733,9 +748,9 @@ test('GrpcDriverSetup installs, starts, and initializes the iOS simulator driver
   assert.deepEqual(calls, [
     'ensureIOS',
     'install:SIM-1:/tmp/finalrun-ios-test-Runner.app',
-    'cleanup:50051',
+    'cleanup:50151',
     'terminate:SIM-1:app.finalrun.iosUITests.xctrunner',
-    'start:SIM-1:50051',
+    'start:SIM-1:50151',
     'appIds:SIM-1',
   ]);
   assert.equal(grpcClient.channelCreations.length, 1);
@@ -779,6 +794,7 @@ test('GrpcDriverSetup surfaces an early iOS driver process exit during setup', a
       }
     },
     killStaleHostProcessesOnPortFn: async () => undefined,
+    iosPortAllocator: stubIOSPortAllocator(),
   });
 
   await assert.rejects(
@@ -828,6 +844,7 @@ test('GrpcDriverSetup fails when iOS screenshot capture never becomes ready afte
     killStaleHostProcessesOnPortFn: async () => undefined,
     captureReadinessTimeoutMs: 20,
     captureReadinessDelayMs: 5,
+    iosPortAllocator: stubIOSPortAllocator(),
   });
 
   await assert.rejects(
