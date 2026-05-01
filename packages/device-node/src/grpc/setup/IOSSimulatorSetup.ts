@@ -1,7 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
-  DEFAULT_GRPC_PORT_START,
   DeviceInfo,
   Logger,
   type FilePathUtil,
@@ -13,6 +12,7 @@ import {
   type SimctlClient,
 } from '../../infra/ios/SimctlClient.js';
 import type { GrpcDriverClient } from '../GrpcDriverClient.js';
+import { GrpcPortAllocator } from '../GrpcPortAllocator.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -38,6 +38,7 @@ export class IOSSimulatorSetup {
   private _captureReadinessTimeoutMs: number;
   private _captureReadinessDelayMs: number;
   private _killStaleHostProcessesOnPortFn: (port: number) => Promise<void>;
+  private _portAllocator: GrpcPortAllocator;
 
   constructor(params: {
     simctlClient: SimctlClient;
@@ -54,6 +55,7 @@ export class IOSSimulatorSetup {
     ) => Promise<boolean>;
     captureReadinessTimeoutMs: number;
     captureReadinessDelayMs: number;
+    portAllocator: GrpcPortAllocator;
     killStaleHostProcessesOnPortFn?: (port: number) => Promise<void>;
   }) {
     this._simctlClient = params.simctlClient;
@@ -61,6 +63,7 @@ export class IOSSimulatorSetup {
     this._connectWithPolling = params.connectWithPolling;
     this._captureReadinessTimeoutMs = params.captureReadinessTimeoutMs;
     this._captureReadinessDelayMs = params.captureReadinessDelayMs;
+    this._portAllocator = params.portAllocator;
     this._killStaleHostProcessesOnPortFn =
       params.killStaleHostProcessesOnPortFn ??
       (async (port: number) => await this._killStaleHostProcessesOnPort(port));
@@ -81,6 +84,8 @@ export class IOSSimulatorSetup {
     }
 
     let driverStarted = false;
+    let portAllocated = false;
+    let grpcPort = 0;
 
     try {
       await this._filePathUtil.ensureIOSAppsAvailable();
@@ -96,26 +101,29 @@ export class IOSSimulatorSetup {
         throw new Error(`Failed to install iOS driver app: ${driverPath}`);
       }
 
-      await this._killStaleHostProcessesOnPortFn(DEFAULT_GRPC_PORT_START);
+      grpcPort = await this._portAllocator.allocate(deviceId);
+      portAllocated = true;
+
+      await this._killStaleHostProcessesOnPortFn(grpcPort);
 
       Logger.i(`Terminating existing iOS driver app on ${deviceId}...`);
       await this._simctlClient.terminateApp(deviceId, IOS_DRIVER_RUNNER_BUNDLE_ID);
 
-      Logger.i('Starting iOS driver app...');
+      Logger.i(`Starting iOS driver app on port ${grpcPort}...`);
       const driverProcess = this._simctlClient.startDriver(
         deviceId,
-        DEFAULT_GRPC_PORT_START,
+        grpcPort,
       );
       driverStarted = true;
       const startupState = this._trackIOSDriverProcess(deviceId, driverProcess);
 
       Logger.i(
-        `Waiting for iOS driver gRPC at 127.0.0.1:${DEFAULT_GRPC_PORT_START}...`,
+        `Waiting for iOS driver gRPC at 127.0.0.1:${grpcPort}...`,
       );
       const connected = await this._connectWithPolling(
         grpcClient,
         '127.0.0.1',
-        DEFAULT_GRPC_PORT_START,
+        grpcPort,
         {
           getStartupFailureMessage: () => startupState.failureMessage,
           getWaitStatusMessage: () => this._formatWaitStatus(startupState),
@@ -149,9 +157,9 @@ export class IOSSimulatorSetup {
       // Restart callback — runs the full post-install setup sequence
       // (same steps as initial setup: kill stale, terminate, start, connect, capture readiness, app IDs)
       const restartDriver = async (): Promise<IOSDriverProcessHandle> => {
-        Logger.i(`IOSSimulatorSetup: Restarting driver for ${deviceId}...`);
+        Logger.i(`IOSSimulatorSetup: Restarting driver for ${deviceId} on port ${grpcPort}...`);
 
-        await this._killStaleHostProcessesOnPortFn(DEFAULT_GRPC_PORT_START);
+        await this._killStaleHostProcessesOnPortFn(grpcPort);
 
         try {
           await this._simctlClient.terminateApp(deviceId, IOS_DRIVER_RUNNER_BUNDLE_ID);
@@ -161,13 +169,13 @@ export class IOSSimulatorSetup {
 
         grpcClient.close();
 
-        const newProcess = this._simctlClient.startDriver(deviceId, DEFAULT_GRPC_PORT_START);
+        const newProcess = this._simctlClient.startDriver(deviceId, grpcPort);
         const newStartupState = this._trackIOSDriverProcess(deviceId, newProcess);
 
         const connected = await this._connectWithPolling(
           grpcClient,
           '127.0.0.1',
-          DEFAULT_GRPC_PORT_START,
+          grpcPort,
           {
             getStartupFailureMessage: () => newStartupState.failureMessage,
             getWaitStatusMessage: () => this._formatWaitStatus(newStartupState),
@@ -194,7 +202,7 @@ export class IOSSimulatorSetup {
         return newProcess;
       };
 
-      return { deviceId, grpcPort: DEFAULT_GRPC_PORT_START, driverProcess, restartDriver };
+      return { deviceId, grpcPort, driverProcess, restartDriver };
     } catch (error) {
       if (driverStarted) {
         try {
@@ -206,8 +214,19 @@ export class IOSSimulatorSetup {
           );
         }
       }
+      if (portAllocated) {
+        await this._portAllocator.release(deviceId);
+      }
       throw error;
     }
+  }
+
+  /**
+   * Return the per-device gRPC port to the pool. Call after the simulator
+   * is shut down or removed so the slot can be reused.
+   */
+  async releasePort(deviceId: string): Promise<void> {
+    await this._portAllocator.release(deviceId);
   }
 
   private _trackIOSDriverProcess(
