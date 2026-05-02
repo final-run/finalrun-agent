@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import AdmZip from 'adm-zip';
 import { Logger } from '@finalrun/common';
+import { prepareAppForUpload, type PreparedApp } from './appBundle.js';
 
 // Minimal projection of the CLI's CheckRunnerResult needed by submission.
 // Cloud-core does not depend on the CLI's check pipeline; the orchestrator
@@ -71,13 +72,13 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
   // Client-side inspection was intentionally removed: the server validates
   // the binary (platform, simulator-compatibility, packageName) authoritatively
   // after upload, and dropping the inspection step keeps the slim binary lean.
-  let appMode: { type: 'file'; path: string } | { type: 'server-default' };
+  // For .app directories (iOS simulator builds), prepareAppForUpload zips
+  // them on the fly into a temp .app.zip; we clean that up in the finally.
+  let appMode: { type: 'file'; prepared: PreparedApp } | { type: 'server-default' };
 
   if (input.appPath) {
-    if (!fs.existsSync(input.appPath)) {
-      throw new Error(`App file not found: ${input.appPath}`);
-    }
-    appMode = { type: 'file', path: input.appPath };
+    const prepared = prepareAppForUpload(input.appPath);
+    appMode = { type: 'file', prepared };
   } else {
     const platformLabel = input.platform?.trim() || 'the run target';
     console.log(`\n  No --app provided; server will use the latest app uploaded for ${platformLabel}.\n`);
@@ -191,11 +192,10 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
       : `${input.checked.tests.length} test(s)`;
 
     if (appMode.type === 'file') {
-      // Stream the file into the multipart body so a large APK/IPA isn't
+      // Stream the file into the multipart body so a large APK/.app.zip isn't
       // pulled into memory just to wrap as a Blob.
-      const appFileName = path.basename(appMode.path);
-      const appSize = fs.statSync(appMode.path).size;
-      const appBlob = await openAsBlob(appMode.path);
+      const { uploadPath, filename: appFileName, size: appSize } = appMode.prepared;
+      const appBlob = await openAsBlob(uploadPath);
       formData.append('appFile', appBlob, appFileName);
       formData.append('appFilename', appFileName);
 
@@ -254,8 +254,7 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
     }
 
     if (appMode.type === 'file') {
-      const appSize = fs.statSync(appMode.path).size;
-      spinner.succeed(`Uploaded ${formatBytes(appSize)} in ${elapsed}s`);
+      spinner.succeed(`Uploaded ${formatBytes(appMode.prepared.size)} in ${elapsed}s`);
     } else {
       spinner.succeed(`Submitted in ${elapsed}s`);
     }
@@ -269,7 +268,7 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
 
     let appFilename: string | undefined;
     if (appMode.type === 'file') {
-      appFilename = path.basename(appMode.path);
+      appFilename = appMode.prepared.filename;
       console.log(`\n  \x1b[33mTip:\x1b[0m You don't need to upload the app every time. Without --app,`);
       console.log(`       FinalRun uses your latest uploaded app (${appFilename}).`);
     }
@@ -280,6 +279,13 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
       fs.unlinkSync(zipPath);
     } catch {
       // ignore cleanup errors
+    }
+    if (appMode.type === 'file' && appMode.prepared.isTempZip) {
+      try {
+        fs.unlinkSync(appMode.prepared.uploadPath);
+      } catch {
+        // ignore cleanup errors
+      }
     }
   }
 }
