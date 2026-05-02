@@ -12,3 +12,7 @@ export {
   type UploadAppInput,
   type UploadAppResult,
 } from './upload.js';
+export {
+  prepareAppForUpload,
+  type PreparedApp,
+} from './appBundle.js';
