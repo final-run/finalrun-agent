@@ -33,6 +33,9 @@ export interface SubmitRunInput {
   envName?: string;
   platform?: string;
   appPath?: string;
+  /** Non-secret variables from the env YAML, recorded on the run row.
+   *  Secrets are intentionally not forwarded. */
+  variables?: Record<string, string>;
   /** Verbatim CLI invocation string for the run record (e.g. "finalrun cloud test ..."). */
   command: string;
   /** Cloud service base URL. */
@@ -181,6 +184,9 @@ export async function submitRun(input: SubmitRunInput): Promise<SubmitRunResult>
     }
     if (input.envName) {
       formData.append('envName', input.envName);
+    }
+    if (input.variables && Object.keys(input.variables).length > 0) {
+      formData.append('variables', JSON.stringify(input.variables));
     }
     if (input.platform) {
       formData.append('platform', input.platform);
