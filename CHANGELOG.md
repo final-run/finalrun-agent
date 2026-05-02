@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-05-02
+
+### Fixed
+
+- iOS `launchApp` could surface Android's `"Cannot launch: <bundleId>, maybe the app is not present"` on iOS-only runs. Both platforms started their gRPC port pools at the hardcoded `DEFAULT_GRPC_PORT_START` (50051), so on a host running both an Android emulator and an iOS simulator they collided on host loopback — whichever bound first held the port and the other platform's gRPC client connected to the wrong driver. Adds a shared `GrpcPortAllocator` (mutex + kernel bindability probe). iOS now allocates from `50151–50250`, disjoint from the Android pool (`50051–50150`); ports are released back on `prepare()` failure so per-process leaks are bounded to 100 slots.
+- iOS `launchApp` now pre-checks the bundle id with `xcrun simctl listapps` (mirroring Android's `isPackageInstalled`) and returns an explicit `App not installed: <bundleId>` instead of the prior generic "maybe the app is not present" message. `SimctlClient.isAppInstalled` distinguishes a real simctl failure from a clean "not present" result, so transient simctl errors no longer get misreported as missing apps.
+- Android driver/test-runner APK installs now auto-recover from `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (and similar state-conflict failures) by uninstalling the conflicting prior package and retrying once. Recovery is gated on the package already being on the device — if it isn't, the failure is something uninstall can't fix (storage full, ABI mismatch, USB drop) and we skip the retry to fail fast. Behavior is scoped to FinalRun-owned driver APKs via a new `AdbClient.installDriverApp` method; user-APK installs at `DeviceNode.installApp` keep no-recovery semantics so a failed user install never silently uninstalls the user's app.
+- `finalrun cloud test/suite/upload --app <Foo.app>` failed for iOS simulator builds with `EISDIR: illegal operation on a directory, read` because `.app` is a directory bundle and `openAsBlob` tried to stream it. `prepareAppForUpload` (in `@finalrun/cloud-core`) now zips a `.app/` directory on the fly into a temp `<name>.app.zip` (which the server already accepts) and cleans the temp file in `finally`. Plain files pass through unchanged. The accepted `--app` shapes are tightened to `.apk`, `.app.zip`, or `.app/` directory; `.ipa` and arbitrary `.zip`/directories are rejected with clear errors instead of producing opaque upload failures downstream.
+
+### Changed
+
+- `finalrun cloud test` and `finalrun cloud suite` now forward the resolved non-secret `variables:` block from the active env YAML to cloud at submit time. Cloud records them on the run row so users (and the audit trail) can see what env values the run was executed against. Secrets are deliberately not forwarded.
+- Internal refactor: `CliFilePathUtil` + `RuntimeAssetStore` + the asset cache moved from `@finalrun/finalrun-agent` to `@finalrun/device-node`; the `runCheck` pipeline (`checkRunner`, `env`, `appConfig`, `testLoader`, `testSelection`, `workspace`, `workspacePicker`) moved from cli to `@finalrun/common`. The cli's public API is unchanged via re-exports. The runtime-asset cache directory (`~/.finalrun/assets/<version>/`) now keys on device-node's version instead of cli's; they release in lockstep so the only consequence is a one-time cache invalidation on dev machines after this release.
+
 ## [0.1.13] - 2026-04-28
 
 ### Fixed
