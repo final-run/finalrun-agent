@@ -6,14 +6,12 @@ import { buildRunRoute } from '../routes';
 import { SummaryCard } from '../components/SummaryCard';
 import { StatusPill } from '../components/StatusPill';
 import { TintedPngIcon } from '../components/TintedPngIcon';
+import { LOCAL_ICON_SRC, TEST_ICON_SRC, TEST_SUITE_ICON_SRC } from '../icons';
 import {
-  CHECK_CIRCLE_ICON_SVG,
-  LOCAL_ICON_SRC,
-  PLAY_CIRCLE_ICON_SVG,
-  TEST_ICON_SRC,
-  TEST_SUITE_ICON_SRC,
-  TIMER_ICON_SVG,
-} from '../icons';
+  CHECK_CIRCLE_ICON_NODE,
+  PLAY_CIRCLE_ICON_NODE,
+  TIMER_ICON_NODE,
+} from '../iconNodes';
 import { formatLongDuration, successRateTone } from '../format';
 
 import '../styles/shared.css';
@@ -46,19 +44,19 @@ export function RunIndexView({
           label="Total Runs"
           value={String(index.summary.totalRuns)}
           tone="accent"
-          iconSvg={PLAY_CIRCLE_ICON_SVG}
+          icon={PLAY_CIRCLE_ICON_NODE}
         />
         <SummaryCard
           label="Test Success Rate"
           value={`${index.summary.totalSuccessRate.toFixed(1)}%`}
           tone={successRateTone(index.summary.totalSuccessRate)}
-          iconSvg={CHECK_CIRCLE_ICON_SVG}
+          icon={CHECK_CIRCLE_ICON_NODE}
         />
         <SummaryCard
           label="Total time saved"
           value={formatLongDuration(index.summary.totalDurationMs)}
           tone="neutral"
-          iconSvg={TIMER_ICON_SVG}
+          icon={TIMER_ICON_NODE}
         />
       </section>
 
